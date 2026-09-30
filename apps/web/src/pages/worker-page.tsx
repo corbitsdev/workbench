@@ -21,6 +21,7 @@ import {
 } from "../settings/tenancy-api";
 import { agentSlugFromSourceAssetName, deployAgentSource } from "../agent-deploy";
 import { readAgentMcpHandles, readAgentSource } from "../agent-source-read";
+import { applyGrantSnapshot, readGrantSnapshot, saveGrantSnapshot } from "../worker-grants-carry";
 import { useBench } from "../bench-context";
 import { Link } from "../navigation";
 import { tenantKeys } from "../query-client";
@@ -60,6 +61,10 @@ function InstructionsCard({
       const slug = agentSlugFromSourceAssetName(agent.assetName);
       if (slug === null) throw new Error(`${agent.assetName} is not an editable worker`);
       const mcpHandles = await readAgentMcpHandles(tenantId, agent.id, agent.assetName);
+      const current = await readWorkerToolGrants(tenantId, agent);
+      if (current !== null) {
+        saveGrantSnapshot(tenantId, agent.assetName, current.principalId, current.tools);
+      }
       await deployAgentSource({
         tenantId,
         input: { name: agent.name, systemPrompt, slug, mcpHandles },
@@ -149,13 +154,17 @@ async function readWorkerToolGrants(tenantId: string, agent: ChatAgent) {
     (candidate) => candidate.kind === "workflow" && candidate.refId === run?.id,
   );
   if (principal === undefined) return null;
-  const grants = await listGrants(tenantId, { principalId: principal.id });
-  return {
-    principalId: principal.id,
-    tools: grants
+  const read = async () => {
+    const grants = await listGrants(tenantId, { principalId: principal.id });
+    return grants
       .filter((grant) => grant.resource.startsWith(TOOL_PREFIX) && grant.action === "invoke")
-      .sort((a, b) => a.resource.localeCompare(b.resource)),
+      .sort((a, b) => a.resource.localeCompare(b.resource));
   };
+  let tools = await read();
+  if (await applyGrantSnapshot(tenantId, agent.assetName, principal.id, tools)) {
+    tools = await read();
+  }
+  return { principalId: principal.id, tools };
 }
 
 function PermissionsCard({
@@ -167,7 +176,14 @@ function PermissionsCard({
 }) {
   const queryClient = useQueryClient();
   const key = [...tenantKeys.grants(tenantId), "worker", agent.id] as const;
-  const query = useQuery({ queryKey: key, queryFn: () => readWorkerToolGrants(tenantId, agent) });
+  // While a redeploy's permissions are waiting for the new run to start,
+  // keep looking for its principal.
+  const carrying = readGrantSnapshot(tenantId, agent.assetName) !== null;
+  const query = useQuery({
+    queryKey: key,
+    queryFn: () => readWorkerToolGrants(tenantId, agent),
+    refetchInterval: carrying ? 5000 : false,
+  });
 
   // Create the new grant before revoking the old one so a failure never
   // leaves the tool ungoverned.
@@ -201,6 +217,7 @@ function PermissionsCard({
       <CardTitle>Permissions</CardTitle>
       <CardDescription>
         What it may do without asking. Workbench grants can narrow these, never widen them.
+        Permissions carry over when you save new instructions.
       </CardDescription>
       {query.isPending ? (
         <p className="mt-3 text-[13px] text-(--ink-3)">Loading permissions…</p>
