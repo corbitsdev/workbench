@@ -2,8 +2,8 @@
 
 A multiplayer workspace where people and AI agents share the same threads.
 Workbench is a web client for [Interchange](https://github.com/faremeter/interchange):
-you sign in to a plain Interchange tenant, converse in workbenches, and Myra, the one
-shipped agent, builds whatever workflows, tools, or skills a job needs.
+you sign in to a plain Interchange tenant, converse in workbenches, and each workbench's own
+worker builds whatever workflows, tools, or skills a job needs.
 
 ## Run it
 
@@ -31,7 +31,7 @@ local [Ollama](https://ollama.com) works with no key, see
 | Path          | Contents                                                         |
 | ------------- | ---------------------------------------------------------------- |
 | `apps/`       | `hub` (API), `web` (React client), `sidecar` (execution host)    |
-| `packages/`   | Corbits libraries                                                |
+| `packages/`   | Corbits libraries, and `worker`, the default agent harness       |
 | `vendor/intx` | Hand-copied Interchange packages, see [VENDORED.md](VENDORED.md) |
 
 ## Develop

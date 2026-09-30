@@ -40,14 +40,14 @@ address.
 
 ## Agents and workflows
 
-Myra (`packages/worker`) is the only agent Workbench ships. Her tools are
-`@intx/tools-mail` over her mail transport, `@intx/tools-posix` over her
-working tree, and the `@corbits/artifacts`, `@corbits/memory` and
+`packages/worker` is the one harness a bench's worker, and any agent
+Workbench creates, deploys on. Its tools are `@intx/tools-mail` over the
+mail transport, `@intx/tools-posix` over the working tree, and the `@corbits/artifacts`, `@corbits/memory` and
 `@corbits/mcp` sidecar bundles. A bundle that calls back into the hub or
 out to an MCP server never holds a secret: the web client stores a
 tenant credential, the definition binds it to that one package and
 requires its use on the deployer's authority, and the sidecar hands the
-tool an origin-pinned mediated fetch. Myra writes further workflows and
+tool an origin-pinned mediated fetch. The worker writes further workflows and
 agents as code; the person deploys them through the stock deploy route.
 
 ## Tool visibility
@@ -71,7 +71,7 @@ catalog is read server-side; a deploy reads the stored catalog and never
 touches the network. Each remote tool becomes an agent tool named
 `<server>.<tool>`, its own grant resource, ask-gated unless the server
 marks it read-only. The catalog belongs to the workspace; a workbench binds all
-of it, an agent binds only what it needs, Myra's set is fixed.
+of it, an agent binds only what it needs, the worker's set is fixed.
 
 ## Data
 

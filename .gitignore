@@ -37,7 +37,7 @@ e2e/browser/shots/
 # committed (CL-8167).
 *.tgz
 
-# Generated Myra workflow bundle (built on demand, never committed)
+# Generated worker workflow bundle (built on demand, never committed)
 packages/worker/bundle/
 
 # Local clickable mockups (design artifacts, never committed)

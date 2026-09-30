@@ -25,7 +25,7 @@ the other's parsing.
 
 ## Why multi-step definitions are rejected
 
-The launch target (the bundled Myra-style deploy in
+The launch target (the bundled worker deploy in
 `apps/web/src/agent-deploy.ts`) renders exactly one `systemPrompt` into one
 mailbox-triggered turn — it has no notion of step order. Reading past
 `stepOrder[0]` would silently drop every later step's behavior rather than
