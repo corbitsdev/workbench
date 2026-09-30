@@ -10,7 +10,7 @@ import {
   toolActivityGlyph,
   type ToolActivityRow,
 } from "./tool-activity";
-import { LiveToolActivity } from "./tool-activity-view";
+import { ToolTrace } from "./tool-activity-view";
 
 export type ToolCallActivity = {
   readonly callId: string;
@@ -362,7 +362,8 @@ export function TurnActivityStrip({ activity }: { readonly activity: TurnActivit
   if (activity === null) return null;
 
   return (
-    <LiveToolActivity
+    <ToolTrace
+      live
       rows={toolActivityRows(activity, Date.now())}
       thinking={activity.thinking.active}
       retryCount={activity.retryCount}

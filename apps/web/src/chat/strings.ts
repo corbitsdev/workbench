@@ -271,6 +271,8 @@ export const CHAT_STRINGS = {
   turnActivityThinking: "Thinking…",
   turnActivityRetry: (attempt: number) => `Retrying (attempt ${attempt})…`,
   toolActivityFailed: "Failed",
+  traceWorked: (steps: number) => `Worked through ${steps} ${steps === 1 ? "step" : "steps"}`,
+  traceWorking: (steps: number) => `Working… step ${Math.max(1, steps)}`,
   replyTimedOutNotice: "No reply arrived — the agent may be unavailable.",
   resumeFailedNotice: (refId: string) =>
     `Couldn't resume the running reply — try again. (ref ${refId})`,

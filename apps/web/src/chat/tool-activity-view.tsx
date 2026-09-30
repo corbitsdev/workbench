@@ -1,5 +1,6 @@
-// One presentation serves both the live strip and the persisted
-// transcript, so a call doesn't restyle itself when the turn ends.
+// One collapsed row per turn: "Worked through N steps", or "Working… step N"
+// while the turn is open. Expanding lists each step. The same presentation
+// serves the live strip and the persisted transcript.
 
 import {
   BookBookmark,
@@ -18,12 +19,7 @@ import type { ReactNode } from "react";
 import { useState } from "react";
 
 import { CHAT_STRINGS } from "./strings";
-import {
-  providerTile,
-  type ToolActivityGlyph,
-  type ToolActivityRow,
-  type ToolActivityStatus,
-} from "./tool-activity";
+import type { ToolActivityGlyph, ToolActivityRow, ToolActivityStatus } from "./tool-activity";
 
 function StatusMarker({ status }: { readonly status: ToolActivityStatus }) {
   const icon =
@@ -35,17 +31,13 @@ function StatusMarker({ status }: { readonly status: ToolActivityStatus }) {
       <Check />
     );
   return (
-    <span className="chat-tool-activity-marker" data-status={status} aria-hidden="true">
+    <span className="chat-trace-marker" data-status={status} aria-hidden="true">
       {icon}
     </span>
   );
 }
 
-function chipAccessibleName(row: ToolActivityRow): string {
-  return row.status === "failed" ? `${CHAT_STRINGS.toolActivityFailed}. ${row.phrase}` : row.phrase;
-}
-
-function ActionGlyph({ glyph }: { readonly glyph: ToolActivityGlyph }) {
+function StepGlyph({ glyph }: { readonly glyph: ToolActivityGlyph }) {
   let icon: ReactNode;
   switch (glyph) {
     case "search":
@@ -71,124 +63,93 @@ function ActionGlyph({ glyph }: { readonly glyph: ToolActivityGlyph }) {
       break;
   }
   return (
-    <span className="chat-tool-activity-tile chat-tool-activity-glyph" aria-hidden="true">
+    <span className="chat-trace-glyph" aria-hidden="true">
       {icon}
     </span>
   );
 }
 
-function LeadingMark({ row }: { readonly row: ToolActivityRow }) {
-  const tile = row.provider === undefined ? undefined : providerTile(row.provider);
-  if (tile !== undefined) {
-    return (
-      <span
-        className="chat-tool-activity-tile"
-        style={{ background: tile.color }}
-        aria-hidden="true"
-      >
-        {tile.initials}
-      </span>
-    );
-  }
-  return <ActionGlyph glyph={row.glyph} />;
-}
-
-function ChipBody({ row, open }: { readonly row: ToolActivityRow; readonly open: boolean }) {
-  return (
+function TraceStep({ row }: { readonly row: ToolActivityRow }) {
+  const [open, setOpen] = useState(false);
+  const body = (
     <>
-      <LeadingMark row={row} />
-      {row.status === "failed" ? (
-        <span className="chat-tool-activity-status-word">{CHAT_STRINGS.toolActivityFailed}. </span>
-      ) : null}
-      <span className="chat-tool-activity-phrase">{row.phrase}</span>
-      {row.meta === undefined ? null : (
-        <span className="chat-tool-activity-meta" aria-hidden="true">
-          {row.meta}
-        </span>
-      )}
+      <StepGlyph glyph={row.glyph} />
+      <span className="chat-trace-step-text">
+        {row.status === "failed" ? (
+          <span className="chat-trace-sr">{CHAT_STRINGS.toolActivityFailed}. </span>
+        ) : null}
+        <code>{row.toolName}</code> · {row.phrase}
+      </span>
+      {row.meta === undefined ? <span /> : <span className="chat-trace-time">{row.meta}</span>}
       <StatusMarker status={row.status} />
-      {row.detail === undefined ? null : (
-        <CaretRight className="chat-tool-activity-caret" data-open={open} aria-hidden="true" />
-      )}
     </>
   );
-}
-
-function ToolActivityLine({
-  row,
-  indented,
-}: {
-  readonly row: ToolActivityRow;
-  readonly indented: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const hasDetail = row.detail !== undefined;
-
-  if (!hasDetail) {
+  if (row.detail === undefined) {
     return (
-      <div className="chat-tool-activity-row" data-status={row.status} data-indented={indented}>
-        <div className="chat-tool-activity-chip" title={row.toolName}>
-          <ChipBody row={row} open={false} />
-        </div>
+      <div className="chat-trace-step" data-status={row.status}>
+        {body}
       </div>
     );
   }
-
   return (
-    <div className="chat-tool-activity-row" data-status={row.status} data-indented={indented}>
+    <div data-status={row.status}>
       <button
         type="button"
-        className="chat-tool-activity-chip chat-tool-activity-trigger"
+        className="chat-trace-step chat-trace-step-button"
         aria-expanded={open}
-        aria-label={chipAccessibleName(row)}
-        title={row.toolName}
         onClick={() => setOpen((value) => !value)}
       >
-        <ChipBody row={row} open={open} />
+        {body}
       </button>
-      {open ? <p className="chat-tool-activity-detail">{row.detail}</p> : null}
-    </div>
-  );
-}
-
-// Never folded into a summary line (DESIGN.md §12.3: chips, not
-// collapsibles) — no group-level trigger, no count.
-export function ToolActivityGroup({ rows }: { readonly rows: readonly ToolActivityRow[] }) {
-  if (rows.length === 0) return null;
-  return (
-    <div className="chat-tool-activity" data-slot="tool-activity">
-      {rows.map((row) => (
-        <ToolActivityLine key={row.key} row={row} indented={false} />
-      ))}
+      {open ? <p className="chat-trace-detail">{row.detail}</p> : null}
     </div>
   );
 }
 
 // Plus the two things that only exist while a turn is open: thinking and
 // a retried request.
-export function LiveToolActivity({
+export function ToolTrace({
   rows,
-  thinking,
-  retryCount,
+  live = false,
+  thinking = false,
+  retryCount = 0,
 }: {
   readonly rows: readonly ToolActivityRow[];
-  readonly thinking: boolean;
-  readonly retryCount: number;
+  readonly live?: boolean;
+  readonly thinking?: boolean;
+  readonly retryCount?: number;
 }) {
+  const [open, setOpen] = useState(false);
   if (rows.length === 0 && !thinking && retryCount === 0) return null;
   return (
-    <div className="chat-tool-activity chat-tool-activity-live" data-slot="tool-activity">
-      {rows.map((row) => (
-        <ToolActivityLine key={row.key} row={row} indented={false} />
-      ))}
-      {thinking ? (
-        <div className="chat-tool-activity-row chat-tool-activity-thinking">
-          {CHAT_STRINGS.turnActivityThinking}
-        </div>
-      ) : null}
-      {retryCount > 0 ? (
-        <div className="chat-tool-activity-row chat-tool-activity-retry">
-          {CHAT_STRINGS.turnActivityRetry(retryCount)}
+    <div className="chat-trace" data-open={open} data-live={live} data-slot="tool-activity">
+      <button
+        type="button"
+        className="chat-trace-sum"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <CaretRight className="chat-trace-chev" aria-hidden="true" />
+        {live ? <span className="chat-trace-signal" aria-hidden="true" /> : null}
+        <span>
+          {live ? CHAT_STRINGS.traceWorking(rows.length) : CHAT_STRINGS.traceWorked(rows.length)}
+        </span>
+      </button>
+      {open ? (
+        <div className="chat-trace-steps">
+          {rows.map((row) => (
+            <TraceStep key={row.key} row={row} />
+          ))}
+          {thinking ? (
+            <div className="chat-trace-note chat-trace-thinking">
+              {CHAT_STRINGS.turnActivityThinking}
+            </div>
+          ) : null}
+          {retryCount > 0 ? (
+            <div className="chat-trace-note chat-trace-retry">
+              {CHAT_STRINGS.turnActivityRetry(retryCount)}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
