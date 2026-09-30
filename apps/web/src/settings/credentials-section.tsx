@@ -3,8 +3,8 @@
 // by signing in is renewed by signing in again, through the same hub-hosted
 // login the onboarding step uses.
 
+import { Button, EmptyState, Input } from "@corbits/react-ui";
 import {
-  Button,
   Dialog,
   DialogBody,
   DialogContent,
@@ -12,9 +12,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  EmptyState,
-  Input,
-} from "@corbits/react-ui";
+} from "@corbits/react-ui/ui/dialog";
 import { reportError } from "@corbits/error-sink";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";

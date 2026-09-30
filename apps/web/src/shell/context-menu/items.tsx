@@ -18,7 +18,7 @@ import {
   SlidersHorizontal,
   UserCircle,
 } from "@/lib/icons";
-import { toast } from "@corbits/react-ui";
+import { toast } from "@corbits/react-ui/ui/toast";
 
 import {
   copyArtifactLinks,

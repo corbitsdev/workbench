@@ -18,8 +18,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  toast,
 } from "@corbits/react-ui";
+import { toast } from "@corbits/react-ui/ui/toast";
 import { QueryView } from "@/lib/api-query";
 import { Plugs } from "@/lib/icons";
 

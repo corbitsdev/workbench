@@ -1,7 +1,7 @@
 // Scheduled workflow definitions across every bench the signed-in account
 // belongs to — the aggregation both Workflows surfaces read from: the
 // roster at `/workflows` and the detail page at `/workflows/<definitionId>`.
-import { toast } from "@corbits/react-ui";
+import { toast } from "@corbits/react-ui/ui/toast";
 import { reportError } from "@corbits/error-sink";
 import { useMemo } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";

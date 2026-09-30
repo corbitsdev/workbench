@@ -1,8 +1,8 @@
 // Scoped down to naming the asset only: the stock asset routes accept a
 // bare `{ kind, name, displayName }`, with no stock route yet to write a
 // skill's SKILL.md content in the same call.
+import { Button, IntakeForm, intakeFieldsComplete } from "@corbits/react-ui";
 import {
-  Button,
   Dialog,
   DialogBody,
   DialogContent,
@@ -10,9 +10,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  IntakeForm,
-  intakeFieldsComplete,
-} from "@corbits/react-ui";
+} from "@corbits/react-ui/ui/dialog";
 import type { IntakeField } from "@corbits/react-ui";
 import { useState } from "react";
 

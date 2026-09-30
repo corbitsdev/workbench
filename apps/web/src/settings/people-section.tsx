@@ -1,9 +1,8 @@
 // Agent/workflow principals are machine identities, not people to manage
 // here — Roles/Grants list every kind since those assign to machines too.
 
+import { Badge, Button, EmptyState, Input } from "@corbits/react-ui";
 import {
-  Badge,
-  Button,
   Dialog,
   DialogBody,
   DialogContent,
@@ -11,9 +10,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  EmptyState,
-  Input,
-} from "@corbits/react-ui";
+} from "@corbits/react-ui/ui/dialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 

@@ -8,8 +8,8 @@ import {
   Section,
   Textarea,
   formatRelativeTime,
-  toast,
 } from "@corbits/react-ui";
+import { toast } from "@corbits/react-ui/ui/toast";
 import { Lightning } from "@/lib/icons";
 import { WorkbenchLoadingState } from "@/chat";
 import { ApiQueryError, describeApiError } from "@/lib/api-query";

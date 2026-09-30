@@ -2,7 +2,7 @@
 // first-login hook, and the theme shell everything else renders inside.
 // Kept out of `main.tsx` so the entry module owns nothing but the mount.
 
-import { Toaster, toast } from "@corbits/react-ui";
+import { Toaster, toast } from "@corbits/react-ui/ui/toast";
 import { useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
 
 import { getLogger } from "@/lib/client-log";

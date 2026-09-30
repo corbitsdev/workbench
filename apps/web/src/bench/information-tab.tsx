@@ -1,4 +1,5 @@
-import { Button, Skeleton, formatRelativeTime, toast } from "@corbits/react-ui";
+import { Button, Skeleton, formatRelativeTime } from "@corbits/react-ui";
+import { toast } from "@corbits/react-ui/ui/toast";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 

@@ -4,7 +4,7 @@
 import { mock } from "bun:test";
 import { toast as sonnerToast } from "sonner";
 
-const actualReactUi = await import("@corbits/react-ui");
+const actualReactUi = await import("@corbits/react-ui/ui/toast");
 const realToast = actualReactUi.toast;
 
 type ToastFn = typeof actualReactUi.toast;
@@ -15,7 +15,7 @@ export function spyOnReactUiToast(): ReturnType<typeof mock<ToastFn>> {
   // `toast` carries its own variants (`toast.error` and friends); the spy
   // stands in for the whole callable, so it must carry them too.
   Object.assign(spy, realToast);
-  mock.module("@corbits/react-ui", () => ({
+  mock.module("@corbits/react-ui/ui/toast", () => ({
     ...actualReactUi,
     toast: spy,
   }));

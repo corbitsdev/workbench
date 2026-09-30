@@ -1,7 +1,8 @@
 // See docs/chat-mail-threading.md. The bench pill opens a drawer that pushes
 // the thread left; the drawer's Information tab carries the bench overview.
 
-import { Button, EmptyState, PageShell, Skeleton, toast } from "@corbits/react-ui";
+import { Button, EmptyState, PageShell, Skeleton } from "@corbits/react-ui";
+import { toast } from "@corbits/react-ui/ui/toast";
 import { WarningCircle } from "@/lib/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";

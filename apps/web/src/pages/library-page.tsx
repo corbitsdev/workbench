@@ -1,10 +1,6 @@
 import {
   BulkActionBar,
   Button,
-  Menu,
-  MenuContent,
-  MenuItem,
-  MenuTrigger,
   RichEmptyState,
   SelectionCheckbox,
   Skeleton,
@@ -16,9 +12,10 @@ import {
   TableRow,
   artifactKindLabel,
   formatRelativeTime,
-  toast,
   useListSelection,
 } from "@corbits/react-ui";
+import { Menu, MenuContent, MenuItem, MenuTrigger } from "@corbits/react-ui/ui/menu";
+import { toast } from "@corbits/react-ui/ui/toast";
 import type { SelectionCheckboxState, UseListSelectionResult } from "@corbits/react-ui";
 import {
   ArtifactRenderer,
