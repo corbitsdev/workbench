@@ -2,3 +2,9 @@
 [data-theme="canvas"] .sb-tools {
   background: var(--surface-sunk);
 }
+
+/* The profile mark is a filled ink circle with a surface-colored initial. */
+.sb-profile [role="img"] {
+  background: var(--ink);
+  color: var(--surface);
+}

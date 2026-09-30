@@ -1,9 +1,9 @@
 /* One page column for the library pages (mockup .page / .page-narrow / .page-head). */
 .page-layout {
   width: 100%;
-  max-width: calc(864px + 48px);
+  max-width: calc(960px + 96px);
   margin: 0 auto;
-  padding: 32px 24px 64px;
+  padding: 40px 48px 64px;
   box-sizing: border-box;
 }
 

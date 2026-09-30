@@ -1,6 +1,6 @@
 // Profile menu (settings, theme, sign out) and the Tools button.
 
-import { Moon, Palette, Plugs, SignOut, SlidersHorizontal, Sun, type Icon } from "@/lib/icons";
+import { Moon, Palette, SignOut, SlidersHorizontal, Sun, Wrench, type Icon } from "@/lib/icons";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import "./sidebar-footer.css";
@@ -89,7 +89,7 @@ export function SidebarFooter({
         aria-current={toolsActive ? "page" : undefined}
         onClick={() => onNavigate("/tools")}
       >
-        <Plugs />
+        <Wrench />
         Tools
       </button>
       {open ? (
