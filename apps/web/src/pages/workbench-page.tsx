@@ -25,7 +25,9 @@ import {
 } from "@/chat/threads-api";
 import { BenchDrawer } from "../bench/bench-drawer";
 import { BenchPill } from "../bench/bench-pill";
+import { ArtifactsTab } from "../bench/artifacts-tab";
 import { InformationTab } from "../bench/information-tab";
+import { WorkflowsTab } from "../bench/workflows-tab";
 import { useBench } from "../bench-context";
 import { createFetchStockHub } from "../needs-converge";
 import { workbenchKeys } from "../chat-path";
@@ -312,6 +314,8 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                 participants={participants.data ?? []}
               />
             ),
+            Artifacts: <ArtifactsTab workbenchTenantId={workbenchTenantId} />,
+            Workflows: <WorkflowsTab workbenchTenantId={workbenchTenantId} />,
           }}
         />
       </div>
