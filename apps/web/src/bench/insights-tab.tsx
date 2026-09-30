@@ -33,9 +33,11 @@ export function InsightsTab({ workbenchTenantId }: { readonly workbenchTenantId:
   ];
 
   return (
-    <div className="drawer-stack">
-      <section className="insights-panel">
-        <h3>Last 7 days</h3>
+    <div>
+      <section className="drawer-sec">
+        <div className="drawer-sec-head">
+          <h3>Last 7 days</h3>
+        </div>
         <div className="bi-stats">
           {tiles.map(([label, value]) => (
             <div key={label} className="bi-stat">
@@ -45,8 +47,10 @@ export function InsightsTab({ workbenchTenantId }: { readonly workbenchTenantId:
           ))}
         </div>
       </section>
-      <section className="insights-panel">
-        <h3>Runs per day</h3>
+      <section className="drawer-sec">
+        <div className="drawer-sec-head">
+          <h3>Runs per day</h3>
+        </div>
         <OutcomeChart days={stats.days} />
       </section>
       <Link

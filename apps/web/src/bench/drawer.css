@@ -1,8 +1,28 @@
 /* Drawer chrome and tab-body sections: unboxed, per the mockup. */
 
 .drawer .drawer-tabs {
-  -webkit-mask: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
-  mask: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  --fade-start: #000;
+  --fade-end: #000;
+  -webkit-mask: linear-gradient(
+    90deg,
+    var(--fade-start),
+    #000 28px,
+    #000 calc(100% - 28px),
+    var(--fade-end)
+  );
+  mask: linear-gradient(
+    90deg,
+    var(--fade-start),
+    #000 28px,
+    #000 calc(100% - 28px),
+    var(--fade-end)
+  );
+}
+.drawer .drawer-tabs[data-fade-start="true"] {
+  --fade-start: transparent;
+}
+.drawer .drawer-tabs[data-fade-end="true"] {
+  --fade-end: transparent;
 }
 .drawer .drawer-tabs button:last-child {
   margin-right: 24px;

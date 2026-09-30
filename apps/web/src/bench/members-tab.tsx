@@ -29,9 +29,11 @@ export function MembersTab({
   const agents = participants.filter((p) => p.kind === "agent");
 
   return (
-    <div className="drawer-stack">
-      <section className="insights-panel">
-        <h3>People</h3>
+    <div>
+      <section className="drawer-sec">
+        <div className="drawer-sec-head">
+          <h3>People</h3>
+        </div>
         {people.isPending ? <Skeleton className="h-12 w-full" /> : null}
         {people.isError ? (
           <RichEmptyState
@@ -61,8 +63,10 @@ export function MembersTab({
           })}
         </ul>
       </section>
-      <section className="insights-panel">
-        <h3>Agents</h3>
+      <section className="drawer-sec">
+        <div className="drawer-sec-head">
+          <h3>Agents</h3>
+        </div>
         {loading ? <Skeleton className="h-12 w-full" /> : null}
         {!loading && agents.length === 0 ? (
           <p className="workbench-info-empty-note">No agents yet.</p>
@@ -74,7 +78,7 @@ export function MembersTab({
                 <WorkbenchAvatar kind="worker" name={agent.name} size="md" />
                 <span className="drawer-list-text">
                   <b>{agent.name}</b>
-                  <span>{agent.address === "" ? "Starting" : "Live"}</span>
+                  <span>{agent.address === "" ? "Starting" : "Running"}</span>
                 </span>
               </Link>
             </li>
