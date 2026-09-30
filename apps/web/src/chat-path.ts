@@ -7,6 +7,8 @@ export const workbenchKeys = {
   scope: (tenantId: string) => ["workbench", tenantId] as const,
   tenant: (tenantId: string) => ["workbench", tenantId, "tenant"] as const,
   participants: (tenantId: string) => ["workbench", tenantId, "participants"] as const,
+  /** Client-only: {sentAt} from a send until the worker replies. */
+  pendingTurn: (tenantId: string) => ["workbench", tenantId, "pendingTurn"] as const,
   timeline: (tenantId: string) => ["workbench", tenantId, "timeline"] as const,
   /** The bench's own child tenants (its workbenches), read over the stock
    * tenant routes — previously `chatKeys.childTenants`, re-homed here when

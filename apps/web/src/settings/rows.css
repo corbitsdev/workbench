@@ -1,0 +1,100 @@
+/* Rows-not-cards settings layout; colors come from theme tokens. */
+
+.settings-group {
+  max-width: 44rem;
+  width: 100%;
+}
+
+.settings-group-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.6rem;
+}
+
+.settings-group-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
+.settings-group-lede {
+  margin: 0.15rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.settings-rows {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 3rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-row-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.settings-row-title {
+  font-size: 0.9375rem;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-row-meta {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.settings-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.settings-seg {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.settings-seg-option {
+  padding: 0.3rem 0.9rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.settings-seg-option[aria-checked="true"] {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.settings-seg-option:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}

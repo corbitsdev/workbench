@@ -26,8 +26,9 @@ import {
 import { VoiceOverlay } from "../voice/voice-overlay";
 import { BenchDrawer } from "../bench/bench-drawer";
 import { BenchPill } from "../bench/bench-pill";
+import { PendingOpeningMessage } from "../bench/pending-opening-message";
 import { ArtifactsTab } from "../bench/artifacts-tab";
-import { useWorkerStatus } from "../worker-status";
+import { markTurnPending, useWorkerStatus } from "../worker-status";
 import { GrantsTab } from "../bench/grants-tab";
 import { InformationTab } from "../bench/information-tab";
 import { InsightsTab } from "../bench/insights-tab";
@@ -228,10 +229,12 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
         content,
         ...(inReplyTo !== undefined ? { inReplyTo } : {}),
       }),
+    onMutate: () => markTurnPending(queryClient, workbenchTenantId),
     onSuccess: () =>
       queryClient.invalidateQueries({
         queryKey: workbenchKeys.scope(workbenchTenantId),
       }),
+    onError: () => queryClient.setQueryData(workbenchKeys.pendingTurn(workbenchTenantId), null),
   });
 
   const messages = timeline.data ?? [];
@@ -283,6 +286,10 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                       onReply={(target) => setOpenThread(target.messageId)}
                     />
                   ))}
+                  <PendingOpeningMessage
+                    workbenchTenantId={workbenchTenantId}
+                    participants={participants.data ?? []}
+                  />
                 </div>
                 {send.error === null ? null : (
                   <p className="chat-thread-error">{errorText(send.error)}</p>

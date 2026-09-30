@@ -6,13 +6,16 @@ import type { ReactNode } from "react";
 
 export function BlockCard({
   title,
+  attention = false,
   children,
 }: {
   readonly title: string;
+  /** The one attention moment in view: an orange ring around the card. */
+  readonly attention?: boolean;
   readonly children: ReactNode;
 }) {
   return (
-    <div className="chat-block">
+    <div className={attention ? "chat-block chat-block-attention" : "chat-block"}>
       <div className="chat-block-head">
         <span className="chat-block-pulse" aria-hidden="true" />
         <span className="chat-block-title">{title}</span>

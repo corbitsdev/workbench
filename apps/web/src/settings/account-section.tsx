@@ -2,8 +2,7 @@
 // The Agent card was removed — nothing there could change until a hub
 // preference store exists to write it to.
 
-import { Avatar, Badge, Button, SettingsPanel, toast } from "@corbits/react-ui";
-import { Select } from "@corbits/react-ui/ui/select";
+import { Avatar, Badge, Button, toast } from "@corbits/react-ui";
 import { ChatCircleDots, Copy, SignOut } from "@/lib/icons";
 import { useQuery } from "@tanstack/react-query";
 
@@ -11,6 +10,7 @@ import { QueryView, toAPIQuery } from "@/lib/api-query";
 import { resolveAvatarFill } from "@/chat";
 import webPackage from "../../package.json";
 import { getAccount, type Account } from "./api";
+import { Segmented, SettingsGroup, SettingsRow } from "./rows";
 import { SETTINGS_STRINGS } from "./strings";
 import { isTheme, setTheme, useTheme } from "../theme-store";
 
@@ -81,69 +81,64 @@ export function AccountSectionView({
 }) {
   const fill = resolveAvatarFill(id, image);
   return (
-    <SettingsPanel title={SETTINGS_STRINGS.accountSectionTitle}>
-      <div className="settings-account-card">
-        <div className="settings-account-identity">
-          {fill.kind === "image" ? (
-            <img
-              className="settings-account-avatar-image"
-              src={fill.url}
-              alt={name}
-              width={40}
-              height={40}
-            />
-          ) : (
-            <Avatar initials={initialsOf(name)} label={name} size="lg" className={fill.className} />
-          )}
-          <div className="settings-account-identity-text">
-            <span className="settings-account-name">{name}</span>
-            <span className="settings-account-email">
-              {email}
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                aria-label={SETTINGS_STRINGS.accountCopyEmailAction}
-                title={SETTINGS_STRINGS.accountCopyEmailAction}
-                onClick={() => void copyEmail(email)}
-              >
-                <Copy />
-              </Button>
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" asChild>
-            <a href={FEEDBACK_URL} target="_blank" rel="noreferrer">
-              <ChatCircleDots /> Send Feedback
-            </a>
-          </Button>
-          {onSignOut !== undefined ? (
-            <Button variant="outline" className="settings-account-signout" onClick={onSignOut}>
-              <SignOut /> {SETTINGS_STRINGS.accountSignOutAction}
-            </Button>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="settings-account-details">
-        <h3 className="settings-subhead settings-subhead-quiet">
-          {SETTINGS_STRINGS.accountDetailsHeading}
-        </h3>
-        <dl className="settings-detail-list">
-          <dt>{SETTINGS_STRINGS.accountNameLabel}</dt>
-          <dd>{name}</dd>
-          <dt>{SETTINGS_STRINGS.accountEmailLabel}</dt>
-          <dd>
-            {email}{" "}
+    <SettingsGroup title={SETTINGS_STRINGS.accountSectionTitle}>
+      <SettingsRow
+        title={
+          <span className="flex items-center gap-2">
+            {fill.kind === "image" ? (
+              <img
+                className="settings-account-avatar-image"
+                src={fill.url}
+                alt={name}
+                width={40}
+                height={40}
+              />
+            ) : (
+              <Avatar
+                initials={initialsOf(name)}
+                label={name}
+                size="lg"
+                className={fill.className}
+              />
+            )}
+            {name}
+          </span>
+        }
+        meta={
+          <>
+            {email}
             <Badge tone={emailVerified ? "success" : "neutral"}>
               {emailVerified ? "verified" : "unverified"}
             </Badge>
-          </dd>
-        </dl>
-        <p className="settings-field-hint">{SETTINGS_STRINGS.accountReadOnlyNote}</p>
-      </div>
-    </SettingsPanel>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={SETTINGS_STRINGS.accountCopyEmailAction}
+              title={SETTINGS_STRINGS.accountCopyEmailAction}
+              onClick={() => void copyEmail(email)}
+            >
+              <Copy />
+            </Button>
+          </>
+        }
+        actions={
+          <>
+            <Button variant="outline" size="sm" asChild>
+              <a href={FEEDBACK_URL} target="_blank" rel="noreferrer">
+                <ChatCircleDots /> Send Feedback
+              </a>
+            </Button>
+            {onSignOut !== undefined ? (
+              <Button variant="outline" size="sm" onClick={onSignOut}>
+                <SignOut /> {SETTINGS_STRINGS.accountSignOutAction}
+              </Button>
+            ) : null}
+          </>
+        }
+      />
+      <p className="settings-field-hint">{SETTINGS_STRINGS.accountReadOnlyNote}</p>
+    </SettingsGroup>
   );
 }
 
@@ -151,22 +146,24 @@ export function AccountSectionView({
 export function AppearanceSection() {
   const theme = useTheme();
   return (
-    <SettingsPanel title={SETTINGS_STRINGS.appearanceSectionTitle}>
-      <label className="settings-form-field settings-form-field-inline">
-        <span>{SETTINGS_STRINGS.appearanceThemeLabel}</span>
-        <Select
-          className="settings-appearance-select"
-          value={theme}
-          onChange={(event) => {
-            const next = event.target.value;
-            if (isTheme(next)) setTheme(next);
-          }}
-        >
-          <option value="light">{SETTINGS_STRINGS.themeLight}</option>
-          <option value="dark">{SETTINGS_STRINGS.themeDark}</option>
-          <option value="canvas">{SETTINGS_STRINGS.themeCanvas}</option>
-        </Select>
-      </label>
-    </SettingsPanel>
+    <SettingsGroup title={SETTINGS_STRINGS.appearanceSectionTitle}>
+      <SettingsRow
+        title={SETTINGS_STRINGS.appearanceThemeLabel}
+        actions={
+          <Segmented
+            label={SETTINGS_STRINGS.appearanceThemeLabel}
+            value={theme}
+            options={[
+              { value: "light", label: SETTINGS_STRINGS.themeLight },
+              { value: "dark", label: SETTINGS_STRINGS.themeDark },
+              { value: "canvas", label: SETTINGS_STRINGS.themeCanvas },
+            ]}
+            onChange={(next) => {
+              if (isTheme(next)) setTheme(next);
+            }}
+          />
+        }
+      />
+    </SettingsGroup>
   );
 }

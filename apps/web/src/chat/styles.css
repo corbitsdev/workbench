@@ -1198,6 +1198,28 @@
   overflow: hidden;
 }
 
+.chat-block-attention {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--action) 55%, transparent),
+    0 4px 16px -4px color-mix(in srgb, var(--action) 30%, transparent);
+}
+
+.chat-block-approve-who {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.chat-block-approve-tool {
+  margin: 0.4rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+
+.chat-block-approve-sep {
+  flex: 1;
+}
+
 .chat-block-head {
   display: flex;
   align-items: center;
@@ -3932,4 +3954,12 @@
 .chat-composer-mention-detail {
   color: var(--muted-foreground);
   font-size: 0.75rem;
+}
+
+.chat-block-resolved {
+  padding: 0.55rem 0.9rem;
+}
+
+.chat-block-resolved .chat-block-approve-status {
+  margin: 0;
 }
