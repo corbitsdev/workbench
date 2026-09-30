@@ -1,32 +1,11 @@
 // No bench switcher: a multi-bench install still resolves via the command
 // palette's hidden "Switch workbench" action.
 
-import {
-  Button,
-  Menu,
-  MenuContent,
-  MenuItem,
-  MenuTrigger,
-  SidebarPanel,
-  SidebarPanelBody,
-  SidebarPanelFooter,
-} from "@corbits/react-ui";
-import {
-  FlowArrow,
-  FolderOpen,
-  Lightning,
-  Plugs,
-  Plus,
-  Robot,
-  SlidersHorizontal,
-} from "@/lib/icons";
-import { useState } from "react";
+import { Button, SidebarPanel, SidebarPanelBody, SidebarPanelFooter } from "@corbits/react-ui";
+import { MagnifyingGlass, Plus, SlidersHorizontal } from "@/lib/icons";
 
-import { useBench } from "../bench-context";
-import { CreateAgentPanel } from "../pages/create-agent-panel";
-import { AGENTS_PATH_PREFIX } from "../path-ids";
+import { openCommandPalette } from "../command-palette-open-store";
 import { matchesRoute, NEW_WORKBENCH_PATH, SETTINGS_PATH } from "../routes";
-import { SidebarBrandMark } from "./brand-mark";
 import { WorkbenchList } from "./workbench-list";
 
 export function Sidebar({
@@ -36,117 +15,36 @@ export function Sidebar({
   readonly path: string;
   readonly onNavigate: (to: string) => void;
 }) {
-  const { selectedTenantId } = useBench();
-  const [createAgentOpen, setCreateAgentOpen] = useState(false);
-
   return (
-    <SidebarPanel
-      className="shell-sidebar"
-      data-testid="shell-sidebar"
-      aria-label="Agents and Channels"
-    >
-      {/* Owner's shape: logo with "+" on the first row, the search box
-          (inside the list) below, then Agents and Channels. No
-          header icon cluster — search is the box. The "+" now opens a
-          dropdown (New Agent / New Workbench) instead of
-          jumping straight to New chat. */}
+    <SidebarPanel className="shell-sidebar" data-testid="shell-sidebar" aria-label="Workbenches">
       <div className="shell-sidebar-brand-row">
-        <SidebarBrandMark />
-        <Menu>
-          <MenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label="Create new"
-              title="Create new"
-              data-tour="new-workbench-button"
-            >
-              <Plus />
-            </Button>
-          </MenuTrigger>
-          <MenuContent align="end">
-            <MenuItem
-              disabled={selectedTenantId === null}
-              onSelect={() => setCreateAgentOpen(true)}
-            >
-              New Agent
-            </MenuItem>
-            <MenuItem onSelect={() => onNavigate(NEW_WORKBENCH_PATH)}>New Workbench</MenuItem>
-          </MenuContent>
-        </Menu>
+        <span className="shell-sidebar-wordmark">Workbench</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label="Search"
+          title="Search"
+          onClick={openCommandPalette}
+        >
+          <MagnifyingGlass />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label="New workbench"
+          title="New workbench"
+          data-tour="new-workbench-button"
+          onClick={() => onNavigate(NEW_WORKBENCH_PATH)}
+        >
+          <Plus />
+        </Button>
       </div>
-      {/* Agents and Channels labels render inside the list, below its
-          search box (owner's order: logo · search · sections · rows). */}
 
       <SidebarPanelBody data-tour="sidebar-list">
         <WorkbenchList path={path} onNavigate={onNavigate} />
       </SidebarPanelBody>
 
-      {selectedTenantId === null ? null : (
-        <CreateAgentPanel
-          open={createAgentOpen}
-          onOpenChange={setCreateAgentOpen}
-          tenantId={selectedTenantId}
-          onCreated={() => onNavigate(AGENTS_PATH_PREFIX)}
-        />
-      )}
-
       <SidebarPanelFooter>
-        {/* Footer order: Artifacts, Skills, Tools, Workflows, Agents, then
-            one Settings row — Insights and the account menu (avatar, name,
-            sign out) now live inside Settings itself, not as separate
-            sidebar affordances. */}
-        <button
-          type="button"
-          className="shell-sidebar-footer-row"
-          data-active={matchesRoute("/artifacts", path) ? "true" : undefined}
-          aria-current={matchesRoute("/artifacts", path) ? "page" : undefined}
-          onClick={() => onNavigate("/artifacts")}
-        >
-          <FolderOpen />
-          <span>Artifacts</span>
-        </button>
-        <button
-          type="button"
-          className="shell-sidebar-footer-row"
-          data-active={matchesRoute("/skills", path) ? "true" : undefined}
-          aria-current={matchesRoute("/skills", path) ? "page" : undefined}
-          onClick={() => onNavigate("/skills")}
-        >
-          <Lightning />
-          <span>Skills</span>
-        </button>
-        <button
-          type="button"
-          className="shell-sidebar-footer-row"
-          data-active={matchesRoute("/tools", path) ? "true" : undefined}
-          aria-current={matchesRoute("/tools", path) ? "page" : undefined}
-          onClick={() => onNavigate("/tools")}
-        >
-          <Plugs />
-          <span>Tools</span>
-        </button>
-        <button
-          type="button"
-          className="shell-sidebar-footer-row"
-          data-active={matchesRoute("/workflows", path) ? "true" : undefined}
-          aria-current={matchesRoute("/workflows", path) ? "page" : undefined}
-          onClick={() => onNavigate("/workflows")}
-        >
-          <FlowArrow />
-          <span>Workflows</span>
-        </button>
-        <button
-          type="button"
-          className="shell-sidebar-footer-row"
-          data-active={matchesRoute("/agents", path) ? "true" : undefined}
-          aria-current={matchesRoute("/agents", path) ? "page" : undefined}
-          onClick={() => onNavigate("/agents")}
-        >
-          <Robot />
-          <span>Agents</span>
-        </button>
-
         <button
           type="button"
           className="shell-sidebar-footer-row"

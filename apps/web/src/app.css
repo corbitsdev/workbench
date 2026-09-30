@@ -1181,8 +1181,12 @@ select:disabled,
   justify-content: space-between;
   padding-right: 0.35rem;
 }
-.shell-sidebar-brand-row .shell-sidebar-brand-mark {
-  width: auto;
+.shell-sidebar-wordmark {
+  flex: 1;
+  padding-left: 0.5rem;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: -0.01em;
 }
 
 .shell-sidebar-account-btn {
