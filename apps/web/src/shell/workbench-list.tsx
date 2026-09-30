@@ -139,10 +139,10 @@ function WorkerGroup({
   readonly onNavigate: (to: string) => void;
 }) {
   const { workers } = useBenchWorkers();
-  if (workers.length === 0) return null;
   return (
     <div className="panel-stack-group">
       <SectionLabel>Workers</SectionLabel>
+      {workers.length === 0 ? <p className="shell-panel-list-empty">No workers yet</p> : null}
       {workers.map((worker) => {
         const to = `/workers/${worker.agent.id}`;
         return (

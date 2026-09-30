@@ -1,51 +1,83 @@
 .new-wrap {
-  width: min(42rem, 100%);
-  margin: 0 auto;
-  padding: 18vh 1.5rem 3rem;
+  width: 100%;
+  max-width: 680px;
+  margin: 16vh auto 0;
+  padding: 0 24px;
 }
 
 .new-title {
-  margin: 0 0 1.5rem;
+  margin: 0 0 24px;
   text-align: center;
-  font-size: 1.75rem;
-  font-weight: 650;
+  font-size: 30px;
+  font-weight: 800;
   letter-spacing: -0.02em;
 }
 
 .new-composer {
-  border: 1px solid var(--border);
-  border-radius: 0.875rem;
-  background: var(--background);
-  box-shadow: 0 1px 2px rgb(43 38 39 / 5%);
+  padding: 16px 16px 10px 18px;
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: var(--raised);
+  transition: box-shadow 150ms ease-out;
 }
 
 .new-composer:focus-within {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 20%, transparent);
+  box-shadow:
+    0 0 0 1px var(--line-strong),
+    0 6px 20px -6px rgb(0 0 0 / 18%);
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 .new-composer-input {
   display: block;
   width: 100%;
+  min-height: 32px;
   resize: none;
   border: 0;
   outline: none;
   background: transparent;
   font: inherit;
-  font-size: 1rem;
+  font-size: 15px;
   line-height: 1.5;
-  padding: 1rem 1.25rem 0.5rem;
+  padding: 5px 4px;
 }
 
 .new-composer-row {
   display: flex;
-  justify-content: flex-end;
-  padding: 0.5rem 0.75rem 0.75rem;
+  align-items: center;
+  gap: 4px;
+  padding-top: 14px;
+}
+
+.new-composer-spacer {
+  flex: 1;
+}
+
+.new-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
+.new-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.new-icon-btn svg {
+  width: 18px;
+  height: 18px;
 }
 
 .new-hint {
-  margin: 1rem 0 0;
+  margin: 16px 0 0;
   text-align: center;
-  font-size: 0.8125rem;
+  font-size: 13px;
   color: var(--muted-foreground);
 }

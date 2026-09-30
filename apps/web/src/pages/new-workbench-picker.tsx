@@ -8,6 +8,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { reportError } from "@corbits/error-sink";
 
+import { Microphone, Paperclip } from "@/lib/icons";
 import { useBench } from "../bench-context";
 import { workbenchKeys } from "../chat-path";
 import { NEW_WORKBENCH_TITLE, titleFromFirstMessage } from "@/auto-workbench-title";
@@ -81,7 +82,7 @@ export function NewWorkbenchPickerRoute() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <StageTopBar crumbs={[{ label: "Workbenches" }, { label: "New" }]} />
+      <StageTopBar crumbs={[{ label: "Workbench" }, { label: "New" }]} />
       <div className="new-wrap">
         {create.isPending ? (
           // `delayMs={0}`: a genuine wait the instant the person sends.
@@ -102,7 +103,7 @@ export function NewWorkbenchPickerRoute() {
                 aria-label="What should we work on?"
                 placeholder="Describe the job — your co-worker sets up the rest"
                 value={prompt}
-                rows={3}
+                rows={1}
                 autoFocus
                 onChange={(event) => setPrompt(event.target.value)}
                 onKeyDown={(event) => {
@@ -113,6 +114,27 @@ export function NewWorkbenchPickerRoute() {
                 }}
               />
               <div className="new-composer-row">
+                {/* Attach: no stock attachment path exists on the new-workbench message. */}
+                <button
+                  type="button"
+                  className="new-icon-btn"
+                  aria-label="Attach"
+                  title="Attachments arrive once a workbench exists"
+                  disabled
+                >
+                  <Paperclip />
+                </button>
+                {/* Dictate: voice mode belongs to an open workbench, so it is unavailable here. */}
+                <button
+                  type="button"
+                  className="new-icon-btn"
+                  aria-label="Dictate"
+                  title="Voice starts inside a workbench"
+                  disabled
+                >
+                  <Microphone />
+                </button>
+                <span className="new-composer-spacer" />
                 <Button
                   type="submit"
                   aria-label="Start this workbench"
