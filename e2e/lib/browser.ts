@@ -4,11 +4,11 @@
 // local Chrome. A UI test file calls `bootBrowserApp()` once and gets a
 // fresh page per test via `newPage()`.
 import { afterAll, beforeAll, describe } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { dbGate } from "./db-gate";
-import { installDisposableHubDataDir } from "./disposable-hub-data-dir";
+import { createDisposableHubDataDir } from "./disposable-hub-data-dir";
 import { REPO_ROOT } from "./database-url";
 
 const DEFAULT_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -54,9 +54,47 @@ async function ensureWebBuild(): Promise<void> {
   if ((await proc.exited) !== 0) throw new Error("apps/web build failed");
 }
 
+// The process provisioner deliberately lets sidecars outlive the hub (they
+// are recovered from pid files on the next boot), so a test hub must reap
+// its own or they redial a dead port forever.
+function killSidecars(hubDataDir: string): void {
+  const pidFiles: string[] = [];
+  try {
+    for (const dir of readdirSync(hubDataDir)) {
+      if (!dir.startsWith("process-provisioner")) continue;
+      const root = path.join(hubDataDir, dir, "allocations");
+      for (const alloc of readdirSync(root)) {
+        for (const unit of readdirSync(path.join(root, alloc))) {
+          pidFiles.push(path.join(root, alloc, unit, "sidecar.pid"));
+        }
+      }
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  for (const file of pidFiles) {
+    let pid: number;
+    try {
+      pid = Number(readFileSync(file, "utf8").trim());
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+      throw error;
+    }
+    if (!Number.isInteger(pid) || pid <= 0) continue;
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+    }
+  }
+}
+
 /** Registers beforeAll/afterAll that boot and tear down hub + web + Chrome. */
 export function bootBrowserApp(): () => BrowserApp {
-  installDisposableHubDataDir();
+  let dataDir: ReturnType<typeof createDisposableHubDataDir> | undefined;
+  let hub:
+    | Awaited<ReturnType<typeof import("../../apps/hub/src/server").createHubServer>>
+    | undefined;
   let app: BrowserApp | undefined;
   let browser: Browser | undefined;
   let server: ReturnType<typeof Bun.serve> | undefined;
@@ -64,6 +102,8 @@ export function bootBrowserApp(): () => BrowserApp {
   beforeAll(async () => {
     const executablePath = chromePath();
     if (executablePath === undefined) throw new Error("Chrome not found");
+    // Per file, at run time: every file boots against its own data dir.
+    dataDir = createDisposableHubDataDir();
     await ensureWebBuild();
 
     const url = new URL(process.env["DATABASE_URL"] ?? "");
@@ -85,12 +125,13 @@ export function bootBrowserApp(): () => BrowserApp {
     process.env["PORT"] = String(server.port);
 
     const { createHubServer } = await import("../../apps/hub/src/server");
-    const hub = await createHubServer();
+    hub = await createHubServer();
+    const booted = hub;
     server.reload({
-      websocket: hub.websocket as Bun.WebSocketHandler<unknown>,
+      websocket: booted.websocket as Bun.WebSocketHandler<unknown>,
       fetch: async (req, srv) => {
         const { pathname } = new URL(req.url);
-        if (pathname.startsWith("/api") || pathname === "/status") return hub.fetch(req, srv);
+        if (pathname.startsWith("/api") || pathname === "/status") return booted.fetch(req, srv);
         const file = Bun.file(path.join(DIST_DIR, pathname));
         if (pathname !== "/" && (await file.exists())) return new Response(file);
         return new Response(Bun.file(path.join(DIST_DIR, "index.html")));
@@ -121,6 +162,9 @@ export function bootBrowserApp(): () => BrowserApp {
   afterAll(async () => {
     await browser?.close();
     await server?.stop(true);
+    await hub?.shutdown();
+    if (dataDir !== undefined) killSidecars(dataDir.hubDataDir);
+    dataDir?.restore();
   });
 
   return () => {
