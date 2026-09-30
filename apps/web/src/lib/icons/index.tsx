@@ -15,6 +15,7 @@ export {
   ArrowUp,
   ArrowUpDown as ArrowsDownUp,
   Bell,
+  PanelLeft,
   BookMarked as BookBookmark,
   Bot as Robot,
   Captions,
