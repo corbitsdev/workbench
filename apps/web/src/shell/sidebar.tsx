@@ -4,6 +4,7 @@
 import { Button, SidebarPanel, SidebarPanelBody } from "@corbits/react-ui";
 import { MagnifyingGlass, Plus } from "@/lib/icons";
 
+import "./chrome.css";
 import { openCommandPalette } from "../command-palette-open-store";
 import { NEW_WORKBENCH_PATH } from "../routes";
 import { SidebarFooter } from "./sidebar-footer";
