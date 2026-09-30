@@ -2,11 +2,12 @@
 // authoritative. No `ApprovalActions` port: falls back to pre-round-trip
 // framing, fixed disabled buttons, no fetch.
 
-import { Button, toast } from "@corbits/react-ui";
+import { Button } from "@corbits/react-ui";
 import type { ApproveBlockData } from "../wire/blocks";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { CorbitAvatar } from "../avatar";
 import { CHAT_STRINGS } from "../strings";
 import { BlockCard } from "./block-card";
 import type {
@@ -14,9 +15,7 @@ import type {
   ApprovalLiveStatus,
   ApprovalStatusQuery,
   PlatformApprovalDetail,
-  StandingConsentOffer,
 } from "./approval-actions";
-import type { DecisionInFlight } from "./approve-card-state";
 import { deriveApproveCardView } from "./approve-card-state";
 
 function statusLabel(status: ApprovalLiveStatus): string {
@@ -34,6 +33,23 @@ function statusLabel(status: ApprovalLiveStatus): string {
   }
 }
 
+type Choice = "once" | "always" | "ask" | "reject";
+
+function resolvedLabel(choice: Choice | null, status: ApprovalLiveStatus): string {
+  switch (choice) {
+    case "once":
+      return CHAT_STRINGS.blockApproveResolvedOnce;
+    case "always":
+      return CHAT_STRINGS.blockApproveResolvedAlways;
+    case "ask":
+      return CHAT_STRINGS.blockApproveResolvedAskEvery;
+    case "reject":
+      return CHAT_STRINGS.blockApproveResolvedDenied;
+    case null:
+      return statusLabel(status);
+  }
+}
+
 /** The platform's own account of the request -- always rendered first and
  * unmissable whenever it's available, so a human never decides against
  * only the agent's framing. */
@@ -41,10 +57,18 @@ function PlatformDetail({ detail }: { readonly detail: PlatformApprovalDetail })
   const args = Object.entries(detail.arguments);
   return (
     <div className="chat-block-approve-platform">
-      <p className="chat-block-approve-platform-requester">
-        {CHAT_STRINGS.blockApprovePlatformRequestedBy(detail.agentName)}
-      </p>
-      <p className="chat-block-approve-platform-headline">{detail.headline}</p>
+      <div className="chat-block-approve-who">
+        <CorbitAvatar ariaLabel={detail.agentName} size="sm" />
+        <div>
+          <p className="chat-block-approve-platform-requester">
+            {CHAT_STRINGS.blockApprovePlatformRequestedBy(detail.agentName)}
+          </p>
+          <p className="chat-block-approve-platform-headline">{detail.headline}</p>
+        </div>
+      </div>
+      {detail.toolName !== undefined && (
+        <p className="chat-block-approve-tool">{detail.toolName}</p>
+      )}
       {args.length > 0 && (
         <dl className="chat-block-approve-args">
           {args.map(([label, value]) => (
@@ -60,52 +84,55 @@ function PlatformDetail({ detail }: { readonly detail: PlatformApprovalDetail })
 }
 
 function ApproveButtons({
-  actionLabel,
   deciding,
-  onApprove,
-  onDeny,
-  standingConsent,
-  allowingStanding,
-  onAllowStanding,
+  onDecide,
 }: {
-  readonly actionLabel: string;
-  readonly deciding: DecisionInFlight;
-  readonly onApprove: () => void;
-  readonly onDeny: () => void;
-  readonly standingConsent: StandingConsentOffer | undefined;
-  readonly allowingStanding: boolean;
-  readonly onAllowStanding: (() => void) | null;
+  readonly deciding: Choice | null;
+  readonly onDecide: (choice: Choice) => void;
 }) {
   const busy = deciding !== null;
   return (
-    <div className="chat-block-actions-group">
-      <div className="chat-block-actions">
-        <Button type="button" variant="primary" disabled={busy} onClick={onApprove}>
-          {deciding === "approve" ? CHAT_STRINGS.blockApproveApproving : actionLabel}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          className="btn-danger-ghost"
-          disabled={busy}
-          onClick={onDeny}
-        >
-          {deciding === "reject"
-            ? CHAT_STRINGS.blockApproveRejecting
-            : CHAT_STRINGS.blockDenyAction}
-        </Button>
-      </div>
-      {standingConsent !== undefined && onAllowStanding !== null && (
-        <Button
-          type="button"
-          variant="link"
-          size="sm"
-          disabled={busy || allowingStanding}
-          onClick={onAllowStanding}
-        >
-          {CHAT_STRINGS.blockApproveAllowStanding(standingConsent)}
-        </Button>
-      )}
+    <div className="chat-block-actions chat-block-approve-choices">
+      <Button
+        type="button"
+        variant="primary"
+        size="sm"
+        disabled={busy}
+        onClick={() => onDecide("once")}
+      >
+        {deciding === "once"
+          ? CHAT_STRINGS.blockApproveApproving
+          : CHAT_STRINGS.blockApproveAllowOnce}
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={busy}
+        onClick={() => onDecide("always")}
+      >
+        {CHAT_STRINGS.blockApproveAlways}
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={busy}
+        onClick={() => onDecide("ask")}
+      >
+        {CHAT_STRINGS.blockApproveAskEvery}
+      </Button>
+      <span className="chat-block-approve-sep" />
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="btn-danger-ghost"
+        disabled={busy}
+        onClick={() => onDecide("reject")}
+      >
+        {deciding === "reject" ? CHAT_STRINGS.blockApproveRejecting : CHAT_STRINGS.blockDenyAction}
+      </Button>
     </div>
   );
 }
@@ -133,23 +160,27 @@ export function ApproveBlockView({
   // Never trust a decision response (or a local guess) over the platform's
   // own state — every outcome, success or failure alike, re-reads the
   // status above and renders only what comes back.
+  const [choice, setChoice] = useState<Choice | null>(null);
   const decideMutation = useMutation({
-    mutationFn: (kind: "approve" | "reject") => {
+    mutationFn: (picked: Choice) => {
       if (actions === undefined) throw new Error("approval actions unavailable");
-      const call = kind === "approve" ? actions.approve : actions.reject;
-      return call(data.approvalId);
+      switch (picked) {
+        case "reject":
+          return actions.reject(data.approvalId);
+        case "always":
+          return actions.allowStanding(data.approvalId);
+        case "once":
+        case "ask":
+          return actions.approve(data.approvalId);
+      }
     },
-    onSuccess: (result, kind) => {
+    onSuccess: (result, picked) => {
       if (result.kind === "resolved") {
         setResolvedElsewhere(false);
-        toast(
-          kind === "approve"
-            ? CHAT_STRINGS.blockApproveStatusApproved
-            : CHAT_STRINGS.blockApproveStatusRejected,
-        );
+        setChoice(picked);
       } else if (result.kind === "conflict") {
         // Someone/something else resolved this first. There is nothing to
-        // retry — the refreshed terminal status speaks, with a calmer note
+        // retry -- the refreshed terminal status speaks, with a calmer note
         // than a bare error.
         setResolvedElsewhere(true);
       } else {
@@ -166,47 +197,18 @@ export function ApproveBlockView({
     },
   });
 
-  const allowStandingMutation = useMutation({
-    mutationFn: () => {
-      if (actions?.allowStanding === undefined) {
-        throw new Error("standing approval unavailable");
-      }
-      return actions.allowStanding(data.approvalId);
-    },
-    onSuccess: (result) => {
-      if (result.kind === "resolved") {
-        toast(CHAT_STRINGS.blockApproveStatusApproved);
-      } else if (result.kind !== "conflict") {
-        setDecisionError(
-          result.kind === "forbidden"
-            ? CHAT_STRINGS.blockApproveActionForbidden
-            : CHAT_STRINGS.blockApproveActionError,
-        );
-      }
-    },
-    onSettled: () => {
-      void status.refetch();
-    },
-  });
+  const deciding: Choice | null = decideMutation.isPending ? decideMutation.variables : null;
 
-  const deciding: DecisionInFlight = decideMutation.isPending ? decideMutation.variables : null;
-  const allowingStanding = allowStandingMutation.isPending;
-
-  function decide(kind: "approve" | "reject") {
+  function decide(picked: Choice) {
     if (actions === undefined) return;
     setDecisionError(null);
-    decideMutation.mutate(kind);
-  }
-
-  function allowStanding() {
-    if (actions?.allowStanding === undefined) return;
-    allowStandingMutation.mutate();
+    decideMutation.mutate(picked);
   }
 
   const view = deriveApproveCardView({
     wired: actions !== undefined,
     live,
-    deciding,
+    deciding: deciding === null ? null : deciding === "reject" ? "reject" : "approve",
     decisionError,
     resolvedElsewhere,
   });
@@ -216,8 +218,22 @@ export function ApproveBlockView({
       ? view.detail
       : null;
 
+  if (view.kind === "resolved") {
+    return (
+      <div className="chat-block chat-block-resolved">
+        <p className="chat-block-approve-status" data-status={view.status}>
+          {resolvedLabel(choice, view.status)}
+          {detail?.toolName !== undefined ? ` · ${detail.toolName}` : ""}
+        </p>
+        {view.resolvedElsewhere && (
+          <p className="chat-block-text">{CHAT_STRINGS.blockApproveConflictNote}</p>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <BlockCard title={data.title}>
+    <BlockCard title={data.title} attention={view.kind === "actionable"}>
       {detail !== null && <PlatformDetail detail={detail} />}
       {detail?.consequence !== undefined && (
         <p className="chat-block-text chat-block-consequence">{detail.consequence}</p>
@@ -261,16 +277,6 @@ export function ApproveBlockView({
           <p className="chat-block-text">{CHAT_STRINGS.blockApproveSpectatorNote}</p>
         </>
       )}
-      {view.kind === "resolved" && (
-        <>
-          <p className="chat-block-approve-status" data-status={view.status}>
-            {statusLabel(view.status)}
-          </p>
-          {view.resolvedElsewhere && (
-            <p className="chat-block-text">{CHAT_STRINGS.blockApproveConflictNote}</p>
-          )}
-        </>
-      )}
       {(view.kind === "actionable" || view.kind === "undetermined") && (
         <>
           {view.kind === "undetermined" && (
@@ -281,15 +287,7 @@ export function ApproveBlockView({
               {view.error}
             </p>
           )}
-          <ApproveButtons
-            actionLabel={detail?.actionVerb ?? CHAT_STRINGS.blockApproveAction}
-            deciding={view.deciding}
-            onApprove={() => decide("approve")}
-            onDeny={() => decide("reject")}
-            standingConsent={detail?.standingConsent}
-            allowingStanding={allowingStanding}
-            onAllowStanding={actions?.allowStanding !== undefined ? allowStanding : null}
-          />
+          <ApproveButtons deciding={deciding} onDecide={decide} />
         </>
       )}
     </BlockCard>

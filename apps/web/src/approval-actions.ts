@@ -78,6 +78,10 @@ export function createChatApprovalActions(
               agentName: result.item.agentName,
               headline: result.item.headline,
               arguments: result.item.arguments,
+              ...(result.item.toolName !== undefined ? { toolName: result.item.toolName } : {}),
+              ...(result.item.argumentsSummary !== undefined
+                ? { argumentsSummary: result.item.argumentsSummary }
+                : {}),
             },
           };
         case "forbidden":
@@ -91,6 +95,14 @@ export function createChatApprovalActions(
     approve(approvalId) {
       return resolve(
         () => approveApproval(tenantId, approvalId),
+        "approved",
+        CHAT_STRINGS.blockApproveActionForbidden,
+        CHAT_STRINGS.blockApproveActionError,
+      );
+    },
+    allowStanding(approvalId) {
+      return resolve(
+        () => approveApproval(tenantId, approvalId, "always"),
         "approved",
         CHAT_STRINGS.blockApproveActionForbidden,
         CHAT_STRINGS.blockApproveActionError,

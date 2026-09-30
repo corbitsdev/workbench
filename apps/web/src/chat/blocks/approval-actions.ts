@@ -3,12 +3,6 @@
 // Never invented here — mirrors `ApprovalResponse.status`.
 export type ApprovalLiveStatus = "pending" | "approved" | "rejected" | "timeout" | "expired";
 
-// Absent means "not offerable here," never "offerable but hidden."
-export type StandingConsentOffer = {
-  readonly verb: string;
-  readonly resource: string;
-};
-
 // The authoritative "what am I approving" — the block's own title/body is
 // the agent's framing and never a substitute for it.
 export type PlatformApprovalDetail = {
@@ -22,7 +16,10 @@ export type PlatformApprovalDetail = {
   // Replaces a risk-level badge, which only repeated the agent's own
   // framing back at the human deciding against it.
   readonly consequence?: string;
-  readonly standingConsent?: StandingConsentOffer;
+  /** The tool being called, when the approval's snapshot names it. */
+  readonly toolName?: string;
+  /** Compact plain-text rendering of the call's arguments. */
+  readonly argumentsSummary?: string;
 };
 
 // See docs/chat-wire-contract.md for why `forbidden` is distinct from
@@ -56,7 +53,6 @@ export type ApprovalActions = {
   readonly approve: (approvalId: string) => Promise<ApprovalDecisionResult>;
   /** Calls the same native `/reject` route Inbox calls. */
   readonly reject: (approvalId: string) => Promise<ApprovalDecisionResult>;
-  // Optional: `hub-api` rejects `scope: "always"` today, so omit until a
-  // host can wire it to something real.
-  readonly allowStanding?: (approvalId: string) => Promise<ApprovalDecisionResult>;
+  /** Stock `/approve` with scope "always": the tool stops asking for this run. */
+  readonly allowStanding: (approvalId: string) => Promise<ApprovalDecisionResult>;
 };
