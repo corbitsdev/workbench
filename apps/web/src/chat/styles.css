@@ -1035,11 +1035,10 @@
 /* The owner asked for own messages back on the right, evaluated
    per viewer (`isOwn` in timeline.tsx already keys off `currentUser`, never
    a fixed account) — reversing flat, no-alignment timeline. Still
-   no bubble, no border, no background fill: only the row mirrors, so the
-   avatar sits on the right and the header/text shrink to their own content
+   the row mirrors, so the avatar sits on the right and the header/text shrink to their own content
    width against that same edge instead of stretching the full row. `.chat-
    block` (approve/connect-service/connect-github/poll/form/steps) and
-   `.chat-tool-activity` chips render as siblings of the bubble, not inside
+   `.chat-trace` rows render as siblings of the bubble, not inside
    it, and deliberately stay anchored under the left avatar gutter for every
    author — mirroring a stack of tool chips or an approval card to the right
    read as clutter next to the composer and doesn't match any other
@@ -2109,279 +2108,193 @@
   color: var(--muted-foreground);
 }
 
-/* Tool-use chips (conforming to mock-spec §12.3): inline chips
-   stacked under the agent's prose, one per call — never collapsibles.
-   `.chat-tool-activity` is the stack; each `.chat-tool-activity-row` wraps
-   one chip plus optional detail. The chip hugs its content so a wall of
-   calls reads as short tags, not a list. Radius follows `--radius`. */
-.chat-tool-activity {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.5rem;
-  padding: 0.15rem 0;
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
+/* Trace: one collapsed row per turn, expanding to each step (DESIGN.md
+   "Messages and cards"). */
+.chat-trace {
+  margin-top: 10px;
   max-width: 640px;
-  font-size: 0.8125rem;
-  color: var(--muted-foreground);
+  overflow: hidden;
+  border-radius: var(--r-lg);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 13px;
 }
 
-.chat-tool-activity-live {
-  gap: 0.4rem;
-  padding: 0.35rem 0.7rem;
-  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
-}
-
-/* The row is the outer wrapper — chip on top, its optional detail
-   underneath. It takes the message column so a long chip can ellipsize
-   against a real width instead of a shrink-wrapped max-content cycle. */
-.chat-tool-activity-row {
+.chat-trace-sum {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.3rem;
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.chat-tool-activity-row[data-indented="true"] {
-  margin-left: 0.18rem;
-}
-
-.chat-tool-activity-chip {
-  display: flex;
-  flex-direction: row;
   align-items: center;
-  gap: 0.5rem;
-  box-sizing: border-box;
-  width: fit-content;
-  min-width: 0;
-  max-width: 100%;
-  flex-wrap: nowrap;
-  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
-  background: color-mix(in srgb, var(--muted) 72%, transparent);
-  border-radius: var(--radius);
-  padding: 0.35rem 0.75rem 0.35rem 0.4rem;
-  transition:
-    transform var(--duration-standard, 180ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
-    background-color var(--duration-standard, 180ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
-    border-color var(--duration-standard, 180ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)),
-    color var(--duration-standard, 180ms) var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
-}
-
-.chat-tool-activity-trigger {
-  position: relative;
-  color: inherit;
+  gap: 8px;
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition: background-color 120ms ease;
 }
 
-/* The visible chip can stay compact; the hit area cannot — a pseudo-element
-   pads the trigger out to a 40px tall target without changing the chip's
-   footprint in the transcript. */
-.chat-tool-activity-trigger::before {
-  content: "";
-  position: absolute;
-  inset: 50% 0 auto 0;
-  transform: translateY(-50%);
-  min-height: 2.5rem;
+.chat-trace-sum:hover {
+  background: var(--hover);
 }
 
-.chat-tool-activity-trigger:hover {
-  color: var(--foreground);
+.chat-trace-sum:focus-visible {
+  outline: 2px solid var(--action);
+  outline-offset: -2px;
 }
 
-.chat-tool-activity-trigger:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-}
-
-.chat-tool-activity-trigger:active:not(:disabled) {
-  transform: scale(0.97);
-}
-
-.chat-tool-activity-tile {
-  display: inline-flex;
+.chat-trace-chev {
   flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: var(--radius);
-  font-size: 10px;
-  font-weight: 800;
-  color: #fff;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, white 22%, transparent);
-}
-
-.chat-tool-activity-glyph {
-  background: color-mix(in srgb, var(--muted) 88%, var(--foreground) 6%);
-  color: var(--muted-foreground);
-  font-size: 13px;
-  font-weight: 400;
-  box-shadow: none;
-}
-
-.chat-tool-activity-glyph svg {
   width: 1em;
   height: 1em;
+  color: var(--ink-3);
+  transition: transform 200ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
 }
 
-.chat-tool-activity-marker {
-  display: inline-flex;
+.chat-trace[data-open="true"] .chat-trace-chev {
+  transform: rotate(90deg);
+}
+
+.chat-trace-signal {
   flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--action);
+  animation: chat-trace-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes chat-trace-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.chat-trace-steps {
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+  background: var(--surface-sunk);
+}
+
+.chat-trace-step {
+  display: grid;
+  grid-template-columns: 28px 1fr auto auto;
   align-items: center;
-  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  padding: 5px 12px 5px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  text-align: left;
+}
+
+.chat-trace-step-button {
+  cursor: pointer;
+}
+
+.chat-trace-step-button:hover {
+  background: var(--hover);
+}
+
+.chat-trace-step-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-trace-step code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.chat-trace-glyph {
+  display: inline-flex;
+  justify-self: center;
+  color: var(--ink-3);
+}
+
+.chat-trace-time {
+  font-size: 12px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-trace-marker {
+  display: inline-flex;
   width: 12px;
   height: 12px;
-  color: var(--muted-foreground);
+  color: var(--ink-3);
 }
 
-.chat-tool-activity-marker svg {
+.chat-trace-marker svg {
   width: 12px;
   height: 12px;
 }
 
-.chat-tool-activity-marker[data-status="running"],
-.chat-tool-activity-marker[data-status="pending"] {
-  animation: chat-tool-activity-spin 0.8s linear infinite;
+.chat-trace-marker[data-status="running"],
+.chat-trace-marker[data-status="pending"] {
+  color: var(--action);
+  animation: chat-trace-spin 0.8s linear infinite;
 }
 
-.chat-tool-activity-marker[data-status="failed"] {
+.chat-trace-marker[data-status="failed"] {
   color: var(--destructive, #b42318);
 }
 
-@keyframes chat-tool-activity-spin {
+@keyframes chat-trace-spin {
   to {
     transform: rotate(360deg);
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .chat-tool-activity-chip,
-  .chat-tool-activity-trigger,
-  .chat-tool-activity-caret {
-    transition: none;
-  }
-
-  .chat-tool-activity-trigger:active:not(:disabled) {
-    transform: none;
-  }
-
-  .chat-tool-activity-marker[data-status="running"],
-  .chat-tool-activity-marker[data-status="pending"] {
-    animation: none;
-  }
-}
-
-.chat-tool-activity-row[data-status="failed"] .chat-tool-activity-phrase {
-  color: var(--destructive, #b42318);
-  opacity: 1;
-}
-
-.chat-tool-activity-row[data-status="running"] .chat-tool-activity-phrase,
-.chat-tool-activity-row[data-status="pending"] .chat-tool-activity-phrase {
-  color: var(--foreground);
-  opacity: 0.7;
-}
-
-.chat-tool-activity-phrase {
-  min-width: 0;
-  flex: 1 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.8125rem;
-  font-weight: 450;
-  letter-spacing: -0.01em;
-  color: var(--foreground);
-  opacity: 0.82;
-}
-
-.chat-tool-activity-status-word {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.chat-tool-activity-meta {
-  flex: none;
-  font-variant-numeric: tabular-nums;
-  opacity: 0.75;
-}
-
-/* Sized by font-size, never width/height (§1): the svg itself is 1em
-   square, so this class is the only place its size is set. */
-.chat-tool-activity-caret {
-  flex: none;
-  width: 1em;
-  height: 1em;
-  font-size: 11px;
-  color: var(--muted-foreground);
-  transition: transform var(--duration-standard, 180ms)
-    var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
-}
-
-.chat-tool-activity-caret[data-open="true"] {
-  transform: rotate(90deg);
-}
-
-.chat-tool-activity-detail {
+.chat-trace-detail {
   margin: 0;
-  padding: 0.1rem 0.75rem 0.15rem 2.15rem;
-  max-width: 100%;
+  padding: 2px 12px 6px 40px;
   max-height: 12rem;
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  color: var(--muted-foreground);
-  font-size: 0.8125rem;
+  color: var(--ink-3);
+  font-size: 12px;
 }
 
-.chat-tool-activity-thinking,
-.chat-tool-activity-retry {
-  padding: 0.15rem 0.15rem 0.15rem 2.15rem;
-  font-size: 0.8125rem;
-  color: var(--muted-foreground);
+.chat-trace-note {
+  padding: 5px 12px 5px 40px;
+  color: var(--ink-3);
 }
 
-.chat-tool-activity-thinking {
+.chat-trace-thinking {
   font-style: italic;
 }
 
-.chat-tool-activity-retry {
+.chat-trace-retry {
   color: var(--warn, #b7791f);
 }
 
-/* Chips animate in with the same entrance list rows use (§12.3 rule 4),
-   so they don't just pop into layout mid-stream. Only the chip itself
-   plays it — not the detail box that opens later, which has its own
-   moment. */
-@media (prefers-reduced-motion: no-preference) {
-  @keyframes chat-tool-activity-in {
-    from {
-      opacity: 0;
-      transform: translateY(4px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+.chat-trace-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-trace-chev,
+  .chat-trace-sum {
+    transition: none;
   }
 
-  .chat-tool-activity-chip {
-    animation: chat-tool-activity-in 160ms var(--chat-ease);
+  .chat-trace-signal,
+  .chat-trace-marker[data-status="running"],
+  .chat-trace-marker[data-status="pending"] {
+    animation: none;
   }
 }
 

@@ -10,13 +10,16 @@ function canonicalPath(pathname: string): string {
 const listeners = new Set<() => void>();
 
 let currentPath = canonicalPath(window.location.pathname);
+let currentSearch = window.location.search;
 if (currentPath !== window.location.pathname) {
   window.history.replaceState(null, "", currentPath);
 }
 
 function setPath(next: string): void {
-  if (next === currentPath) return;
+  const search = window.location.search;
+  if (next === currentPath && search === currentSearch) return;
   currentPath = next;
+  currentSearch = search;
   // Published on a microtask so a render-phase `navigateTo` (a forwarding
   // route resolving its target) never updates a subscriber mid-render.
   queueMicrotask(() => {
@@ -49,7 +52,7 @@ export function navigateTo(to: string): void {
   // A hop to the path already showing is a no-op, which is what makes a
   // render-phase `navigate` safe to run twice (StrictMode, a re-render):
   // it can never stack duplicate history entries.
-  if (canonical === currentPath) return;
+  if (canonical === currentPath && url.search === currentSearch) return;
   window.history.pushState(null, "", canonical === url.pathname ? to : canonical);
   setPath(canonical);
 }

@@ -15,15 +15,13 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  ViewToggle,
   artifactKindLabel,
   formatRelativeTime,
   toast,
   useListSelection,
 } from "@corbits/react-ui";
-import type { SelectionCheckboxState, UseListSelectionResult, ViewMode } from "@corbits/react-ui";
+import type { SelectionCheckboxState, UseListSelectionResult } from "@corbits/react-ui";
 import {
-  ArtifactCard,
   ArtifactRenderer,
   artifactMatchesLibraryKindSegment,
   filterArtifacts,
@@ -36,7 +34,14 @@ import {
 } from "@/library";
 import type { ArtifactSort, ArtifactSummary } from "@/library";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowsDownUp, ArrowSquareOut, LinkSimple as LinkIcon, Stack, X } from "@/lib/icons";
+import {
+  ArrowsDownUp,
+  ArrowSquareOut,
+  FileText,
+  LinkSimple as LinkIcon,
+  Stack,
+  X,
+} from "@/lib/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { describeApiError, ListSkeleton, QueryView, SignedOutNotice } from "@/lib/api-query";
@@ -50,6 +55,7 @@ import {
 } from "../api";
 import { isAdditiveSelectClick, isRowActivationKey } from "../activatable-row";
 import { useBench } from "../bench-context";
+import "./library-page.css";
 import { readLastWorkbenchId } from "../last-workbench";
 import { consumePendingLibraryUpload, LIBRARY_UPLOAD_EVENT } from "../library-upload";
 import { resolveLibraryWorkbenchScope } from "../library-workbench-scope";
@@ -57,6 +63,7 @@ import { Link } from "../navigation";
 import { ARTIFACTS_PATH_PREFIX } from "../path-ids";
 import { tenantKeys } from "../query-client";
 import { useBenchActivity } from "../shell/bench-activity";
+import { useFromBench } from "../shell/page-crumbs";
 import {
   artifactUploadToast,
   copyArtifactLinks,
@@ -154,7 +161,12 @@ function ArtifactRows({
                   rowLabel={artifact.title}
                 />
               </TableCell>
-              <TableCell className="font-medium">{artifact.title}</TableCell>
+              <TableCell className="font-medium">
+                <span className="library-row-title">
+                  <FileText aria-hidden="true" className="library-row-icon" />
+                  {artifact.title}
+                </span>
+              </TableCell>
               <TableCell className="text-muted-foreground">
                 {artifactKindLabel(artifact.kind)}
               </TableCell>
@@ -315,7 +327,6 @@ export function LibraryPage({
 }) {
   const [localQuery, setLocalQuery] = useState("");
   const [sort, setSort] = useState<ArtifactSort>("newest");
-  const [viewMode, setViewMode] = useState<ViewMode>("rows");
   const [localSelected, setLocalSelected] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -337,14 +348,6 @@ export function LibraryPage({
   // Deliberate: matches Finder/Sheets — clearing a filter doesn't lose
   // your picks, since `useListSelection` keeps them in internal state.
   const selection = useListSelection({ ids: visibleIds });
-
-  // Only rows has checkboxes, so a selection has nothing to anchor to in
-  // cards — clearing on view change is simpler than adding card checkboxes.
-  const [selectionViewMode, setSelectionViewMode] = useState(viewMode);
-  if (selectionViewMode !== viewMode) {
-    setSelectionViewMode(viewMode);
-    selection.clear();
-  }
 
   const openPicker = useCallback(() => {
     if (uploading === true) return;
@@ -464,7 +467,6 @@ export function LibraryPage({
                 ))}
               </MenuContent>
             </Menu>
-            <ViewToggle mode={viewMode} onChange={setViewMode} />
             {onUpload !== undefined ? (
               <Button size="sm" disabled={uploading === true} onClick={openPicker}>
                 {uploading === true ? "Uploading…" : "Upload"}
@@ -498,6 +500,7 @@ export function LibraryPage({
       <div className="flex min-h-0 flex-1">
         <div className="min-h-0 min-w-0 flex-1 overflow-auto">
           <PageShell width="full" className="page-fill">
+            <p className="page-lede px-4 sm:px-7">Everything your workers made. Yours to keep.</p>
             {artifacts.length === 0 ? (
               <RichEmptyState
                 icon={<Stack />}
@@ -510,7 +513,7 @@ export function LibraryPage({
                 title="Nothing matches"
                 description={`No file matches "${activeQuery}".`}
               />
-            ) : viewMode === "rows" ? (
+            ) : (
               <div className="px-4 pb-5 sm:px-7">
                 <ArtifactRows
                   artifacts={visible}
@@ -519,21 +522,6 @@ export function LibraryPage({
                   onSelect={(id) => select(id)}
                   selection={selection}
                 />
-              </div>
-            ) : (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-3 px-4 pb-5 sm:px-7">
-                {visible.map((artifact) => (
-                  <ArtifactCard
-                    key={artifact.id}
-                    artifact={artifact}
-                    selected={activeSelected === artifact.id}
-                    now={now}
-                    onSelect={() => select(artifact.id)}
-                    meta={{
-                      snippet: null,
-                    }}
-                  />
-                ))}
               </div>
             )}
           </PageShell>
@@ -595,7 +583,9 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   // recorded one — resolved via the same activity listing other
   // bench-scoped surfaces already fetch.
   const activity = useBenchActivity(selectedTenantId);
-  const lastWorkbenchId = selectedTenantId === null ? null : readLastWorkbenchId(selectedTenantId);
+  const fromBench = useFromBench();
+  const lastWorkbenchId =
+    fromBench ?? (selectedTenantId === null ? null : readLastWorkbenchId(selectedTenantId));
   const workbenchScope =
     activity.kind === "ready"
       ? resolveLibraryWorkbenchScope(activity.workbenches, lastWorkbenchId)
