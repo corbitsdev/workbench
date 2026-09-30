@@ -4,7 +4,8 @@ import { useAPIQuery } from "../api";
 import { insightsTopLevelRunsPath, TopLevelRunsSchema } from "../insights-api";
 import { computeBenchInsights, durationLabel, formatCount } from "../insights-stats";
 import { Link } from "../navigation";
-import { INSIGHTS_PATH_PREFIX } from "../path-ids";
+import { workbenchInsightsPath } from "../insights-deeplinks";
+import { benchLink } from "../shell/page-crumbs";
 import { OutcomeChart } from "../pages/bench-insights";
 
 /** The bench Insights page in miniature: the same runs query and
@@ -30,7 +31,6 @@ export function InsightsTab({ workbenchTenantId }: { readonly workbenchTenantId:
     ["Succeeded", finished === 0 ? "—" : `${Math.round((stats.ok / finished) * 100)}%`],
     ["Median run", stats.medianMs === null ? "—" : durationLabel(stats.medianMs)],
   ];
-  const id = encodeURIComponent(workbenchTenantId);
 
   return (
     <div className="drawer-stack">
@@ -49,7 +49,10 @@ export function InsightsTab({ workbenchTenantId }: { readonly workbenchTenantId:
         <h3>Runs per day</h3>
         <OutcomeChart days={stats.days} />
       </section>
-      <Link className="drawer-link" to={`${INSIGHTS_PATH_PREFIX}/workbench/${id}?from=${id}`}>
+      <Link
+        className="drawer-link"
+        to={benchLink(workbenchInsightsPath(workbenchTenantId), workbenchTenantId)}
+      >
         Open Insights
       </Link>
     </div>

@@ -13,6 +13,12 @@ Tool-heavy turns (several tool calls in one turn) take noticeably longer
 on small local models. That is a model-capability limit, not a platform
 bug.
 
+## Hub on another port
+
+Sign-in trusts one origin, `BETTER_AUTH_BASE_URL` (default
+`http://localhost:3000`). If the hub listens elsewhere, set it to the hub
+origin in `.env`, or sign-up fails with "Invalid origin".
+
 ## Migrations after pulling
 
 `bun run dev` applies both the platform's own migrations and every

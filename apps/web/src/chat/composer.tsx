@@ -1,7 +1,7 @@
 // No Stop action: neither `threads-api.ts` nor the hub API expose a way to
 // cancel a running turn yet.
 import { useCommandPaletteNavigation } from "@corbits/react-ui";
-import { ArrowUp, CircleNotch, Microphone, Plus } from "@/lib/icons";
+import { ArrowUp, AudioLines, CircleNotch, Plus } from "@/lib/icons";
 import { useLayoutEffect, useRef, useState } from "react";
 
 import { activeMention, applyMention, matchMentionQuery, type ActiveMention } from "./mentions";
@@ -172,7 +172,7 @@ export function Composer({
             disabled={disabled}
             onClick={onVoice}
           >
-            <Microphone aria-hidden="true" />
+            <AudioLines aria-hidden="true" />
           </button>
         )}
         <button

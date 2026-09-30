@@ -1,0 +1,26 @@
+/* Phone width: the drawer is a full-width overlay above its scrim. */
+@media (max-width: 860px) {
+  .wb .drawer {
+    inset: 0;
+    width: auto;
+    border-radius: 0;
+    transform: translateX(100%);
+    opacity: 1;
+    transition: transform 300ms var(--ease-drawer);
+  }
+  .wb[data-drawer="open"] .drawer {
+    transform: none;
+  }
+  .wb:not([data-drawer="open"]) .drawer {
+    visibility: hidden;
+    transition:
+      transform 300ms var(--ease-drawer),
+      visibility 0s 300ms;
+  }
+}
+
+.drawer-head p {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

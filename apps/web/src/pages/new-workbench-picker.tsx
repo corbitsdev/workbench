@@ -2,8 +2,7 @@
 // posts the message so the worker starts.
 
 import { Button, toast } from "@corbits/react-ui";
-import { PaperPlaneRight } from "@/lib/icons";
-import { CHAT_STRINGS, WorkbenchLoadingState } from "@/chat";
+import { WorkbenchLoadingState } from "@/chat";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { reportError } from "@corbits/error-sink";
@@ -29,12 +28,6 @@ export function describeWorkbenchCreateFailure(cause: unknown, refId?: string): 
       : GENERIC_CREATE_FAILURE;
   return refId === undefined ? message : `${message} Reference: ${refId}`;
 }
-
-const SUGGESTIONS = [
-  "Review every pull request on a repository",
-  "Vet a vendor before we sign",
-  "Summarize what shipped each Friday",
-];
 
 /** A workbench's name is its opening ask, trimmed. */
 function workbenchName(prompt: string): string {
@@ -92,7 +85,7 @@ export function NewWorkbenchPickerRoute() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <StageTopBar crumbs={[{ label: CHAT_STRINGS.newWorkbenchAction }]} />
+      <StageTopBar crumbs={[{ label: "Workbenches" }, { label: "New" }]} />
       <div className="new-wrap">
         {create.isPending ? (
           // `delayMs={0}`: a genuine wait the instant the person sends.
@@ -100,7 +93,7 @@ export function NewWorkbenchPickerRoute() {
         ) : (
           <>
             <ProviderSkipBanner />
-            <h1 className="new-title">What should this workbench do?</h1>
+            <h1 className="new-title">What should we work on?</h1>
             <form
               className="new-composer"
               onSubmit={(event) => {
@@ -110,8 +103,8 @@ export function NewWorkbenchPickerRoute() {
             >
               <textarea
                 className="new-composer-input"
-                aria-label="What should this workbench do?"
-                placeholder="Describe the job. Your co-worker sets up the rest."
+                aria-label="What should we work on?"
+                placeholder="Describe the job — your co-worker sets up the rest"
                 value={prompt}
                 rows={3}
                 autoFocus
@@ -130,17 +123,13 @@ export function NewWorkbenchPickerRoute() {
                   disabled={prompt.trim() === "" || selectedTenantId === null}
                 >
                   Start
-                  <PaperPlaneRight size={16} strokeWidth={1.8} />
                 </Button>
               </div>
             </form>
-            <div className="new-suggestions" aria-label="Quick start">
-              {SUGGESTIONS.map((suggestion) => (
-                <button key={suggestion} type="button" onClick={() => setPrompt(suggestion)}>
-                  {suggestion}
-                </button>
-              ))}
-            </div>
+            <p className="new-hint">
+              No templates. Your co-worker asks what it needs, connects tools with you, and suggests
+              skills and workflows as you go.
+            </p>
           </>
         )}
       </div>

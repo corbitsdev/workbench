@@ -5,7 +5,6 @@ import {
   MenuContent,
   MenuItem,
   MenuTrigger,
-  PageShell,
   RichEmptyState,
   SelectionCheckbox,
   Skeleton,
@@ -75,6 +74,7 @@ import {
   uploadArtifactFiles,
   uploadMimeTypeFromSource,
 } from "../shell/library-artifacts";
+import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
 
 const SORT_LABEL: Record<ArtifactSort, string> = {
@@ -499,8 +499,7 @@ export function LibraryPage({
       ) : null}
       <div className="flex min-h-0 flex-1">
         <div className="min-h-0 min-w-0 flex-1 overflow-auto">
-          <PageShell width="full" className="page-fill">
-            <p className="page-lede px-4 sm:px-7">Everything your workers made. Yours to keep.</p>
+          <PageLayout title="Artifacts" subtitle="Everything your workers made. Yours to keep.">
             {artifacts.length === 0 ? (
               <RichEmptyState
                 icon={<Stack />}
@@ -514,7 +513,7 @@ export function LibraryPage({
                 description={`No file matches "${activeQuery}".`}
               />
             ) : (
-              <div className="px-4 pb-5 sm:px-7">
+              <div>
                 <ArtifactRows
                   artifacts={visible}
                   now={now}
@@ -524,7 +523,7 @@ export function LibraryPage({
                 />
               </div>
             )}
-          </PageShell>
+          </PageLayout>
         </div>
         {activeSelected !== null ? (
           <div className="hidden w-[min(28rem,40%)] shrink-0 md:flex md:flex-col">
@@ -622,13 +621,13 @@ export function LibraryRoute({ path }: { readonly path: string }) {
     return (
       <div className="flex h-full min-h-0 flex-col">
         <StageTopBar crumbs={[{ label: "Artifacts" }]} />
-        <PageShell width="full" className="page-fill">
+        <PageLayout title="Artifacts" subtitle="Everything your workers made. Yours to keep.">
           <RichEmptyState
             icon={<Stack />}
             title="Select a workbench"
             description="Open a workbench to browse the artifacts it owns."
           />
-        </PageShell>
+        </PageLayout>
       </div>
     );
   }
@@ -637,13 +636,13 @@ export function LibraryRoute({ path }: { readonly path: string }) {
     return (
       <div className="flex h-full min-h-0 flex-col">
         <StageTopBar crumbs={[{ label: "Artifacts" }]} />
-        <PageShell width="full" className="page-fill">
+        <PageLayout title="Artifacts" subtitle="Everything your workers made. Yours to keep.">
           <RichEmptyState
             icon={<Stack />}
             title="Artifacts not configured"
             description="Artifacts isn't set up yet. Ask your workbench admin to finish setup."
           />
-        </PageShell>
+        </PageLayout>
       </div>
     );
   }
@@ -652,7 +651,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
     return (
       <div className="flex h-full min-h-0 flex-col">
         <StageTopBar crumbs={[{ label: "Artifacts" }]} />
-        <PageShell width="full" className="page-fill">
+        <PageLayout title="Artifacts" subtitle="Everything your workers made. Yours to keep.">
           {page.kind === "loading" ? (
             <ListSkeleton />
           ) : page.kind === "unauthenticated" ? (
@@ -664,7 +663,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
               description={describeApiError({ status: page.status }, "loading your artifacts")}
             />
           )}
-        </PageShell>
+        </PageLayout>
       </div>
     );
   }

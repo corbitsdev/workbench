@@ -1,7 +1,9 @@
 // Canvas state is NOT owned here — see `shell-chrome-provider.tsx` for why
 // it has to be visible to the command palette too.
 
-import { lazy, Suspense, useRef, useState, type ReactNode, type RefObject } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { Button } from "@corbits/react-ui";
+import { PanelLeft } from "@/lib/icons";
 import type { ArtifactSaveState } from "@/library";
 
 import { WorkbenchLoadingState } from "@/chat";
@@ -26,6 +28,7 @@ import {
 import { Sidebar } from "./sidebar";
 import { ShellContextMenu } from "./context-menu/shell-context-menu";
 import { FirstRunTour } from "./first-run-tour";
+import "./shell-narrow.css";
 
 const CanvasColumn = lazy(async () => ({
   default: (await import("./canvas-column")).CanvasColumn,
@@ -120,6 +123,17 @@ export function AppShell({
   const closeCanvas = useCloseCanvas();
   const toggleCanvasFocus = useToggleCanvasFocus();
   const mainRef = useRef<HTMLDivElement>(null);
+  // Keyed by path so any navigation closes the phone-width sidebar.
+  const [sidebarOpenFor, setSidebarOpenFor] = useState<string | null>(null);
+  const sidebarOpen = sidebarOpenFor === path;
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSidebarOpenFor(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sidebarOpen]);
   const pendingCount = usePendingApprovalCount(tenantId);
   const pendingChip =
     pendingCount === null
@@ -132,7 +146,22 @@ export function AppShell({
         : { tone: "ok" as const, label: "All caught up" };
 
   return (
-    <div className="shell-frame">
+    <div className="shell-frame" data-sidebar-open={sidebarOpen}>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="shell-sidebar-toggle"
+        aria-label="Toggle sidebar"
+        aria-expanded={sidebarOpen}
+        onClick={() => setSidebarOpenFor(sidebarOpen ? null : path)}
+      >
+        <PanelLeft />
+      </Button>
+      <div
+        className="shell-sidebar-scrim"
+        onClick={() => setSidebarOpenFor(null)}
+        aria-hidden="true"
+      />
       <Sidebar path={path} onNavigate={navigate} />
       <div className="shell-main" ref={mainRef}>
         <ScrollToTop key={path} containerRef={mainRef} />

@@ -1,5 +1,6 @@
-import { Skeleton, formatRelativeTime } from "@corbits/react-ui";
+import { Button, Skeleton, formatRelativeTime, toast } from "@corbits/react-ui";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { ArtifactListPageSchema, useAPIQuery } from "@/api";
 import { ApprovalRow } from "@/chat/approval-row";
@@ -17,6 +18,8 @@ import { WorkbenchSchedulesPanel } from "../pages/workbench-schedules-panel";
 import { usePendingApprovals } from "../pending-approvals";
 import { benchLink } from "../shell/page-crumbs";
 import type { WorkerStatus } from "../worker-status";
+import "./description.css";
+import { DESCRIPTION_MAX, useBenchDescription } from "./description";
 
 function Section({
   title,
@@ -38,17 +41,52 @@ function Section({
   );
 }
 
+function AboutSection({ workbenchTenantId }: { readonly workbenchTenantId: string }) {
+  const { description, save } = useBenchDescription(workbenchTenantId);
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? description;
+  const dirty = draft !== null && draft.trim() !== description;
+  return (
+    <Section title="About">
+      <form
+        className="bench-description-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          save.mutate(value.trim(), {
+            onSuccess: () => setDraft(null),
+            onError: (cause) => toast(cause instanceof Error ? cause.message : String(cause)),
+          });
+        }}
+      >
+        <textarea
+          aria-label="Description"
+          placeholder="Add a description"
+          maxLength={DESCRIPTION_MAX}
+          value={value}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <div className="bench-description-actions">
+          <Button type="submit" size="sm" disabled={!dirty || save.isPending}>
+            Save
+          </Button>
+          <span className="bench-description-count">
+            {value.length}/{DESCRIPTION_MAX}
+          </span>
+        </div>
+      </form>
+    </Section>
+  );
+}
+
 /** Overview of the bench: what it is, what's happening now, what's waiting
  * on the person, and its live workflows and latest files. */
 export function InformationTab({
   workbenchTenantId,
-  description,
   worker,
   status,
   participants,
 }: {
   readonly workbenchTenantId: string;
-  readonly description?: string | undefined;
   readonly worker: WorkbenchParticipant | undefined;
   readonly status: WorkerStatus;
   readonly participants: readonly WorkbenchParticipant[];
@@ -78,11 +116,7 @@ export function InformationTab({
 
   return (
     <>
-      {description === undefined || description === "" ? null : (
-        <Section title="About">
-          <p className="drawer-about">{description}</p>
-        </Section>
-      )}
+      <AboutSection workbenchTenantId={workbenchTenantId} />
 
       {worker !== undefined && status.tone === "working" ? (
         <Section title="Now">

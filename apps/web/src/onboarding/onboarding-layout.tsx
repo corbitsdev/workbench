@@ -5,13 +5,13 @@ const STEP_LABELS = ["Workspace", "Model", "Myra"] as const;
 
 /**
  * Single centered column with a step progress bar, matching the onboarding
- * mockup. `step` is the index of the current step (0-2).
+ * mockup. `step` is the index of the current step (0-2; 3 = all done).
  */
 export function OnboardingLayout({
   step,
   children,
 }: {
-  readonly step: 0 | 1 | 2;
+  readonly step: 0 | 1 | 2 | 3;
   readonly children: ReactNode;
 }) {
   return (

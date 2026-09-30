@@ -97,30 +97,8 @@ const PROVIDER_NAMES: Record<string, string> = {
   slack: "Slack",
 };
 
-export type ProviderTile = {
-  readonly initials: string;
-  readonly color: string;
-};
-
-// Only providers a person would recognise on sight get a fixed brand
-// color; anything else uses an action glyph.
-const PROVIDER_TILES: Record<string, ProviderTile> = {
-  github: { initials: "GH", color: "#24292f" },
-  gitlab: { initials: "GL", color: "#fc6d26" },
-  linear: { initials: "Li", color: "#5e6ad2" },
-  notion: { initials: "No", color: "#000000" },
-  postgres: { initials: "Pg", color: "#336791" },
-  slack: { initials: "Sl", color: "#4a154b" },
-};
-
 /** Path segments that look like a namespace but are not a brand provider. */
 const NOT_PROVIDERS = new Set(["memory", "ad", "ask-user", "corbits", "@corbits"]);
-
-/** Brand mark for a known provider. Unknown leftovers are not brands —
- * the chip uses an action glyph instead of inventing initials. */
-export function providerTile(provider: string): ProviderTile | undefined {
-  return PROVIDER_TILES[provider.toLowerCase()];
-}
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -174,10 +152,7 @@ function packageStem(segment: string): string {
 function knownBrandId(candidate: string): string | undefined {
   const stemmed = packageStem(candidate);
   if (stemmed === "" || NOT_PROVIDERS.has(stemmed)) return undefined;
-  if (PROVIDER_NAMES[stemmed] !== undefined || PROVIDER_TILES[stemmed] !== undefined) {
-    return stemmed;
-  }
-  return undefined;
+  return PROVIDER_NAMES[stemmed] !== undefined ? stemmed : undefined;
 }
 
 function providerFromLeftover(leftover: string | undefined): string | undefined {

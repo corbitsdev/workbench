@@ -1,11 +1,11 @@
 // The bench-scoped Insights dashboard: every number is computed from the
 // stock `GET /workflows/runs` listing of the bench's own tenant.
 
-import { Badge, RichEmptyState, Skeleton, RUN_STATUS_TONE } from "@corbits/react-ui";
-import { useState } from "react";
+import { Badge, PageShell, RichEmptyState, Skeleton, RUN_STATUS_TONE } from "@corbits/react-ui";
+import { useState, type ReactNode } from "react";
 
 import { useAPIQuery } from "../api";
-import { insightsTopLevelRunsPath, TopLevelRunsSchema } from "../insights-api";
+import { insightsTopLevelRunsPath, TopLevelRunsSchema, type InsightsRun } from "../insights-api";
 import {
   BENCH_RANGES,
   computeBenchInsights,
@@ -16,6 +16,11 @@ import {
   type BenchRange,
 } from "../insights-stats";
 import { formatWhen } from "./insights-page";
+import { useFromBench } from "../shell/page-crumbs";
+import { StageTopBar } from "../shell/stage-top-bar";
+import { workbenchPath } from "../workbench-path";
+
+import "./bench-insights.css";
 
 const RANGE_LABEL: Readonly<Record<BenchRange, string>> = {
   7: "Last 7 days",
@@ -39,7 +44,7 @@ function dayLabel(date: Date): string {
 
 export function OutcomeChart({ days }: { readonly days: readonly BenchDay[] }) {
   const [active, setActive] = useState<number | null>(null);
-  const max = Math.max(...days.map((d) => d.ok + d.fail), 1);
+  const max = Math.max(...days.map((d) => d.ok + d.fail + d.other), 1);
   const every = days.length > 30 ? 14 : days.length > 7 ? 5 : 1;
   const shown = active === null ? undefined : days[active];
   return (
@@ -53,6 +58,10 @@ export function OutcomeChart({ days }: { readonly days: readonly BenchDay[] }) {
           <i style={{ background: "var(--chart-fail, #A4453D)" }} />
           Failed
         </span>
+        <span>
+          <i className="bi-other" />
+          Running or stopped
+        </span>
       </div>
       <div className="bi-bars" style={{ gap: days.length > 30 ? 1 : 4 }}>
         {days.map((d, i) => (
@@ -61,7 +70,7 @@ export function OutcomeChart({ days }: { readonly days: readonly BenchDay[] }) {
             className="bi-col"
             tabIndex={0}
             role="img"
-            aria-label={`${dayLabel(d.date)}: ${d.ok} succeeded, ${d.fail} failed`}
+            aria-label={`${dayLabel(d.date)}: ${d.ok} succeeded, ${d.fail} failed, ${d.other} running or stopped`}
             onMouseEnter={() => setActive(i)}
             onMouseLeave={() => setActive(null)}
             onFocus={() => setActive(i)}
@@ -83,6 +92,9 @@ export function OutcomeChart({ days }: { readonly days: readonly BenchDay[] }) {
                 }}
               />
             ) : null}
+            {d.other > 0 ? (
+              <i className="bi-other" style={{ height: `${(d.other / max) * 100}%` }} />
+            ) : null}
           </div>
         ))}
       </div>
@@ -100,7 +112,7 @@ export function OutcomeChart({ days }: { readonly days: readonly BenchDay[] }) {
           style={{ left: `${((active + 0.5) / days.length) * 100}%` }}
         >
           <b>{dayLabel(shown.date)}</b>
-          {shown.ok} succeeded · {shown.fail} failed
+          {shown.ok} succeeded · {shown.fail} failed · {shown.other} other
         </div>
       ) : null}
     </div>
@@ -138,26 +150,85 @@ function Meter({
 
 export function BenchInsights({
   tenantId,
+  workbenchId,
+  title,
   onOpenRun,
 }: {
   readonly tenantId: string;
+  readonly workbenchId: string;
+  readonly title: string;
   readonly onOpenRun: (id: string) => void;
 }) {
   const [range, setRange] = useState<BenchRange>(7);
   const runs = useAPIQuery(insightsTopLevelRunsPath(tenantId), TopLevelRunsSchema);
+  // `?from=` already prefixes the bench's own crumb; without it the trail
+  // names the bench itself, so it never shows twice.
+  const from = useFromBench();
+  const crumbs =
+    from === workbenchId
+      ? [{ label: "Insights" }]
+      : [{ label: title, href: workbenchPath(workbenchId) }, { label: "Insights" }];
 
-  if (runs.kind === "loading") return <Skeleton className="h-48 w-full" />;
-  if (runs.kind !== "ready") {
-    return (
+  const rangeSeg = (
+    <div className="bi-seg" role="tablist" aria-label="Range">
+      {BENCH_RANGES.map((r) => (
+        <button
+          key={r}
+          type="button"
+          role="tab"
+          aria-selected={r === range}
+          aria-label={RANGE_LABEL[r]}
+          title={RANGE_LABEL[r]}
+          className={r === range ? "active" : ""}
+          onClick={() => setRange(r)}
+        >
+          {r}d
+        </button>
+      ))}
+    </div>
+  );
+
+  let body: ReactNode;
+  if (runs.kind === "loading") {
+    body = <Skeleton className="h-48 w-full" />;
+  } else if (runs.kind !== "ready") {
+    body = (
       <RichEmptyState
         title="Couldn't load insights"
         description="Something went wrong on our side. Try again in a moment."
         {...(runs.kind === "error" ? { actions: [{ label: "Retry", onClick: runs.retry }] } : {})}
       />
     );
+  } else {
+    body = <InsightsBody runs={runs.data} range={range} onOpenRun={onOpenRun} />;
   }
 
-  const stats = computeBenchInsights(runs.data.data, range);
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <StageTopBar crumbs={crumbs} actions={rangeSeg} />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <PageShell width="full" className="page-fill">
+          <div className="bi-head">
+            <h1>Insights</h1>
+            <p>What happened in {title}.</p>
+          </div>
+          {body}
+        </PageShell>
+      </div>
+    </div>
+  );
+}
+
+function InsightsBody({
+  runs,
+  range,
+  onOpenRun,
+}: {
+  readonly runs: { readonly data: readonly InsightsRun[]; readonly nextCursor: string | null };
+  readonly range: BenchRange;
+  readonly onOpenRun: (id: string) => void;
+}) {
+  const stats = computeBenchInsights(runs.data, range);
   const finished = stats.ok + stats.fail;
   const tiles: readonly (readonly [string, string])[] = [
     ["Runs", formatCount(stats.total)],
@@ -167,23 +238,7 @@ export function BenchInsights({
 
   return (
     <div className="insights-layout">
-      <div className="bi-seg" role="tablist" aria-label="Range">
-        {BENCH_RANGES.map((r) => (
-          <button
-            key={r}
-            type="button"
-            role="tab"
-            aria-selected={r === range}
-            aria-label={RANGE_LABEL[r]}
-            title={RANGE_LABEL[r]}
-            className={r === range ? "active" : ""}
-            onClick={() => setRange(r)}
-          >
-            {r}d
-          </button>
-        ))}
-      </div>
-      {runs.data.nextCursor !== null ? (
+      {runs.nextCursor !== null ? (
         <p className="insights-note">Figures reflect the 100 most recent runs — more exist.</p>
       ) : null}
 

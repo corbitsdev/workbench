@@ -1,4 +1,5 @@
 import { Button } from "@corbits/react-ui";
+import "./drawer-narrow.css";
 import { X } from "@/lib/icons";
 import "./drawer.css";
 import { useEffect, useRef, useState, type ReactNode } from "react";
