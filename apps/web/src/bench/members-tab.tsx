@@ -5,6 +5,7 @@ import { IdentityAvatar, WorkbenchAvatar } from "@/chat/avatar";
 import type { WorkbenchParticipant } from "@/chat/threads-api";
 import { Link } from "../navigation";
 import { tenantKeys } from "../query-client";
+import { useWorkerBenches } from "../worker-benches";
 import { principalLabel } from "../settings/identity";
 import { listPrincipals } from "../settings/tenancy-api";
 
@@ -26,6 +27,7 @@ export function MembersTab({
     queryKey: [...tenantKeys.principals(workbenchTenantId), "members"],
     queryFn: async () => (await listPrincipals(workbenchTenantId)).filter((p) => p.kind === "user"),
   });
+  const { workerIdForAsset } = useWorkerBenches();
   const agents = participants.filter((p) => p.kind === "agent");
 
   return (
@@ -72,17 +74,33 @@ export function MembersTab({
           <p className="workbench-info-empty-note">No agents yet.</p>
         ) : null}
         <ul className="drawer-list">
-          {agents.map((agent) => (
-            <li key={agent.id}>
-              <Link className="drawer-list-link" to={`/workers/${encodeURIComponent(agent.id)}`}>
+          {agents.map((agent) => {
+            const workerId =
+              agent.assetName === undefined ? undefined : workerIdForAsset(agent.assetName);
+            const body = (
+              <>
                 <WorkbenchAvatar kind="worker" name={agent.name} size="md" />
                 <span className="drawer-list-text">
                   <b>{agent.name}</b>
                   <span>{agent.address === "" ? "Starting" : "Running"}</span>
                 </span>
-              </Link>
-            </li>
-          ))}
+              </>
+            );
+            return (
+              <li key={agent.id}>
+                {workerId === undefined ? (
+                  body
+                ) : (
+                  <Link
+                    className="drawer-list-link"
+                    to={`/workers/${encodeURIComponent(workerId)}`}
+                  >
+                    {body}
+                  </Link>
+                )}
+              </li>
+            );
+          })}
         </ul>
       </section>
     </div>

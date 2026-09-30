@@ -9,6 +9,7 @@ import { Hash } from "@/lib/icons";
 
 import { useBench } from "../bench-context";
 import { useBenchWorkerStatus } from "../worker-status";
+import { useWorkerBenches } from "../worker-benches";
 import { tenantKeys } from "../query-client";
 import { workbenchIdFromPath, workbenchPath } from "../workbench-path";
 import type { HubTenant } from "../needs-converge";
@@ -99,7 +100,7 @@ export function WorkbenchList({
           />
         ))}
       </div>
-      <WorkerGroup path={path} onNavigate={onNavigate} benches={workbenches} />
+      <WorkerGroup path={path} onNavigate={onNavigate} />
     </div>
   );
 }
@@ -110,13 +111,13 @@ function WorkerRow({
   active,
   onSelect,
 }: {
-  readonly agent: { readonly name: string };
+  readonly agent: { readonly name: string; readonly assetName: string };
   readonly benches: readonly HubTenant[];
   readonly active: boolean;
   readonly onSelect: () => void;
 }) {
-  // Sidebar workers are the workspace's agents; a bench's copy shares the name.
-  const status = useBenchWorkerStatus(benches, (p) => p.name === agent.name);
+  // The bench's copy of a workspace worker shares its deploy asset name.
+  const status = useBenchWorkerStatus(benches, (p) => p.assetName === agent.assetName);
   return (
     <button
       type="button"
@@ -138,12 +139,11 @@ function WorkerRow({
 function WorkerGroup({
   path,
   onNavigate,
-  benches,
 }: {
   readonly path: string;
   readonly onNavigate: (to: string) => void;
-  readonly benches: readonly HubTenant[];
 }) {
+  const { byWorker } = useWorkerBenches();
   const { selectedTenantId } = useBench();
   const agents = useQuery({
     queryKey: tenantKeys.agents(selectedTenantId ?? "none"),
@@ -161,7 +161,7 @@ function WorkerGroup({
           <WorkerRow
             key={agent.id}
             agent={agent}
-            benches={benches}
+            benches={byWorker.get(agent.id) ?? []}
             active={path === to}
             onSelect={() => onNavigate(to)}
           />
