@@ -109,8 +109,12 @@ export function WorkersRosterList({
   );
   return (
     <div>
-      <div className="mb-3 flex items-center gap-3">
-        <div role="tablist" aria-label="Filter by status" className="bi-seg">
+      <div className="mb-3 flex flex-col items-stretch gap-3 min-[601px]:flex-row min-[601px]:items-center">
+        <div
+          role="tablist"
+          aria-label="Filter by status"
+          className="bi-seg max-w-full overflow-x-auto whitespace-nowrap [&_button]:shrink-0"
+        >
           {FILTERS.map(([key, label]) => (
             <button
               key={key}
@@ -127,13 +131,13 @@ export function WorkersRosterList({
             </button>
           ))}
         </div>
-        <span className="flex-1" />
+        <span className="hidden flex-1 min-[601px]:block" />
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Filter workers"
           aria-label="Filter workers"
-          className="h-8 w-56 rounded-(--r-md) border border-(--line) bg-(--card) px-3 text-[13px]"
+          className="h-8 w-full min-[601px]:w-56 rounded-(--r-md) border border-(--line) bg-(--card) px-3 text-[13px]"
         />
       </div>
       <div className={`${ROW_GRID} hidden px-3 pb-2 text-[12px] font-bold text-(--ink-3) md:grid`}>
