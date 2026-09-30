@@ -2,7 +2,6 @@
 // every right-click to a typed shell target, builds that target's real
 // items, and renders them through react-ui's Menu.
 
-import { useTheme } from "@corbits/react-ui";
 import {
   ContextMenuView,
   resolveTarget,
@@ -15,6 +14,7 @@ import { useCallback } from "react";
 import { useBench } from "../../bench-context";
 import { useNavigate } from "../../navigation";
 import { invalidateRoutineQueries } from "../../query-client";
+import { cycleTheme } from "../../theme-store";
 import { useOpenProfileInCanvas } from "../canvas-availability";
 import { shellContextMenuFor } from "./items";
 import type { ShellContextMenuActions } from "./items";
@@ -24,7 +24,6 @@ export function ShellContextMenu({ onSignOut }: { readonly onSignOut: () => void
   const { selectedTenantId } = useBench();
   const navigate = useNavigate();
   const openProfile = useOpenProfileInCanvas();
-  const { cycleMode } = useTheme();
   const queryClient = useQueryClient();
   const { open, x, y, menu, triggerElement, show, hide } = useContextMenuState();
 
@@ -32,7 +31,7 @@ export function ShellContextMenu({ onSignOut }: { readonly onSignOut: () => void
     tenantId: selectedTenantId,
     navigate,
     openProfile,
-    cycleTheme: cycleMode,
+    cycleTheme,
     signOut: onSignOut,
     onRoutineRan: (tenantId) => invalidateRoutineQueries(queryClient, tenantId),
   };
@@ -48,7 +47,7 @@ export function ShellContextMenu({ onSignOut }: { readonly onSignOut: () => void
     },
     // `actions` is a fresh object every render; the values it closes over
     // are what actually determine the menu, so those are the real deps.
-    [selectedTenantId, navigate, openProfile, cycleMode, onSignOut, queryClient],
+    [selectedTenantId, navigate, openProfile, onSignOut, queryClient],
   );
 
   useDocumentContextMenuTrigger({ resolve, onOpen: show });

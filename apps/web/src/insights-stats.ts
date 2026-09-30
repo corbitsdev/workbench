@@ -135,3 +135,130 @@ export function computeInsightsStats(
     recentRuns,
   };
 }
+
+export const BENCH_RANGES = [7, 30, 90] as const;
+export type BenchRange = (typeof BENCH_RANGES)[number];
+
+const DAY_MS = 86_400_000;
+
+export type BenchDay = {
+  readonly date: Date;
+  readonly ok: number;
+  readonly fail: number;
+};
+export type BenchWorkflowRow = {
+  readonly key: string;
+  readonly name: string;
+  readonly runs: number;
+  readonly ok: number;
+  readonly fail: number;
+  readonly medianMs: number | null;
+  readonly lastRun: string;
+};
+export type BenchInsights = {
+  readonly total: number;
+  readonly ok: number;
+  readonly fail: number;
+  readonly medianMs: number | null;
+  readonly days: readonly BenchDay[];
+  readonly workflows: readonly BenchWorkflowRow[];
+  readonly failures: readonly InsightsRun[];
+};
+
+export function medianMs(values: readonly number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const hi = sorted[mid] ?? 0;
+  return sorted.length % 2 === 1 ? hi : ((sorted[mid - 1] ?? 0) + hi) / 2;
+}
+
+function runDurationMs(run: InsightsRun): number | null {
+  if (run.endedAt === undefined || run.endedAt === null) return null;
+  const ms = Date.parse(run.endedAt) - Date.parse(run.createdAt);
+  return Number.isNaN(ms) || ms < 0 ? null : ms;
+}
+
+type Bucket = "ok" | "fail" | "other";
+function bucketOf(run: InsightsRun, now: number): Bucket {
+  const outcome = runOutcomeStatus(withListingAbandoned(run, now), now) ?? run.status;
+  if (outcome === "completed") return "ok";
+  if (outcome === "failed" || outcome === "error") return "fail";
+  return "other";
+}
+
+/** Rollups over the runs created in the last `range` local days (today
+ * included). "Other" outcomes (running, stopped) count as runs but are
+ * neither succeeded nor failed. */
+export function computeBenchInsights(
+  runs: readonly InsightsRun[],
+  range: BenchRange,
+  now: number = Date.now(),
+): BenchInsights {
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const days: { date: Date; ok: number; fail: number }[] = [];
+  for (let i = range - 1; i >= 0; i--) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - i);
+    days.push({ date, ok: 0, fail: 0 });
+  }
+  const start = days[0]?.date.getTime() ?? 0;
+
+  const inRange = runs.filter((run) => {
+    const t = Date.parse(run.createdAt);
+    return !Number.isNaN(t) && t >= start && t <= now;
+  });
+  let ok = 0;
+  let fail = 0;
+  const groups = new Map<string, InsightsRun[]>();
+  for (const run of inRange) {
+    const bucket = bucketOf(run, now);
+    const midnight = new Date(run.createdAt);
+    midnight.setHours(0, 0, 0, 0);
+    // round, not floor: DST days are 23h or 25h long.
+    const day = days[Math.round((midnight.getTime() - start) / DAY_MS)];
+    if (bucket === "ok") {
+      ok += 1;
+      if (day !== undefined) day.ok += 1;
+    } else if (bucket === "fail") {
+      fail += 1;
+      if (day !== undefined) day.fail += 1;
+    }
+    const key = run.routineId ?? run.definitionId;
+    groups.set(key, [...(groups.get(key) ?? []), run]);
+  }
+
+  const durations = (rs: readonly InsightsRun[]) =>
+    rs.flatMap((r) => {
+      const d = runDurationMs(r);
+      return d === null ? [] : [d];
+    });
+  const workflows = [...groups.entries()]
+    .map(([key, rs]) => {
+      const newest = [...rs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      return {
+        key,
+        name: newest[0] !== undefined ? runDisplayName(newest[0]) : key,
+        runs: rs.length,
+        ok: rs.filter((r) => bucketOf(r, now) === "ok").length,
+        fail: rs.filter((r) => bucketOf(r, now) === "fail").length,
+        medianMs: medianMs(durations(rs)),
+        lastRun: newest[0]?.createdAt ?? "",
+      };
+    })
+    .sort((a, b) => b.lastRun.localeCompare(a.lastRun));
+
+  return {
+    total: inRange.length,
+    ok,
+    fail,
+    medianMs: medianMs(durations(inRange)),
+    days,
+    workflows,
+    failures: inRange
+      .filter((r) => bucketOf(r, now) === "fail")
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, 5),
+  };
+}

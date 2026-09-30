@@ -2,15 +2,7 @@
 // The Agent card was removed — nothing there could change until a hub
 // preference store exists to write it to.
 
-import {
-  Avatar,
-  Badge,
-  Button,
-  SettingsPanel,
-  isThemeMode,
-  toast,
-  useTheme,
-} from "@corbits/react-ui";
+import { Avatar, Badge, Button, SettingsPanel, toast } from "@corbits/react-ui";
 import { Select } from "@corbits/react-ui/ui/select";
 import { ChatCircleDots, Copy, SignOut } from "@/lib/icons";
 import { useQuery } from "@tanstack/react-query";
@@ -20,6 +12,7 @@ import { resolveAvatarFill } from "@/chat";
 import webPackage from "../../package.json";
 import { getAccount, type Account } from "./api";
 import { SETTINGS_STRINGS } from "./strings";
+import { isTheme, setTheme, useTheme } from "../theme-store";
 
 /** The repo's own issue tracker — read off this package's manifest (set
  * from `git remote`) rather than a hardcoded org/repo guess. */
@@ -154,26 +147,24 @@ export function AccountSectionView({
   );
 }
 
-/** Theme row, wired to `ThemeProvider`'s three-state mode contract — the
- * host mounts `ThemeProvider` once near the app root, so `setMode` here
- * both applies and persists the choice with no storage code of our own. */
+/** Theme row, wired to the theme store, which applies and persists the choice. */
 export function AppearanceSection() {
-  const { mode, setMode } = useTheme();
+  const theme = useTheme();
   return (
     <SettingsPanel title={SETTINGS_STRINGS.appearanceSectionTitle}>
       <label className="settings-form-field settings-form-field-inline">
         <span>{SETTINGS_STRINGS.appearanceThemeLabel}</span>
         <Select
           className="settings-appearance-select"
-          value={mode}
+          value={theme}
           onChange={(event) => {
             const next = event.target.value;
-            if (isThemeMode(next)) setMode(next);
+            if (isTheme(next)) setTheme(next);
           }}
         >
-          <option value="system">{SETTINGS_STRINGS.themeFollowSystem}</option>
           <option value="light">{SETTINGS_STRINGS.themeLight}</option>
           <option value="dark">{SETTINGS_STRINGS.themeDark}</option>
+          <option value="canvas">{SETTINGS_STRINGS.themeCanvas}</option>
         </Select>
       </label>
     </SettingsPanel>

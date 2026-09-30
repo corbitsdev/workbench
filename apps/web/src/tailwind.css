@@ -36,6 +36,13 @@
   --font-mono: "Space Mono", "Fira Code", Monaco, Consolas, monospace;
 }
 
+/* Icons default to the surrounding text size; `:where` keeps zero specificity
+   so a size-* utility on the icon still wins. */
+:where(svg.lucide) {
+  width: 1em;
+  height: 1em;
+}
+
 /* Workspace UI packages are source-only (no build step): their .tsx files
    carry className utilities and artifact-ui's kind-color.ts returns palette
    class strings. Tailwind v4's auto-detection stays inside apps/web, so each
