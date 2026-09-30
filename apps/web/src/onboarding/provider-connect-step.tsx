@@ -20,6 +20,8 @@ import type { FormEvent } from "react";
 
 import type { ModelProviderPlugin } from "@intx/types";
 
+import { PROVIDER_MODELS } from "@/settings/provider-models";
+
 import { fetchOllamaTags } from "./ollama-tags";
 import "./provider-rows.css";
 
@@ -44,6 +46,8 @@ export type ProviderOption = {
   /** The base URL is typed in too (Custom). */
   readonly customURL?: boolean;
 };
+
+const CUSTOM_MODEL = "__custom__";
 
 // https everywhere; plain http only for a server on this machine.
 const baseUrlSchema = type("string").narrow((value, ctx) => {
@@ -229,6 +233,8 @@ export function ProviderConnectStep({
   const [apiKey, setApiKey] = useState("");
   const [baseURL, setBaseURL] = useState("");
   const [modelName, setModelName] = useState("");
+  // "" = the provider's default (first listed); CUSTOM_MODEL = typed in.
+  const [modelChoice, setModelChoice] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [loginId, setLoginId] = useState<string | null>(null);
 
@@ -238,6 +244,20 @@ export function ProviderConnectStep({
   const oauthProvider = option?.oauthProvider;
   const typedModel = option?.typedModel === true;
   const customURL = option?.customURL === true;
+  const models = option === undefined ? [] : (PROVIDER_MODELS[option.id] ?? []);
+  const listed = models.length > 0;
+  const choice = modelChoice === "" ? (models[0]?.id ?? CUSTOM_MODEL) : modelChoice;
+  const typedChoice = choice === CUSTOM_MODEL;
+  // The model this option will mint: a listed pick, else the typed name.
+  const resolvedModel =
+    option === undefined
+      ? ""
+      : listed && !typedChoice
+        ? choice
+        : isLocal || typedModel || listed
+          ? modelName.trim()
+          : option.canonicalName;
+  const resolvedLabel = models.find((model) => model.id === resolvedModel)?.label ?? resolvedModel;
   const urlCheck = baseUrlSchema(baseURL);
   const urlError = customURL && baseURL.trim() !== "" && urlCheck instanceof type.errors;
 
@@ -257,13 +277,12 @@ export function ProviderConnectStep({
 
   const ready =
     option !== undefined &&
+    resolvedModel !== "" &&
     (oauthProvider !== undefined ||
       (isLocal
         ? baseURL.trim().length > 0 && modelName.trim().length > 0 && modelKnown
         : typedModel
-          ? apiKey.trim().length > 0 &&
-            modelName.trim().length > 0 &&
-            (!customURL || !(urlCheck instanceof type.errors))
+          ? apiKey.trim().length > 0 && (!customURL || !(urlCheck instanceof type.errors))
           : apiKey.trim().length > 0));
 
   function fail(cause: unknown, operation: string) {
@@ -286,6 +305,7 @@ export function ProviderConnectStep({
     setSelected(id);
     setBaseURL(next?.local === true ? next.baseURL : "");
     setModelName("");
+    setModelChoice("");
   }
 
   // Starting a login is the hub's job end to end: it runs the loopback PKCE
@@ -323,8 +343,8 @@ export function ProviderConnectStep({
       const state = await readProviderLogin(tenantId, loginId);
       if (state.status !== "completed") return state;
       const created = await shadowOffering(tenantId, {
-        canonicalName: option.canonicalName,
-        modelDisplayName: option.modelDisplayName,
+        canonicalName: resolvedModel,
+        modelDisplayName: resolvedLabel,
         providerName: option.label,
         plugin: option.plugin,
         baseURL: option.baseURL,
@@ -333,7 +353,7 @@ export function ProviderConnectStep({
       });
       return {
         status: "connected" as const,
-        offering: offeringFromOption(option, option.canonicalName, created.id),
+        offering: offeringFromOption(option, resolvedModel, created.id),
       };
     },
     refetchInterval: (query) => (query.state.data?.status === "pending" ? 2000 : false),
@@ -365,11 +385,10 @@ export function ProviderConnectStep({
     }
     setSubmitting(true);
     try {
-      const typed = isLocal || typedModel;
-      const canonicalName = typed ? modelName.trim() : option.canonicalName;
+      const canonicalName = resolvedModel;
       const created = await shadowOffering(tenantId, {
         canonicalName,
-        modelDisplayName: typed ? modelName.trim() : option.modelDisplayName,
+        modelDisplayName: resolvedLabel,
         providerName: option.label,
         plugin: option.plugin,
         baseURL: isLocal || customURL ? baseURL.trim() : option.baseURL,
@@ -393,6 +412,47 @@ export function ProviderConnectStep({
       : submitting
         ? "Connecting…"
         : "Connect";
+
+  const modelPicker = listed ? (
+    <>
+      <label>
+        Model
+        <Select
+          value={choice}
+          aria-label="Model"
+          onChange={(event) => setModelChoice(event.target.value)}
+        >
+          {models.map((model) => (
+            <option key={model.id} value={model.id}>
+              {model.label}
+            </option>
+          ))}
+          <option value={CUSTOM_MODEL}>Custom…</option>
+        </Select>
+      </label>
+      {typedChoice ? (
+        <label>
+          Custom model id
+          <Input
+            autoComplete="off"
+            value={modelName}
+            onChange={(event) => setModelName(event.target.value)}
+            required
+          />
+        </label>
+      ) : null}
+    </>
+  ) : (
+    <label>
+      Model
+      <Input
+        autoComplete="off"
+        value={modelName}
+        onChange={(event) => setModelName(event.target.value)}
+        required
+      />
+    </label>
+  );
 
   return (
     <form className="onboarding-credential-form" onSubmit={(event) => void handleSubmit(event)}>
@@ -426,11 +486,14 @@ export function ProviderConnectStep({
         })}
       </RadioGroup>
       {option === undefined ? null : oauthProvider !== undefined ? (
-        <p>
-          {waiting
-            ? "Finish signing in on the tab that opened, then come back here."
-            : "A new tab opens to sign in. Your workbench stores the result; no key to paste."}
-        </p>
+        <>
+          {modelPicker}
+          <p>
+            {waiting
+              ? "Finish signing in on the tab that opened, then come back here."
+              : "A new tab opens to sign in. Your workbench stores the result; no key to paste."}
+          </p>
+        </>
       ) : isLocal ? (
         <>
           <label>
@@ -507,17 +570,7 @@ export function ProviderConnectStep({
               required
             />
           </label>
-          {typedModel ? (
-            <label>
-              Model
-              <Input
-                autoComplete="off"
-                value={modelName}
-                onChange={(event) => setModelName(event.target.value)}
-                required
-              />
-            </label>
-          ) : null}
+          {typedModel || listed ? modelPicker : null}
         </>
       )}
       <div className="onboarding-actions">
