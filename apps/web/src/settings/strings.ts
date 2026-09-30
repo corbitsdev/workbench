@@ -40,12 +40,6 @@ export const SETTINGS_STRINGS = {
   accountEmailCopiedToast: "Copied",
   accountEmailCopyError: "Couldn't copy the email",
 
-  appearanceSectionTitle: "Appearance",
-  appearanceThemeLabel: "Theme",
-  themeLight: "Light",
-  themeDark: "Dark",
-  themeCanvas: "Canvas",
-
   peopleSectionTitle: "People",
   peopleSectionDescription: "Everyone with a seat on this workbench.",
   peopleLoadError: "this workbench's people",

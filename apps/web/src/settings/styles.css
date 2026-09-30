@@ -747,3 +747,29 @@
   font-weight: 600;
   color: var(--ink-2);
 }
+
+.settings-page-head {
+  flex-shrink: 0;
+  padding: 24px 28px 16px;
+}
+
+/* react-ui's SettingsPanel card: ring-as-border like the mockup's raised cards. */
+.settings-stage-body > section.border {
+  border-color: transparent;
+  border-radius: 12px;
+  box-shadow: var(--raised);
+}
+
+.settings-page-head h1 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.settings-page-head p {
+  margin: 6px 0 0;
+  color: var(--ink-2);
+  font-size: 15px;
+}

@@ -59,13 +59,11 @@ export function SettingsRoute({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <StageTopBar
-        crumbs={
-          activeSection === undefined
-            ? [{ label: "Settings" }]
-            : [{ label: "Settings", href: SETTINGS_PATH_PREFIX }, { label: activeSection.title }]
-        }
-      />
+      <StageTopBar crumbs={[{ label: "Settings" }]} />
+      <div className="settings-page-head">
+        <h1>Settings</h1>
+        <p>Personal and shared, side by side.</p>
+      </div>
       <div className="settings-layout min-h-0 flex-1">
         <SettingsNav path={path} onNavigate={navigate} />
         <div className="min-h-0 flex-1 overflow-y-auto">

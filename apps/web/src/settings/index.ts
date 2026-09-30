@@ -3,7 +3,7 @@ export type { SettingsContext, SettingsSection, SettingsSectionGroup } from "./s
 
 export { resolveSettingsSectionGroups, insertEveryoneSections } from "./section-registry";
 
-export { AccountSection, AccountSectionView, AppearanceSection } from "./account-section";
+export { AccountSection, AccountSectionView } from "./account-section";
 // NotificationsSection is not exported: it is draft-only and not in the
 // registry. Re-export when a preference store backs it.
 export { AuditSection } from "./audit-section";
