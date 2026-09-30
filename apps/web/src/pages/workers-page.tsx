@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { Button, RichEmptyState, Skeleton } from "@corbits/react-ui";
+import { Menu, MenuContent, MenuItem, MenuTrigger } from "@corbits/react-ui/ui/menu";
 import { toast } from "@corbits/react-ui/ui/toast";
 import { Plus, Robot } from "@/lib/icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -13,12 +14,15 @@ import { isAgentNotRunning, type ChatAgent } from "@/chat/threads-api";
 import { WorkbenchAvatar } from "@/chat/avatar";
 import { describeRestartFailure, redeployWorkbenchAgent } from "../workbench-create";
 import { useBench } from "../bench-context";
+import type { HubTenant } from "../needs-converge";
+import { useSidebarSections } from "../shell/sidebar-sections";
 import { useBenchWorkers, type BenchWorker } from "../worker-benches";
-import { Link } from "../navigation";
+import { Link, useNavigate } from "../navigation";
 import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { CreateAgentPanel } from "./create-agent-panel";
 import { WORKERS_PATH_PREFIX } from "../path-ids";
+import { NEW_WORKBENCH_PATH } from "../routes";
 import { useWorkerRole } from "../worker-role-query";
 
 export type WorkerTone = "working" | "ready" | "idle";
@@ -209,8 +213,11 @@ export function WorkersRosterList({ workers }: { readonly workers: readonly Benc
 export function WorkersRoute() {
   const { selectedTenantId } = useBench();
   const { workers, loading, error } = useBenchWorkers();
+  const sections = useSidebarSections(selectedTenantId);
+  const benches = sections.kind === "ready" ? sections.workbenches : [];
   const queryClient = useQueryClient();
-  const [createOpen, setCreateOpen] = useState(false);
+  const navigate = useNavigate();
+  const [createBench, setCreateBench] = useState<HubTenant | null>(null);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -220,10 +227,30 @@ export function WorkersRoute() {
           title="Workers"
           subtitle="Each worker picks a name, keeps its memory, and asks before it writes anywhere."
           actions={
-            selectedTenantId === null ? undefined : (
-              <Button size="sm" onClick={() => setCreateOpen(true)}>
+            selectedTenantId === null || sections.kind !== "ready" ? undefined : benches.length ===
+              0 ? (
+              <Button size="sm" onClick={() => navigate(NEW_WORKBENCH_PATH)}>
                 <Plus /> New worker
               </Button>
+            ) : benches.length === 1 ? (
+              <Button size="sm" onClick={() => setCreateBench(benches[0] ?? null)}>
+                <Plus /> New worker
+              </Button>
+            ) : (
+              <Menu>
+                <MenuTrigger asChild>
+                  <Button size="sm">
+                    <Plus /> New worker
+                  </Button>
+                </MenuTrigger>
+                <MenuContent align="end">
+                  {benches.map((bench) => (
+                    <MenuItem key={bench.id} onSelect={() => setCreateBench(bench)}>
+                      {bench.name}
+                    </MenuItem>
+                  ))}
+                </MenuContent>
+              </Menu>
             )
           }
         >
@@ -244,16 +271,21 @@ export function WorkersRoute() {
               ) : (
                 <WorkersRosterList workers={workers} />
               )}
-              <CreateAgentPanel
-                open={createOpen}
-                onOpenChange={setCreateOpen}
-                tenantId={selectedTenantId}
-                onCreated={() => {
-                  void queryClient.invalidateQueries({
-                    queryKey: tenantKeys.agents(selectedTenantId),
-                  });
-                }}
-              />
+              {createBench === null ? null : (
+                <CreateAgentPanel
+                  open
+                  onOpenChange={(open) => {
+                    if (!open) setCreateBench(null);
+                  }}
+                  tenantId={createBench.id}
+                  onCreated={() => {
+                    // Prefix key: the roster and the sidebar's agent reads.
+                    void queryClient.invalidateQueries({
+                      queryKey: ["tenant", createBench.id, "agents"],
+                    });
+                  }}
+                />
+              )}
             </>
           )}
         </PageLayout>
