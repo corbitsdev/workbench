@@ -39,3 +39,6 @@ e2e/browser/shots/
 
 # Generated Myra workflow bundle (built on demand, never committed)
 agents/myra/bundle/
+
+# Local clickable mockups (design artifacts, never committed)
+.mockups/
