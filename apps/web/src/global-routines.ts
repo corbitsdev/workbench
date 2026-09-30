@@ -9,6 +9,7 @@ import { describeApiError } from "@/lib/api-query";
 import type { APIQuery } from "@/lib/api-query";
 
 import { useBench } from "./bench-context";
+import { useFromBench } from "./shell/page-crumbs";
 import { WORKFLOWS_PATH_PREFIX } from "./path-ids";
 import { tenantKeys } from "./query-client";
 import {
@@ -30,7 +31,7 @@ export function routineDetailPath(definitionId: string): string {
   return `${WORKFLOWS_PATH_PREFIX}/${encodeURIComponent(definitionId)}`;
 }
 
-function useMemberBenches(): {
+function useMemberBenches(fromBench: string | null): {
   readonly kind: "loading" | "ready";
   readonly benches: readonly { tenantId: string; tenantName: string }[];
 } {
@@ -42,12 +43,15 @@ function useMemberBenches(): {
     () => benchMemberships.map((m) => ({ tenantId: m.tenantId, tenantName: m.tenantName })),
     [benchMemberships],
   );
+  if (fromBench !== null) {
+    return { kind: "ready", benches: [{ tenantId: fromBench, tenantName: "" }] };
+  }
   if (memberships.kind !== "ready") return { kind: "loading", benches: [] };
   return { kind: "ready", benches };
 }
 
 export function useGlobalRoutines(): APIQuery<readonly GlobalRoutineRow[]> {
-  const { kind: benchesKind, benches } = useMemberBenches();
+  const { kind: benchesKind, benches } = useMemberBenches(useFromBench());
   const results = useQueries({
     queries: benches.map((bench) => ({
       queryKey: [...tenantKeys.routines(bench.tenantId), ROUTINES_QUERY_SCOPE],

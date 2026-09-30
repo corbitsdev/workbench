@@ -26,12 +26,14 @@ import {
 import { VoiceOverlay } from "../voice/voice-overlay";
 import { BenchDrawer } from "../bench/bench-drawer";
 import { BenchPill } from "../bench/bench-pill";
+import { ArtifactsTab } from "../bench/artifacts-tab";
 import { useWorkerStatus } from "../worker-status";
 import { GrantsTab } from "../bench/grants-tab";
 import { InformationTab } from "../bench/information-tab";
 import { InsightsTab } from "../bench/insights-tab";
 import { MembersTab } from "../bench/members-tab";
 import { ToolsTab } from "../bench/tools-tab";
+import { WorkflowsTab } from "../bench/workflows-tab";
 import { useBench } from "../bench-context";
 import { createFetchStockHub } from "../needs-converge";
 import { workbenchKeys } from "../chat-path";
@@ -69,6 +71,34 @@ function WorkbenchMessageRow({
   // see echoed back at them.
   const body = message.author === "me" ? stripRoster(message.body) : message.body;
   const { pkg, renderedBody } = resolveMessagePackage(message.attachments, body);
+  const own = message.author === "me";
+  const time = new Date(message.at);
+  const content = (
+    <>
+      <Markdown text={renderedBody} />
+      <MessageAttachments
+        tenantId={workbenchTenantId}
+        attachments={message.attachments}
+        pkg={pkg}
+      />
+    </>
+  );
+  const reply =
+    onReply === undefined ? null : (
+      <button type="button" className="workbench-replies-link" onClick={() => onReply(message)}>
+        Reply
+      </button>
+    );
+  if (own) {
+    return (
+      <div className="chat-thread-message" data-author="me">
+        <div className="chat-thread-body">
+          <div className="chat-thread-own-bubble">{content}</div>
+          {reply}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="chat-thread-message" data-author={message.author}>
       <span className="shell-ch-avatar">
@@ -79,17 +109,16 @@ function WorkbenchMessageRow({
         />
       </span>
       <div className="chat-thread-body">
-        <Markdown text={renderedBody} />
-        <MessageAttachments
-          tenantId={workbenchTenantId}
-          attachments={message.attachments}
-          pkg={pkg}
-        />
-        {onReply === undefined ? null : (
-          <button type="button" className="workbench-replies-link" onClick={() => onReply(message)}>
-            Reply
-          </button>
-        )}
+        <div className="chat-thread-head">
+          <b>{avatarName}</b>
+          {Number.isNaN(time.getTime()) ? null : (
+            <time dateTime={message.at}>
+              {time.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+            </time>
+          )}
+        </div>
+        {content}
+        {reply}
       </div>
     </div>
   );
@@ -333,6 +362,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                 participants={participants.data ?? []}
               />
             ),
+            Artifacts: <ArtifactsTab workbenchTenantId={workbenchTenantId} />,
             Tools: <ToolsTab workbenchTenantId={workbenchTenantId} />,
             Grants: <GrantsTab workbenchTenantId={workbenchTenantId} />,
             Insights: <InsightsTab workbenchTenantId={workbenchTenantId} />,
@@ -342,6 +372,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                 participants={participants.data ?? []}
               />
             ),
+            Workflows: <WorkflowsTab workbenchTenantId={workbenchTenantId} />,
           }}
         />
       </div>

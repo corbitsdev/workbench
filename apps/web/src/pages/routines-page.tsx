@@ -9,7 +9,7 @@ import { useGlobalRoutines, useRoutineActions } from "../global-routines";
 import type { GlobalRoutineRow } from "../global-routines";
 import { routineDetailPath } from "../global-routines";
 import { Link } from "../navigation";
-import { benchLink, useFromBenchId } from "../shell/page-crumbs";
+import { benchLink, useFromBench } from "../shell/page-crumbs";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { RoutinePill, formatWhen, routineState, useRoutineRuns } from "./routine-ui";
 
@@ -64,7 +64,7 @@ export function GlobalRoutinesList({
   readonly onRunNow: (row: GlobalRoutineRow) => Promise<void>;
 }) {
   const [query, setQuery] = useState("");
-  const fromId = useFromBenchId();
+  const fromId = useFromBench();
   if (rows.length === 0) {
     return (
       <RichEmptyState
