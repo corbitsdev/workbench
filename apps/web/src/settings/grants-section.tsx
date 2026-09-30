@@ -4,7 +4,6 @@
 import {
   Badge,
   Button,
-  ConfirmButton,
   Dialog,
   DialogBody,
   DialogContent,
@@ -51,6 +50,7 @@ import {
   type Principal,
   type Role,
 } from "./tenancy-api";
+import { ConfirmButton } from "../components/confirm-button";
 
 const EFFECT_TONE: Record<GrantEffect, "success" | "danger" | "info"> = {
   allow: "success",
@@ -110,7 +110,9 @@ export function GrantsSection({ tenantId }: { readonly tenantId: string | null }
 
   function reload() {
     if (tenantId === null) return;
-    void queryClient.invalidateQueries({ queryKey: tenantKeys.grants(tenantId) });
+    void queryClient.invalidateQueries({
+      queryKey: tenantKeys.grants(tenantId),
+    });
   }
 
   if (tenantId === null) {
@@ -312,7 +314,6 @@ export function GrantsTable({
             <TableCell>{grant.expiresAt ?? SETTINGS_STRINGS.grantsNoExpiry}</TableCell>
             <TableCell>
               <ConfirmButton
-                variant="destructive"
                 size="sm"
                 confirmLabel={SETTINGS_STRINGS.grantsRevokeConfirm}
                 onConfirm={() => onRevoke(grant)}
