@@ -8,6 +8,7 @@ import { QueryView, toAPIQuery } from "@/lib/api-query";
 import { listProviders, type Provider } from "./credentials-api";
 import { getResolvedCatalog, type ModelInfo } from "./inference";
 import { SettingsGroup, SettingsRow } from "./rows";
+import { inferenceProviders, providerLabel } from "./inference-providers";
 import { SETTINGS_STRINGS } from "./strings";
 
 type ModelsData = {
@@ -48,7 +49,7 @@ export function ModelsSection({ tenantId }: { readonly tenantId: string | null }
           description={SETTINGS_STRINGS.modelsSectionDescription}
         >
           <h3 className="settings-subhead">{SETTINGS_STRINGS.modelsProvidersHeading}</h3>
-          <ProvidersTable providers={providers} />
+          <ProvidersTable providers={inferenceProviders(providers)} />
           <h3 className="settings-subhead">{SETTINGS_STRINGS.modelsCatalogHeading}</h3>
           <ModelsTable models={models} />
         </SettingsGroup>
@@ -69,7 +70,7 @@ function ProvidersTable({ providers }: { readonly providers: readonly Provider[]
   return (
     <>
       {providers.map((provider) => (
-        <SettingsRow key={provider.id} title={provider.name} meta={provider.plugin} />
+        <SettingsRow key={provider.id} title={providerLabel(provider)} />
       ))}
     </>
   );

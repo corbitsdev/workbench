@@ -49,6 +49,7 @@ import { SETTINGS_STRINGS } from "./strings";
 import { ConfirmButton } from "../components/confirm-button";
 import { ProviderConnectStep } from "../onboarding/provider-connect-step";
 import { SettingsGroup, SettingsRow } from "./rows";
+import { inferenceProviders, providerLabel } from "./inference-providers";
 
 type CatalogProvider = typeof ModelProviderResponse.infer;
 type CatalogOffering = typeof ModelOfferingResponse.infer;
@@ -279,66 +280,73 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
 
   return (
     <QueryView query={query} label={SETTINGS_STRINGS.credentialsLoadError}>
-      {({ credentials }) => (
-        <SettingsGroup
-          title={SETTINGS_STRINGS.credentialsSectionTitle}
-          description={SETTINGS_STRINGS.credentialsSectionDescription}
-          action={
-            <Button variant="primary" onClick={() => setCreateOpen(true)}>
-              {SETTINGS_STRINGS.credentialsCreateAction}
-            </Button>
-          }
-        >
-          {del.error === null || del.error === undefined ? null : (
-            <p className="settings-inline-error" role="alert">
-              {SETTINGS_STRINGS.credentialsDeleteError}
-            </p>
-          )}
-          {signIn.error === null || signIn.error === undefined ? null : (
-            <p className="settings-inline-error" role="alert">
-              {SETTINGS_STRINGS.credentialsSignInAgainError}
-            </p>
-          )}
-          <CredentialsTable
-            credentials={credentials}
-            signingIn={signIn.isPending || login.data?.status === "pending"}
-            onEdit={setEditing}
-            onDelete={(credential) => del.mutate(credential)}
-            onSignIn={(credential) => signIn.mutate(credential)}
-          />
-          <AddProviderDialog
-            tenantId={tenantId}
-            open={createOpen}
-            onOpenChange={setCreateOpen}
-            onConnected={() => {
-              setCreateOpen(false);
-              reload();
-            }}
-          />
-          <EditCredentialDialog
-            credential={editing}
-            linked={editingLinkage}
-            onOpenChange={(open) => {
-              if (!open) setEditing(null);
-            }}
-            onSave={(input) => update.mutate(input)}
-            submitting={update.isPending}
-            error={update.error === null ? null : SETTINGS_STRINGS.credentialsEditError}
-          />
-        </SettingsGroup>
-      )}
+      {({ credentials: all, providers }) => {
+        const inference = inferenceProviders(providers);
+        const credentials = all.filter((row) => inference.some((p) => p.id === row.providerId));
+        return (
+          <SettingsGroup
+            title={SETTINGS_STRINGS.credentialsSectionTitle}
+            description={SETTINGS_STRINGS.credentialsSectionDescription}
+            action={
+              <Button variant="primary" onClick={() => setCreateOpen(true)}>
+                {SETTINGS_STRINGS.credentialsCreateAction}
+              </Button>
+            }
+          >
+            {del.error === null || del.error === undefined ? null : (
+              <p className="settings-inline-error" role="alert">
+                {SETTINGS_STRINGS.credentialsDeleteError}
+              </p>
+            )}
+            {signIn.error === null || signIn.error === undefined ? null : (
+              <p className="settings-inline-error" role="alert">
+                {SETTINGS_STRINGS.credentialsSignInAgainError}
+              </p>
+            )}
+            <CredentialsTable
+              credentials={credentials}
+              providers={inference}
+              signingIn={signIn.isPending || login.data?.status === "pending"}
+              onEdit={setEditing}
+              onDelete={(credential) => del.mutate(credential)}
+              onSignIn={(credential) => signIn.mutate(credential)}
+            />
+            <AddProviderDialog
+              tenantId={tenantId}
+              open={createOpen}
+              onOpenChange={setCreateOpen}
+              onConnected={() => {
+                setCreateOpen(false);
+                reload();
+              }}
+            />
+            <EditCredentialDialog
+              credential={editing}
+              linked={editingLinkage}
+              onOpenChange={(open) => {
+                if (!open) setEditing(null);
+              }}
+              onSave={(input) => update.mutate(input)}
+              submitting={update.isPending}
+              error={update.error === null ? null : SETTINGS_STRINGS.credentialsEditError}
+            />
+          </SettingsGroup>
+        );
+      }}
     </QueryView>
   );
 }
 
 function CredentialsTable({
   credentials,
+  providers,
   signingIn,
   onEdit,
   onDelete,
   onSignIn,
 }: {
   readonly credentials: readonly Credential[];
+  readonly providers: readonly Provider[];
   readonly signingIn: boolean;
   readonly onEdit: (credential: Credential) => void;
   readonly onDelete: (credential: Credential) => void;
@@ -357,7 +365,7 @@ function CredentialsTable({
       {credentials.map((credential) => (
         <SettingsRow
           key={credential.id}
-          title={credential.name}
+          title={providerLabel(providers.find((p) => p.id === credential.providerId))}
           meta={
             <>
               <span>{credential.type}</span>
@@ -424,12 +432,7 @@ function AddProviderDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
-          <ProviderConnectStep
-            tenantId={tenantId}
-            onConnected={onConnected}
-            onError={setError}
-            onSkip={() => onOpenChange(false)}
-          />
+          <ProviderConnectStep tenantId={tenantId} onConnected={onConnected} onError={setError} />
           {error !== null && (
             <p className="settings-inline-error" role="alert">
               {error}
