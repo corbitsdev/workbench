@@ -61,8 +61,8 @@ async function createBench(page: Page, message: string): Promise<string> {
 }
 
 async function runFlow(page: Page, origin: string): Promise<void> {
-  await page.setViewport(VIEWPORT);
   await signUp(page, origin);
+  await page.setViewport(VIEWPORT);
   const ids: string[] = [];
   for (const [i, message] of MESSAGES.entries()) {
     if (i > 0) await page.goto(`${origin}/new`, { waitUntil: "networkidle0" });
