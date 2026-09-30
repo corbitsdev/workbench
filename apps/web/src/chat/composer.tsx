@@ -23,6 +23,9 @@ export function Composer({
   onAttach,
   onRunWorkflow,
   onVoice,
+  voiceUnavailable,
+  sendLabel = "Send",
+  autoFocus,
 }: {
   readonly placeholder: string;
   readonly busy: boolean;
@@ -35,6 +38,11 @@ export function Composer({
   readonly onRunWorkflow?: () => void;
   /** Starts voice mode; the mic is hidden without it. */
   readonly onVoice?: () => void;
+  /** Shows the mic disabled with this title when there is no `onVoice`. */
+  readonly voiceUnavailable?: string;
+  /** Accessible name of the send button. */
+  readonly sendLabel?: string;
+  readonly autoFocus?: boolean;
 }) {
   const [text, setText] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -219,6 +227,7 @@ export function Composer({
           placeholder={placeholder}
           aria-label={placeholder}
           disabled={disabled}
+          autoFocus={autoFocus}
           onChange={(event) => {
             setText(event.target.value);
             syncMention(event.target);
@@ -252,13 +261,13 @@ export function Composer({
             }
           }}
         />
-        {onVoice === undefined ? null : (
+        {onVoice === undefined && voiceUnavailable === undefined ? null : (
           <button
             type="button"
             className="chat-composer-btn chat-composer-voice"
             aria-label="Voice mode"
-            title="Voice mode"
-            disabled={disabled}
+            title={onVoice === undefined ? voiceUnavailable : "Voice mode"}
+            disabled={disabled || onVoice === undefined}
             onClick={onVoice}
           >
             <AudioLines aria-hidden="true" />
@@ -269,8 +278,8 @@ export function Composer({
           className="chat-composer-send"
           disabled={!canSend}
           onClick={send}
-          aria-label={busy ? "Sending…" : "Send"}
-          title={busy ? "Sending…" : "Send"}
+          aria-label={busy ? "Sending…" : sendLabel}
+          title={busy ? "Sending…" : sendLabel}
         >
           {busy ? (
             <CircleNotch className="chat-composer-send-spinner" aria-hidden="true" />
