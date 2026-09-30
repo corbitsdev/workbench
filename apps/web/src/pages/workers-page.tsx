@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Button, RichEmptyState, Skeleton } from "@corbits/react-ui";
 import { Menu, MenuContent, MenuItem, MenuTrigger } from "@corbits/react-ui/ui/menu";
 import { toast } from "@corbits/react-ui/ui/toast";
-import { Plus, Robot } from "@/lib/icons";
+import { Hash, Plus, Robot } from "@/lib/icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { reportError } from "@corbits/error-sink";
 
@@ -65,10 +65,14 @@ export function WorkerRole({
 export function StatusPill({ tone }: { readonly tone: WorkerTone }) {
   return (
     <span
-      className={`inline-flex h-6 shrink-0 items-center rounded-full px-2.5 text-[12px] font-bold ${
+      className={`inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[12px] font-bold ${
         tone === "idle" ? "bg-(--hover) text-(--ink-3)" : "bg-(--attention-wash) text-(--ink)"
       }`}
     >
+      <span
+        aria-hidden
+        className={`size-1.5 rounded-full ${tone === "idle" ? "bg-(--ink-3)" : "bg-(--action)"}`}
+      />
       {PILL_LABEL[tone]}
     </span>
   );
@@ -82,7 +86,7 @@ const FILTERS: readonly (readonly [WorkerTone | "all", string])[] = [
 ];
 
 const ROW_GRID =
-  "grid items-center gap-4 md:grid-cols-[minmax(200px,1.2fr)_minmax(220px,1.6fr)_minmax(120px,1fr)_72px]";
+  "grid items-center gap-4 md:grid-cols-[minmax(200px,1.2fr)_minmax(220px,1.6fr)_minmax(140px,1fr)_64px]";
 
 export function WorkersRosterList({ workers }: { readonly workers: readonly BenchWorker[] }) {
   const [filter, setFilter] = useState<WorkerTone | "all">("all");
@@ -146,10 +150,10 @@ export function WorkersRosterList({ workers }: { readonly workers: readonly Benc
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Filter workers"
           aria-label="Filter workers"
-          className="h-8 w-full min-[601px]:w-56 rounded-(--r-md) border border-(--line) bg-(--card) px-3 text-[13px]"
+          className="h-8 w-full min-[601px]:w-60 rounded-(--r-md) border border-(--line) bg-(--card) px-3 text-[13px]"
         />
       </div>
-      <div className={`${ROW_GRID} hidden px-3 pb-2 text-[12px] font-bold text-(--ink-3) md:grid`}>
+      <div className={`${ROW_GRID} hidden px-4 pb-2 text-[12px] font-bold text-(--ink-3) md:grid`}>
         <span>Worker</span>
         <span>Right now</span>
         <span>Workbench</span>
@@ -157,12 +161,15 @@ export function WorkersRosterList({ workers }: { readonly workers: readonly Benc
       </div>
       {shown.length === 0 ? (
         <p className="py-12 text-center text-[14px] text-(--ink-3)">
-          No workers match this filter.
+          No workers match “{query.trim()}”.
         </p>
       ) : (
-        <ul className="divide-y divide-(--line) border-y border-(--line)">
+        <ul className="overflow-hidden rounded-(--r-lg) bg-(--surface) shadow-(--raised)">
           {shown.map(({ agent, bench, status }) => (
-            <li key={agent.id} className={`${ROW_GRID} relative px-3 py-3 hover:bg-(--hover)`}>
+            <li
+              key={agent.id}
+              className={`${ROW_GRID} relative min-h-[66px] border-t border-(--line) px-4 py-2 transition-colors first:border-t-0 hover:bg-(--surface-sunk)`}
+            >
               <Link
                 to={workerPath(agent.id)}
                 aria-label={agent.name}
@@ -181,7 +188,10 @@ export function WorkersRosterList({ workers }: { readonly workers: readonly Benc
               </span>
               <span className="flex min-w-0 items-center gap-2.5 text-[13.5px]">
                 <StatusPill tone={status.tone} />
-                <span className="truncate">{status.text}</span>
+                <span className="truncate">
+                  {status.text}
+                  <span className="text-(--ink-3)"> · {bench.name}</span>
+                </span>
                 {status.tone === "ready" ? (
                   <Button
                     variant="outline"
@@ -196,8 +206,11 @@ export function WorkersRosterList({ workers }: { readonly workers: readonly Benc
                   </Button>
                 ) : null}
               </span>
-              <span className="flex min-w-0 flex-wrap gap-x-2 text-[12.5px] font-semibold text-(--ink-2)">
-                <span className="max-w-full truncate">{bench.name}</span>
+              <span className="flex min-w-0">
+                <span className="inline-flex h-6 max-w-full items-center gap-1 rounded-(--r-sm) bg-(--hover) pr-2 pl-1.5 text-[12.5px] font-semibold text-(--ink-2)">
+                  <Hash className="size-3.5 shrink-0" />
+                  <span className="truncate">{bench.name}</span>
+                </span>
               </span>
               <span className="text-right text-[12.5px] text-(--ink-3)">
                 {agent.liveAddress === null ? "" : "Now"}
