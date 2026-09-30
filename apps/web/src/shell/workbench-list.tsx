@@ -2,15 +2,12 @@
 // workbench concept.
 
 import { EmptyState, Skeleton } from "@corbits/react-ui";
-import { useQuery } from "@tanstack/react-query";
 import { WorkbenchAvatar } from "@/chat/avatar";
-import { listChatAgents } from "@/chat/threads-api";
 import { Hash } from "@/lib/icons";
 
 import { useBench } from "../bench-context";
 import { useBenchWorkerStatus } from "../worker-status";
-import { useNamedAgents, useWorkerBenches } from "../worker-benches";
-import { tenantKeys } from "../query-client";
+import { useBenchWorkers, type BenchWorker } from "../worker-benches";
 import { workbenchIdFromPath, workbenchPath } from "../workbench-path";
 import type { HubTenant } from "../needs-converge";
 import { useSidebarSections } from "./sidebar-sections";
@@ -106,18 +103,16 @@ export function WorkbenchList({
 }
 
 function WorkerRow({
-  agent,
-  benches,
+  worker,
   active,
   onSelect,
 }: {
-  readonly agent: { readonly name: string; readonly assetName: string };
-  readonly benches: readonly HubTenant[];
+  readonly worker: BenchWorker;
   readonly active: boolean;
   readonly onSelect: () => void;
 }) {
-  // The bench's copy of a workspace worker shares its deploy asset name.
-  const status = useBenchWorkerStatus(benches, (p) => p.assetName === agent.assetName);
+  const { agent, bench } = worker;
+  const status = useBenchWorkerStatus([bench], (p) => p.id === agent.id);
   return (
     <button
       type="button"
@@ -143,25 +138,17 @@ function WorkerGroup({
   readonly path: string;
   readonly onNavigate: (to: string) => void;
 }) {
-  const { byWorker } = useWorkerBenches();
-  const { selectedTenantId } = useBench();
-  const agents = useQuery({
-    queryKey: tenantKeys.agents(selectedTenantId ?? "none"),
-    enabled: selectedTenantId !== null,
-    queryFn: () => listChatAgents(selectedTenantId as string),
-  });
-  const workers = useNamedAgents(agents.data ?? []);
+  const { workers } = useBenchWorkers();
   if (workers.length === 0) return null;
   return (
     <div className="panel-stack-group">
       <SectionLabel>Workers</SectionLabel>
-      {workers.map((agent) => {
-        const to = `/workers/${agent.id}`;
+      {workers.map((worker) => {
+        const to = `/workers/${worker.agent.id}`;
         return (
           <WorkerRow
-            key={agent.id}
-            agent={agent}
-            benches={byWorker.get(agent.id) ?? []}
+            key={worker.agent.id}
+            worker={worker}
             active={path === to}
             onSelect={() => onNavigate(to)}
           />

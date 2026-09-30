@@ -2,16 +2,16 @@
 // and the workbench it lives on.
 
 import { useState } from "react";
-import { Button, Card, CardDescription, CardTitle, PageShell } from "@corbits/react-ui";
+import { Button, Card, CardDescription, CardTitle, PageShell, Skeleton } from "@corbits/react-ui";
 import { toast } from "@corbits/react-ui/ui/toast";
 import { reportError } from "@corbits/error-sink";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { GrantEffect } from "@intx/types";
 
 import { WorkbenchAvatar } from "@/chat/avatar";
-import { isDefaultWorker, listChatAgents, type ChatAgent } from "@/chat/threads-api";
+import { isDefaultWorker, type ChatAgent } from "@/chat/threads-api";
 import { ChatCircle } from "@/lib/icons";
-import { QueryView, describeApiError } from "@/lib/api-query";
+import { describeApiError } from "@/lib/api-query";
 import { listTopLevelRuns } from "../agents-api";
 import { updateGrant, type Grant } from "../settings/tenancy-api";
 import { agentSlugFromSourceAssetName, deployAgentSource } from "../agent-deploy";
@@ -23,14 +23,12 @@ import {
   toolEffectsToCarry,
   workerToolGrantsKey,
 } from "../worker-tool-grants";
-import { useBench } from "../bench-context";
 import { Link } from "../navigation";
 import { tenantKeys } from "../query-client";
-import { useTenantQuery } from "../routines-api";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { WORKERS_PATH_PREFIX } from "../path-ids";
 import { workbenchPath } from "../workbench-path";
-import { useNamedAgents, useWorkerBenches } from "../worker-benches";
+import { useBenchWorkers } from "../worker-benches";
 import { StatusPill, WorkerRole, workerStatus } from "./workers-page";
 
 function sourceKey(tenantId: string, agentId: string) {
@@ -290,20 +288,21 @@ function DetailsCard({
 }
 
 export function WorkerRoute({ agentId }: { readonly agentId: string }) {
-  const { selectedTenantId } = useBench();
-  const agentsQuery = useTenantQuery(
-    tenantKeys.agents(selectedTenantId ?? "none"),
-    selectedTenantId !== null,
-    () => listChatAgents(selectedTenantId as string),
-  );
-  const named = useNamedAgents(agentsQuery.kind === "ready" ? agentsQuery.data : []);
-  const { byWorker } = useWorkerBenches();
+  const { workers, loading, error } = useBenchWorkers();
+  const found = workers.find((candidate) => candidate.agent.id === agentId);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <QueryView query={agentsQuery} label="this worker" skeleton="rows">
-        {() => {
-          const agent = named.find((candidate) => candidate.id === agentId);
+      {error !== undefined ? (
+        <p role="alert" className="p-7 text-[14px] text-(--danger-ink)">
+          {error}
+        </p>
+      ) : loading ? (
+        <Skeleton className="m-7 h-40" />
+      ) : (
+        (() => {
+          const agent = found?.agent;
+          const selectedTenantId = found?.bench.id ?? null;
           if (agent === undefined || selectedTenantId === null) {
             return (
               <>
@@ -317,7 +316,7 @@ export function WorkerRoute({ agentId }: { readonly agentId: string }) {
             );
           }
           const status = workerStatus(agent);
-          const agentBenches = byWorker.get(agent.id) ?? [];
+          const agentBenches = found === undefined ? [] : [found.bench];
           const bench = agentBenches[0];
           return (
             <>
@@ -388,8 +387,8 @@ export function WorkerRoute({ agentId }: { readonly agentId: string }) {
               </div>
             </>
           );
-        }}
-      </QueryView>
+        })()
+      )}
     </div>
   );
 }
