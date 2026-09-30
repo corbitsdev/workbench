@@ -43,6 +43,7 @@ describeIfDb("boot", () => {
   test("serves stock platform routes", async () => {
     const { createHubServer } = await import("../../apps/hub/src/server");
     const opts = await createHubServer();
+    closers.push(() => opts.shutdown());
 
     const status = await opts.fetch(new Request("http://localhost/status"));
     expect(status.status).toBe(200);
@@ -54,6 +55,7 @@ describeIfDb("boot", () => {
   test("a Corbits mount (mailbox) sits inside the native tenant middleware", async () => {
     const { createHubServer } = await import("../../apps/hub/src/server");
     const opts = await createHubServer();
+    closers.push(() => opts.shutdown());
 
     // Anonymous request to a Corbits-mounted route: the platform's tenant
     // middleware answers 401 before the mailbox library's own handler runs.
