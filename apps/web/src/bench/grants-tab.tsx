@@ -8,6 +8,7 @@ import { tenantKeys } from "@/query-client";
 import { GRANT_RESOURCE_LABEL, type GrantResource } from "../settings/resource-vocabulary";
 import { principalLabel } from "../settings/identity";
 import { listGrants, revokeGrant, type Grant } from "../settings/tenancy-api";
+import { useGrantNames } from "./grant-names";
 
 const MODE: Record<GrantEffect, string> = {
   allow: "Always allow",
@@ -38,13 +39,15 @@ export function GrantsTab({
   readonly workbenchTenantId: string;
   readonly participants: readonly WorkbenchParticipant[];
 }) {
+  const names = useGrantNames(workbenchTenantId);
   const who = (grant: Grant): string => {
     if (grant.roleName !== undefined && grant.roleName !== null) return grant.roleName;
     const known = participants.find((p) => p.id === grant.principalId);
     if (known !== undefined) return known.name;
-    return grant.principalName === undefined || grant.principalName === null
-      ? "Everyone here"
-      : principalLabel(grant.principalName).label;
+    if (grant.principalName === undefined || grant.principalName === null) return "Everyone here";
+    const named = names.replaceTenantIds(grant.principalName);
+    // A raw run id is never shown, and never turned into words.
+    return principalLabel(named).raw === null ? named : "A worker";
   };
   const queryClient = useQueryClient();
   const query = toAPIQuery<readonly Grant[]>(
@@ -81,8 +84,8 @@ export function GrantsTab({
               {grants.map((grant) => (
                 <li key={grant.id} className="bench-tab-row">
                   <span className="bench-tab-text">
-                    <span className="workbench-info-cell-primary" title={grant.resource}>
-                      {resourceName(grant.resource)}
+                    <span className="workbench-info-cell-primary">
+                      {names.resource(grant.resource) ?? resourceName(grant.resource)}
                     </span>
                     <span className="workbench-info-cell-context">{who(grant)}</span>
                   </span>
