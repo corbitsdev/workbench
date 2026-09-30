@@ -1,11 +1,12 @@
 // No bench switcher: a multi-bench install still resolves via the command
 // palette's hidden "Switch workbench" action.
 
-import { Button, SidebarPanel, SidebarPanelBody, SidebarPanelFooter } from "@corbits/react-ui";
-import { MagnifyingGlass, Plus, SlidersHorizontal } from "@/lib/icons";
+import { Button, SidebarPanel, SidebarPanelBody } from "@corbits/react-ui";
+import { MagnifyingGlass, Plus } from "@/lib/icons";
 
 import { openCommandPalette } from "../command-palette-open-store";
-import { matchesRoute, NEW_WORKBENCH_PATH, SETTINGS_PATH } from "../routes";
+import { NEW_WORKBENCH_PATH } from "../routes";
+import { SidebarFooter } from "./sidebar-footer";
 import { WorkbenchList } from "./workbench-list";
 
 export function Sidebar({
@@ -44,19 +45,7 @@ export function Sidebar({
         <WorkbenchList path={path} onNavigate={onNavigate} />
       </SidebarPanelBody>
 
-      <SidebarPanelFooter>
-        <button
-          type="button"
-          className="shell-sidebar-footer-row"
-          data-active={matchesRoute(SETTINGS_PATH, path) ? "true" : undefined}
-          aria-current={matchesRoute(SETTINGS_PATH, path) ? "page" : undefined}
-          data-tour="settings-button"
-          onClick={() => onNavigate(SETTINGS_PATH)}
-        >
-          <SlidersHorizontal />
-          <span>Settings</span>
-        </button>
-      </SidebarPanelFooter>
+      <SidebarFooter path={path} onNavigate={onNavigate} />
     </SidebarPanel>
   );
 }
