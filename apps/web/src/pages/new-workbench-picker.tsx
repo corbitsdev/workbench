@@ -9,6 +9,7 @@ import { reportError } from "@corbits/error-sink";
 
 import { useBench } from "../bench-context";
 import { workbenchKeys } from "../chat-path";
+import { NEW_WORKBENCH_TITLE, titleFromFirstMessage } from "@/auto-workbench-title";
 import { createWorkbench, WorkbenchCreateError } from "../workbench-create";
 import { useNavigate } from "../navigation";
 import { ProviderSkipBanner } from "../provider-skip-banner";
@@ -29,12 +30,6 @@ export function describeWorkbenchCreateFailure(cause: unknown, refId?: string): 
   return refId === undefined ? message : `${message} Reference: ${refId}`;
 }
 
-/** A workbench's name is its opening ask, trimmed. */
-function workbenchName(prompt: string): string {
-  const trimmed = prompt.trim();
-  return trimmed === "" ? "Workbench" : trimmed.slice(0, 60);
-}
-
 export function NewWorkbenchPickerRoute() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -51,7 +46,7 @@ export function NewWorkbenchPickerRoute() {
     }) =>
       createWorkbench({
         benchTenantId,
-        name: workbenchName(openingMessage),
+        name: titleFromFirstMessage(openingMessage) ?? NEW_WORKBENCH_TITLE,
         openingMessage,
       }),
     onSuccess: (tenantId, variables) => {
