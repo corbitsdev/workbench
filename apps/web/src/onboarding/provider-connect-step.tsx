@@ -171,10 +171,12 @@ export function ProviderConnectStep({
   tenantId,
   onConnected,
   onError,
+  onSkip,
 }: {
   readonly tenantId: string;
   readonly onConnected: (offering: ExistingOffering) => void;
   readonly onError: (message: string) => void;
+  readonly onSkip: () => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
@@ -417,9 +419,14 @@ export function ProviderConnectStep({
           />
         </label>
       )}
-      <Button type="submit" disabled={submitting || waiting || !ready}>
-        {submitLabel}
-      </Button>
+      <div className="onboarding-actions">
+        <Button type="submit" variant="primary" disabled={submitting || waiting || !ready}>
+          {submitLabel}
+        </Button>
+        <Button type="button" variant="ghost" onClick={onSkip}>
+          Skip for now
+        </Button>
+      </div>
     </form>
   );
 }

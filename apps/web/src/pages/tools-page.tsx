@@ -8,7 +8,6 @@ import {
   Card,
   CardDescription,
   CardTitle,
-  ConfirmButton,
   Input,
   PageShell,
   RichEmptyState,
@@ -35,7 +34,9 @@ import {
 } from "../tools/mcp-servers-query";
 import { useDeployedToolPackages } from "../tools/deployed-tool-packages";
 import { useBench } from "../bench-context";
+import { useFromBench } from "../shell/page-crumbs";
 import { StageTopBar } from "../shell/stage-top-bar";
+import { ConfirmButton } from "../components/confirm-button";
 
 const AUTH_LABEL: Record<McpServer["auth"], string> = {
   none: "No sign-in",
@@ -84,7 +85,6 @@ function McpServersTable({
             </TableCell>
             <TableCell className="text-right">
               <ConfirmButton
-                variant="ghost"
                 size="sm"
                 disabled={removing}
                 confirmLabel="Remove?"
@@ -288,7 +288,11 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
                 serversQuery.data.some((server) => server.handle === entry.handle)
               }
               onAdd={() => {
-                addServer({ url: entry.url, name: entry.name, handle: entry.handle });
+                addServer({
+                  url: entry.url,
+                  name: entry.name,
+                  handle: entry.handle,
+                });
               }}
             />
           ))}
@@ -340,6 +344,7 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
 // A thin adapter that resolves which workbench's registry is listed.
 export function ToolsRoute() {
   const { selectedTenantId } = useBench();
+  const fromBench = useFromBench();
 
-  return <ToolsPage tenantId={selectedTenantId} />;
+  return <ToolsPage tenantId={fromBench ?? selectedTenantId} />;
 }

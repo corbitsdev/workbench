@@ -4,7 +4,6 @@
 import {
   Badge,
   Button,
-  ConfirmButton,
   Dialog,
   DialogBody,
   DialogContent,
@@ -42,6 +41,7 @@ import {
   type Principal,
   type Role,
 } from "./tenancy-api";
+import { ConfirmButton } from "../components/confirm-button";
 
 const STATUS_TONE: Record<Principal["status"], "success" | "info" | "neutral"> = {
   active: "success",
@@ -86,7 +86,9 @@ export function PeopleSection({ tenantId }: { readonly tenantId: string | null }
 
   function reload() {
     if (tenantId === null) return;
-    void queryClient.invalidateQueries({ queryKey: tenantKeys.principals(tenantId) });
+    void queryClient.invalidateQueries({
+      queryKey: tenantKeys.principals(tenantId),
+    });
   }
 
   const inviteMutation = useMutation({
@@ -99,7 +101,10 @@ export function PeopleSection({ tenantId }: { readonly tenantId: string | null }
       reload();
     },
     onError: (cause: unknown) => {
-      reportError(cause, { operation: "settings.people.invite", tenantId: tenantId ?? "none" });
+      reportError(cause, {
+        operation: "settings.people.invite",
+        tenantId: tenantId ?? "none",
+      });
     },
   });
 
@@ -204,7 +209,10 @@ export function PeopleSection({ tenantId }: { readonly tenantId: string | null }
             submitting={inviteMutation.isPending}
             error={inviteMutation.isError ? SETTINGS_STRINGS.peopleInviteError : null}
             onInvite={(email, roleId) =>
-              inviteMutation.mutate({ email, ...(roleId !== undefined ? { roleId } : {}) })
+              inviteMutation.mutate({
+                email,
+                ...(roleId !== undefined ? { roleId } : {}),
+              })
             }
           />
         </SettingsPanel>
@@ -416,7 +424,6 @@ export function PeopleTable({
                       </Button>
                     )}
                     <ConfirmButton
-                      variant="destructive"
                       size="sm"
                       confirmLabel={SETTINGS_STRINGS.peopleRemoveConfirm}
                       onConfirm={() => onRemove(person)}

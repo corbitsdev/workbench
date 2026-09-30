@@ -926,7 +926,7 @@
   /* Reading width, not viewport width: on a wide window an unbounded
      line runs 200+ characters and long agent replies become a wall.
      ~72ch is the ceiling comfortable prose tolerates. */
-  max-width: 72ch;
+  max-width: 76ch;
 }
 
 /* Long agent replies are documents, not one-liners: give block-level
@@ -2394,23 +2394,6 @@
   border-color: var(--primary);
 }
 
-.chat-composer-input {
-  flex: 1;
-  min-height: 2.75rem;
-  max-height: 10rem;
-  overflow-y: auto;
-  resize: none;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  padding: 0.1rem 0.2rem;
-  font: inherit;
-  font-size: max(var(--text-base), 16px);
-  font-weight: var(--font-weight-medium);
-  line-height: 1.5;
-  color: var(--foreground);
-}
-
 .chat-composer-actions {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
@@ -2451,28 +2434,6 @@
 
 .chat-composer-keyboard-hint[data-visible="true"] {
   visibility: visible;
-  opacity: 1;
-}
-
-/* Growth is measured in JS (scrollHeight, capped at max-height above) and
-   applied as an inline `height`; this transition is what turns that
-   per-keystroke instant write into a contained ~120ms glide instead of an
-   instant reflow of the composer's flex siblings. Shrink-on-delete rides the same transition. */
-@media (prefers-reduced-motion: no-preference) {
-  .chat-composer-input {
-    /* Grows/shrinks in place, not an entrance — DESIGN.md calls for
-       `--ease-in-out` here specifically, not the entrance curve every
-       other `--chat-ease` transition in this file uses. */
-    transition: height 120ms var(--ease-in-out, var(--chat-ease));
-  }
-}
-
-.chat-composer-input:focus {
-  outline: none;
-}
-
-.chat-composer-input::placeholder {
-  color: var(--muted-foreground);
   opacity: 1;
 }
 
@@ -3614,7 +3575,7 @@
 .chat-pr-reply-text {
   font-size: 0.9375rem;
   line-height: 1.55;
-  max-width: 72ch;
+  max-width: 76ch;
 }
 
 .chat-pr-role-badge {

@@ -5,7 +5,6 @@
 
 import {
   Button,
-  ConfirmButton,
   Dialog,
   DialogBody,
   DialogContent,
@@ -56,6 +55,7 @@ import {
   type Provider,
 } from "./credentials-api";
 import { SETTINGS_STRINGS } from "./strings";
+import { ConfirmButton } from "../components/confirm-button";
 
 type CatalogProvider = typeof ModelProviderResponse.infer;
 type CatalogOffering = typeof ModelOfferingResponse.infer;
@@ -125,7 +125,13 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
           listOwnOfferings(tenantId),
           listOwnModels(tenantId),
         ]);
-      return { credentials, providers, catalogProviders, catalogOfferings, catalogModels };
+      return {
+        credentials,
+        providers,
+        catalogProviders,
+        catalogOfferings,
+        catalogModels,
+      };
     },
     enabled: tenantId !== null,
   });
@@ -137,11 +143,15 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
 
   function reload() {
     if (tenantId === null) return;
-    void queryClient.invalidateQueries({ queryKey: tenantKeys.credentials(tenantId) });
+    void queryClient.invalidateQueries({
+      queryKey: tenantKeys.credentials(tenantId),
+    });
     // The catalog rows this dialog can now rewrite are read by the
     // Inference settings section and by chat's model resolution — both
     // key off the resolved catalog, so a credential edit must bust it too.
-    void queryClient.invalidateQueries({ queryKey: ["tenant", tenantId, "settings-models"] });
+    void queryClient.invalidateQueries({
+      queryKey: ["tenant", tenantId, "settings-models"],
+    });
   }
 
   const create = useMutation({
@@ -157,7 +167,12 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
       if (tenantId === null) throw new Error("no workbench selected");
       const existing = providers.find((provider) => provider.name === name);
       const provider = existing !== undefined ? existing : await createProvider(tenantId, name);
-      return createCredential(tenantId, { providerId: provider.id, name, type, secret });
+      return createCredential(tenantId, {
+        providerId: provider.id,
+        name,
+        type,
+        secret,
+      });
     },
     onSuccess: () => {
       setCreateOpen(false);
@@ -279,7 +294,10 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
   const editingLinkage: EditCredentialLinkage | null =
     editingProvider === null
       ? null
-      : { baseURL: editingProvider.baseURL, model: editingModel?.canonicalName ?? "" };
+      : {
+          baseURL: editingProvider.baseURL,
+          model: editingModel?.canonicalName ?? "",
+        };
 
   if (tenantId === null) {
     return (
@@ -396,7 +414,6 @@ function CredentialsTable({
                 {SETTINGS_STRINGS.credentialsEditAction}
               </Button>
               <ConfirmButton
-                variant="destructive"
                 size="sm"
                 confirmLabel={SETTINGS_STRINGS.credentialsDeleteConfirm}
                 onConfirm={() => onDelete(credential)}

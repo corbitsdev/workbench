@@ -5,7 +5,9 @@ import { isValidSlug, type Slug } from "@/lib/slug";
 import { decodedOrNull } from "@corbits/url-path";
 
 export const SETTINGS_PATH_PREFIX = "/settings";
-export const AGENTS_PATH_PREFIX = "/agents";
+export const WORKERS_PATH_PREFIX = "/workers";
+// Kept under its old name for the sidebar until its own cutover.
+export const AGENTS_PATH_PREFIX = WORKERS_PATH_PREFIX;
 export const SKILLS_PATH_PREFIX = "/skills";
 export const ARTIFACTS_PATH_PREFIX = "/artifacts";
 export const TOOLS_PATH_PREFIX = "/tools";
@@ -40,6 +42,12 @@ function entityIdFromTopLevelPath(path: string, prefix: string): string | null {
 
 export function skillIdFromPath(path: string): string | null {
   return entityIdFromTopLevelPath(path, SKILLS_PATH_PREFIX);
+}
+
+/** A worker's definition asset id from `/workers/:id`. */
+export function workerIdFromPath(path: string): string | null {
+  const id = entityIdFromTopLevelPath(path, WORKERS_PATH_PREFIX);
+  return id === null || id.includes("/") ? null : id;
 }
 
 /** A routine id (canonical) or a name-derived slug the detail route
