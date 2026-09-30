@@ -8,6 +8,7 @@
 @import "./chat/styles.css";
 @import "./bench/styles.css";
 @import "./settings/styles.css";
+@import "./button-roles.css";
 
 /* react-ui's `.corbits-toast` ships a hardcoded horizontal-center transform
    (`left: 50%; transform: translateX(-50%) !important`) regardless of the
@@ -4599,4 +4600,16 @@ tr.insights-row-clickable:hover {
   white-space: nowrap;
   font-size: 0.78rem;
   color: var(--muted-foreground);
+}
+
+.stage-crumb-back {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  margin-right: 0.15rem;
+  color: var(--muted-foreground);
+}
+
+.stage-crumb-back:hover {
+  color: var(--foreground);
 }
