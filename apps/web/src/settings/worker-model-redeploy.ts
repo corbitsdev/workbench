@@ -4,7 +4,7 @@
 // allocation service re-resolves by those exact ids, so the old offering
 // can only be retired once a redeploy has moved Worker onto the new one.
 // This is the same stock deploy path the client runs at onboarding
-// (`worker-deploy.ts`'s `deployWorkerSource`, `POST /workflows/deployments`),
+// (`worker-deploy.ts`'s `deployWorkerSource`),
 // just re-run here with one offering id swapped for another.
 
 import { type } from "arktype";
@@ -114,22 +114,6 @@ export async function redeployWorkerForModelChange(
   if (swapped === null) return false;
 
   const tenantDomain = await resolveTenantDomain(input.tenantId, fetchImpl);
-  const deploy = await deployWorkerSource(
-    { tenantId: input.tenantId, tenantDomain, ...swapped },
-    fetchImpl,
-  );
-  const deployed = await fetchImpl(
-    `/api/tenants/${encodeURIComponent(input.tenantId)}/workflows/deployments`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(deploy),
-    },
-  );
-  if (!deployed.ok) {
-    throw new WorkerRedeployError(
-      `redeploying the worker onto the new model failed: ${await readErrorBody(deployed)}`,
-    );
-  }
+  await deployWorkerSource({ tenantId: input.tenantId, tenantDomain, ...swapped }, fetchImpl);
   return true;
 }

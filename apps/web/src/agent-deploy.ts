@@ -1,33 +1,21 @@
 // Deploys a hand-authored agent the same way the default worker deploys
 // (`worker-deploy.ts`), generalized over {name, displayName, systemPrompt}.
-import { renderBundledWorkflowSourceTree } from "@corbits/workflows/client";
 import { installPackage } from "./install-package";
 import { type } from "arktype";
 import { reportError } from "@corbits/error-sink";
 
-import {
-  artifactToolsCredentialBinding,
-  artifactToolsCredentialUseRequirement,
-  mcpServerCredentialBinding,
-  mcpServerCredentialUseRequirement,
-  memoryToolsCredentialBinding,
-  memoryToolsCredentialUseRequirement,
-  type McpServerDeployment,
-} from "@corbits/worker/workflow-ids";
+import type { ToolEffect } from "@corbits/worker/definition-json";
+import type { McpServerDeployment } from "@corbits/worker/workflow-ids";
 
 import { ensureAgentHubCredential } from "./agent-hub-credential";
 import { personMailAddress } from "./mail-address";
 import { listMcpServers, resolveWorkspaceTenantId, toMcpServerDeployment } from "./mcp-servers";
 import type { McpServer } from "./mcp-servers";
+import { renderWorkerSourceTree } from "./worker-deploy";
 import { resolveExistingOffering } from "./onboarding/provider-connect-step";
 import { isValidSlug, slugify } from "@/lib/slug";
 
-/** A non-default tool permission (`ask` is the stock default) to carry onto
- * a redeployed run. */
-export type ToolEffect = {
-  readonly resource: string;
-  readonly effect: "allow" | "deny";
-};
+export type { ToolEffect };
 
 export class AgentDeployError extends Error {}
 
@@ -43,118 +31,6 @@ async function readErrorBody(response: Response): Promise<string> {
     error: { code: "string", userMessage: "string", refId: "string" },
   })(body);
   return envelope instanceof type.errors ? `HTTP ${response.status}` : envelope.error.userMessage;
-}
-
-/** The exact `WorkflowDefinition` JSON for a single-step, mail-triggered,
- * unbounded-turn agent — the same shape `buildWorkerDefinitionJson` produces,
- * generalized over the caller's own name and system prompt. */
-export function buildAgentDefinitionJson(args: {
-  slug: string;
-  systemPrompt: string;
-  triggerAddress: string;
-  declaredSources: readonly { readonly provider: string; readonly model: string }[];
-  hubCredentialId: string;
-  /** Workspace-catalog servers this agent binds — the same bindings and use
-   * requirements Worker carries, so remote tools stay ask-gated except the
-   * read-only ones the server itself annotates. */
-  mcpServers: readonly McpServerDeployment[];
-  /** Tool permissions the person set on the previous run, re-declared so the
-   * new run materializes them at its first trigger. */
-  toolEffects: readonly ToolEffect[];
-}): unknown {
-  const stepId = "run";
-  return {
-    id: args.slug,
-    // `to` only feeds the deploy-time mail.address/mail.send grants; it is
-    // not how mail reaches this agent — that happens at its run address.
-    triggers: [{ type: "mail", to: args.triggerAddress }],
-    // Resolved at deploy into the `hub` handle the artifact and memory tools
-    // use, and granted to the run on the deployer's authority at its first
-    // trigger. One credential, one binding and one requirement per package.
-    credentialBindings: [
-      artifactToolsCredentialBinding(args.slug),
-      memoryToolsCredentialBinding(args.slug),
-      ...args.mcpServers.map((server) => mcpServerCredentialBinding(server)),
-    ],
-    grantRequirements: [
-      artifactToolsCredentialUseRequirement(args.hubCredentialId),
-      memoryToolsCredentialUseRequirement(args.hubCredentialId),
-      ...args.mcpServers.map((server) => mcpServerCredentialUseRequirement(server.credentialId)),
-      ...args.toolEffects.map((tool) => ({
-        resource: tool.resource,
-        action: "invoke",
-        effect: tool.effect,
-        source: "creator",
-      })),
-    ],
-    steps: {
-      [stepId]: {
-        kind: "step",
-        id: stepId,
-        agent: {
-          id: stepId,
-          description: `The "${args.slug}" agent`,
-          systemPrompt: args.systemPrompt,
-          toolFactories: [],
-          capabilities: [],
-          inference: { sources: args.declaredSources.map((source) => ({ ...source })) },
-          toolPackagePins: [],
-        },
-        drainBehavior: "wait",
-        // No `timeout`: it stays armed across an approval park, so any
-        // finite value aborts a run waiting on a person to answer an
-        // ask-gated tool call (see packages/worker/src/index.ts).
-        triggers: "unbounded",
-        input: { from: "trigger.payload" },
-      },
-    },
-    stepOrder: [stepId],
-  };
-}
-
-// The bundle's `buildWorkerWorkflow` is generic over which agent it builds.
-async function renderAgentSourceTree(
-  packageName: string,
-  args: {
-    readonly slug: string;
-    readonly systemPrompt: string;
-    readonly triggerAddress: string;
-    readonly declaredSources: readonly { readonly provider: string; readonly model: string }[];
-    readonly hubCredentialId: string;
-    readonly mcpServers: readonly McpServerDeployment[];
-    readonly toolEffects: readonly ToolEffect[];
-  },
-): Promise<Record<string, string>> {
-  const { WORKER_BUNDLE_BUILD_EXPORT, WORKER_DIRECTORS_BUNDLE, WORKER_WORKFLOW_BUNDLE } =
-    await import("@corbits/worker/bundle");
-  return renderBundledWorkflowSourceTree({
-    packageName,
-    bundle: WORKER_WORKFLOW_BUNDLE,
-    directorsBundle: WORKER_DIRECTORS_BUNDLE,
-    buildExport: WORKER_BUNDLE_BUILD_EXPORT,
-    buildInput: {
-      workflowId: args.slug,
-      triggerAddress: args.triggerAddress,
-      inferencePreferences: args.declaredSources.map((source) => ({ ...source })),
-      systemPrompt: args.systemPrompt,
-      hubCredentialId: args.hubCredentialId,
-      // The workspace-catalog servers the New Agent dialog (or Worker's
-      // create-agent card) bound to this agent; the bundle wires their tools
-      // behind the deferred director, ask-gated except read-only ones.
-      mcpServers: args.mcpServers,
-    },
-    workflowJson: JSON.stringify(
-      buildAgentDefinitionJson({
-        slug: args.slug,
-        systemPrompt: args.systemPrompt,
-        triggerAddress: args.triggerAddress,
-        declaredSources: args.declaredSources,
-        hubCredentialId: args.hubCredentialId,
-        mcpServers: args.mcpServers,
-        toolEffects: args.toolEffects,
-      }),
-    ),
-  });
 }
 
 /** Every created agent's source asset name, `agent-<slug>-source` — the one
@@ -346,18 +222,21 @@ export async function deployAgentSource(
     // Minted once the asset exists: the definition binds this credential by
     // name and requires its use by id, so it must precede the source.
     files: async (assetId) =>
-      renderAgentSourceTree(packageName, {
-        slug,
-        systemPrompt,
-        triggerAddress,
-        declaredSources: offering.declaredSources,
-        hubCredentialId: await ensureAgentHubCredential(
-          { tenantId: args.tenantId, definitionId: slug, assetId },
-          fetchImpl,
-        ),
-        mcpServers,
-        toolEffects: args.input.toolEffects ?? [],
-      }),
+      renderWorkerSourceTree(
+        packageName,
+        {
+          workflowId: slug,
+          systemPrompt,
+          triggerAddress,
+          inferencePreferences: offering.declaredSources,
+          hubCredentialId: await ensureAgentHubCredential(
+            { tenantId: args.tenantId, definitionId: slug, assetId },
+            fetchImpl,
+          ),
+          mcpServers,
+        },
+        args.input.toolEffects ?? [],
+      ),
     entry: "./workflow.js",
     sourceOfferingIds: offering.sourceOfferingIds,
     defaultSourceOfferingId: offering.defaultSourceOfferingId,

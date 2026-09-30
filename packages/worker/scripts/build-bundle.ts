@@ -59,6 +59,8 @@ export async function buildWorkerDirectorsBundle(): Promise<string> {
   return bundleEntry("directors.ts");
 }
 
+export const WORKER_TOOL_NAMES_PATH = path.join(packageRoot, "bundle", "tool-names.json");
+
 export async function writeWorkerBundle(): Promise<string[]> {
   const [workflow, directors] = await Promise.all([
     buildWorkerBundle(),
@@ -67,7 +69,11 @@ export async function writeWorkerBundle(): Promise<string[]> {
   await mkdir(path.dirname(WORKER_BUNDLE_PATH), { recursive: true });
   await writeFile(WORKER_BUNDLE_PATH, workflow);
   await writeFile(WORKER_DIRECTORS_BUNDLE_PATH, directors);
-  return [WORKER_BUNDLE_PATH, WORKER_DIRECTORS_BUNDLE_PATH];
+  // The browser-safe definition JSON can't import the factories, so it reads
+  // the director's tool split from this file.
+  const { WORKER_TOOL_NAMES } = await import("../src/index");
+  await writeFile(WORKER_TOOL_NAMES_PATH, JSON.stringify(WORKER_TOOL_NAMES));
+  return [WORKER_BUNDLE_PATH, WORKER_DIRECTORS_BUNDLE_PATH, WORKER_TOOL_NAMES_PATH];
 }
 
 if (import.meta.main) {

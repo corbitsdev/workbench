@@ -1,277 +1,53 @@
-// Builds and publishes the worker's deployable definition entirely over stock
-// routes, ending with a `WorkflowDeployInput` pinned to the pushed commit.
+// Deploys the default worker through the one install path, `installPackage`,
+// over stock routes only.
 import { WORKER_SYSTEM_PROMPT } from "@corbits/worker/prompt";
-import {
-  WORKER_STEP_ID,
-  WORKER_WORKFLOW_ID,
-  artifactToolsCredentialBinding,
-  artifactToolsCredentialUseRequirement,
-  mcpServerCredentialBinding,
-  mcpServerCredentialUseRequirement,
-  memoryToolsCredentialBinding,
-  memoryToolsCredentialUseRequirement,
-  type McpServerDeployment,
-} from "@corbits/worker/workflow-ids";
+import { buildWorkerDefinitionJson } from "@corbits/worker/definition-json";
+import type { ToolEffect, WorkerToolNames, WorkerWorkflowInput } from "@corbits/worker/definition-json";
+import { WORKER_WORKFLOW_ID } from "@corbits/worker/workflow-ids";
 import { renderBundledWorkflowSourceTree } from "@corbits/workflows/client";
 import { type } from "arktype";
 
 import { ensureAgentHubCredential } from "./agent-hub-credential";
+import { installPackage } from "./install-package";
 import { ensureBuiltInMcpServers, toMcpServerDeployment } from "./mcp-servers";
-
 import { WORKER_SOURCE_CONFIG } from "./worker-source";
-import type { WorkflowDeployInput } from "./needs-list";
 import type { DeclaredSource } from "./onboarding/provider-connect-step";
 
-export class WorkerDeployError extends Error {}
+const ToolNamesShape = type({ visible: "string[]", deferred: "string[]" });
 
-const AssetCreatedShape = type({ id: "string" });
-const AssetListShape = type({ id: "string", name: "string" }).array();
-const GitTokenMintShape = type({ id: "string", secret: "string" });
-
-const PUSH_TOKEN_LIFETIME_MS = 10 * 60 * 1000;
-
-async function readErrorBody(response: Response): Promise<string> {
-  const body: unknown = await response.json().catch(() => undefined);
-  const envelope = type({
-    error: { code: "string", userMessage: "string", refId: "string" },
-  })(body);
-  return envelope instanceof type.errors ? `HTTP ${response.status}` : envelope.error.userMessage;
-}
-
-/** Idempotently ensures the `workflow` asset the worker's source is pushed
- * into: create it, or on 409 find the existing one by name. */
-export async function ensureWorkerSourceAsset(
-  tenantId: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<string> {
-  const created = await fetchImpl(`/api/tenants/${encodeURIComponent(tenantId)}/assets`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      kind: WORKER_SOURCE_CONFIG.assetKind,
-      name: WORKER_SOURCE_CONFIG.assetName,
-      displayName: WORKER_SOURCE_CONFIG.displayName,
-    }),
-  });
-  if (created.status === 201) {
-    const parsed = AssetCreatedShape(await created.json());
-    if (parsed instanceof type.errors) {
-      throw new WorkerDeployError(
-        `the worker's source came back an unexpected shape: ${parsed.summary}`,
-      );
-    }
-    return parsed.id;
-  }
-  if (created.status !== 409) {
-    throw new WorkerDeployError(
-      `preparing the worker's source failed: ${await readErrorBody(created)}`,
-    );
-  }
-  const listed = await fetchImpl(
-    `/api/tenants/${encodeURIComponent(tenantId)}/assets?kind=${WORKER_SOURCE_CONFIG.assetKind}&inherited=false`,
-  );
-  if (!listed.ok) {
-    throw new WorkerDeployError(
-      `checking this workbench's setup failed: ${await readErrorBody(listed)}`,
-    );
-  }
-  const parsed = AssetListShape(await listed.json());
-  if (parsed instanceof type.errors) {
-    throw new WorkerDeployError(
-      `this workbench's setup list came back an unexpected shape: ${parsed.summary}`,
-    );
-  }
-  const existing = parsed.find((asset) => asset.name === WORKER_SOURCE_CONFIG.assetName);
-  if (existing === undefined) {
-    throw new WorkerDeployError(
-      "the worker's source reported a name conflict but is not listed on this workbench",
-    );
-  }
-  return existing.id;
-}
-
-// Hand-built rather than calling `buildWorkerWorkflow` directly, since that
-// pulls in a Node-bound runtime a browser bundle can't resolve. See
-// docs/worker-definition-json.md.
-export function buildWorkerDefinitionJson(
-  triggerAddress: string,
-  declaredSources: readonly DeclaredSource[],
-  hubCredentialId: string,
-  mcpServers: readonly McpServerDeployment[],
-): unknown {
-  return {
-    id: WORKER_WORKFLOW_ID,
-    // Resolved at deploy into the `hub` handle the artifact and memory tools
-    // use, and granted to the run on the deployer's authority at its first
-    // trigger. One credential, one binding and one requirement per package.
-    credentialBindings: [
-      artifactToolsCredentialBinding(WORKER_WORKFLOW_ID),
-      memoryToolsCredentialBinding(WORKER_WORKFLOW_ID),
-      ...mcpServers.map((server) => mcpServerCredentialBinding(server)),
-    ],
-    grantRequirements: [
-      artifactToolsCredentialUseRequirement(hubCredentialId),
-      memoryToolsCredentialUseRequirement(hubCredentialId),
-      ...mcpServers.map((server) => mcpServerCredentialUseRequirement(server.credentialId)),
-    ],
-    // `to` only feeds the deploy-time mail.address/mail.send grants; Worker is
-    // actually reached at her run address, minted at deploy time.
-    triggers: [{ type: "mail", to: triggerAddress }],
-    steps: {
-      [WORKER_STEP_ID]: {
-        kind: "step",
-        id: WORKER_STEP_ID,
-        agent: {
-          id: WORKER_STEP_ID,
-          description:
-            "A co-worker that lives in one workbench: answers questions, " +
-            "drafts text, and gets things done for the team",
-          systemPrompt: WORKER_SYSTEM_PROMPT,
-          toolFactories: [],
-          capabilities: [],
-          // The probe approves exactly these `(provider, model)` pairs, so
-          // they must name what the deploy's offering chain resolves to.
-          inference: {
-            sources: declaredSources.map((source) => ({ ...source })),
-          },
-          toolPackagePins: [],
-        },
-        drainBehavior: "wait",
-        triggers: "unbounded",
-        input: { from: "trigger.payload" },
-      },
-    },
-    stepOrder: [WORKER_STEP_ID],
-  };
-}
-
-/** Mints a push-only token scoped to `main`, runs `push` with it, and
- * revokes the token afterwards whatever the push's outcome. */
-async function withPushToken<T>(
-  tenantId: string,
-  assetId: string,
-  fetchImpl: typeof fetch,
-  push: (token: string) => Promise<T>,
-): Promise<T> {
-  const tokensPath = `/api/tenants/${encodeURIComponent(tenantId)}/git-tokens`;
-  const minted = await fetchImpl(tokensPath, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      // Active token names are unique per user; concurrent attempts must not collide.
-      name: `worker-deploy-${crypto.randomUUID()}`,
-      resource: `asset:${assetId}`,
-      refPattern: "refs/heads/main",
-      // The ref advertisement before a push is a read, so a push-only
-      // token is refused at info/refs.
-      actions: ["can_read", "can_push"],
-      expiresAt: new Date(Date.now() + PUSH_TOKEN_LIFETIME_MS).toISOString(),
-    }),
-  });
-  if (!minted.ok) {
-    throw new WorkerDeployError(`minting a push token failed: ${await readErrorBody(minted)}`);
-  }
-  const token = GitTokenMintShape(await minted.json());
-  if (token instanceof type.errors) {
-    throw new WorkerDeployError(`the push token came back an unexpected shape: ${token.summary}`);
-  }
-  try {
-    return await push(token.secret);
-  } finally {
-    await fetchImpl(`${tokensPath}/${encodeURIComponent(token.id)}`, {
-      method: "DELETE",
-    });
-  }
-}
-
-/** Renders the worker's built definition as a source tree and pushes it to the
- * asset's `main`. Returns the commit sha the deploy pins to. */
-export async function pushWorkerSource(
-  tenantId: string,
-  assetId: string,
-  tenantDomain: string,
-  declaredSources: readonly DeclaredSource[],
-  hubCredentialId: string,
-  mcpServers: readonly McpServerDeployment[],
-  fetchImpl: typeof fetch = fetch,
-): Promise<string> {
-  const triggerAddress = `worker@${tenantDomain}`;
+/** Renders a worker-harness agent's source tree: the bundled entry plus the
+ * one definition JSON, so a created agent and Worker cannot drift. */
+export async function renderWorkerSourceTree(
+  packageName: string,
+  input: WorkerWorkflowInput,
+  toolEffects: readonly ToolEffect[] = [],
+): Promise<Record<string, string>> {
   // Half a megabyte of bundled entry text, needed only during setup — kept
   // out of the app's entry chunk the same way the git client is.
-  const { WORKER_BUNDLE_BUILD_EXPORT, WORKER_DIRECTORS_BUNDLE, WORKER_WORKFLOW_BUNDLE } =
-    await import("@corbits/worker/bundle");
-  const tree = renderBundledWorkflowSourceTree({
-    packageName: WORKER_SOURCE_CONFIG.packageName,
+  const {
+    WORKER_BUNDLE_BUILD_EXPORT,
+    WORKER_DIRECTORS_BUNDLE,
+    WORKER_WORKFLOW_BUNDLE,
+    WORKER_TOOL_NAMES_JSON,
+  } = await import("@corbits/worker/bundle");
+  const toolNames: WorkerToolNames | type.errors = ToolNamesShape(
+    JSON.parse(WORKER_TOOL_NAMES_JSON),
+  );
+  if (toolNames instanceof type.errors) {
+    throw new Error(`the worker's tool names are malformed: ${toolNames.summary}`);
+  }
+  return renderBundledWorkflowSourceTree({
+    packageName,
     bundle: WORKER_WORKFLOW_BUNDLE,
     directorsBundle: WORKER_DIRECTORS_BUNDLE,
     buildExport: WORKER_BUNDLE_BUILD_EXPORT,
-    buildInput: {
-      workflowId: WORKER_WORKFLOW_ID,
-      triggerAddress,
-      inferencePreferences: declaredSources.map((source) => ({ ...source })),
-      systemPrompt: WORKER_SYSTEM_PROMPT,
-      hubCredentialId,
-      mcpServers,
-    },
-    workflowJson: JSON.stringify(
-      buildWorkerDefinitionJson(triggerAddress, declaredSources, hubCredentialId, mcpServers),
-    ),
+    buildInput: input,
+    workflowJson: JSON.stringify(buildWorkerDefinitionJson(input, toolNames, toolEffects)),
   });
-  const url = new URL(
-    `/api/tenants/${encodeURIComponent(tenantId)}/assets/${WORKER_SOURCE_CONFIG.assetKind}/${WORKER_SOURCE_CONFIG.assetName}.git`,
-    globalThis.location.origin,
-  ).toString();
-  // Loaded on demand: the git client only runs during setup, so it stays
-  // out of the main bundle.
-  const { pushSourceTree } = await import("./git-push");
-  return withPushToken(
-    tenantId,
-    assetId,
-    fetchImpl,
-    async (token) =>
-      (
-        await pushSourceTree({
-          fetch: fetchImpl,
-          url,
-          token,
-          tree,
-          message: "Publish the worker's definition",
-        })
-      ).commitSha,
-  );
 }
 
-/** The pure mapping this module exists to get right: the operator's
- * offering pick plus the commit just pushed, turned into the exact
- * `WorkflowDeployInput` the stock deploy route needs. */
-export function buildWorkerDeployInput(args: {
-  assetId: string;
-  commitSha: string;
-  sourceOfferingIds: readonly string[];
-  defaultSourceOfferingId: string;
-}): WorkflowDeployInput {
-  if (args.sourceOfferingIds.length === 0) {
-    throw new WorkerDeployError("at least one source offering id is required to start Worker");
-  }
-  if (!args.sourceOfferingIds.includes(args.defaultSourceOfferingId)) {
-    throw new WorkerDeployError(
-      "the default source offering id must be one of the supplied source offering ids",
-    );
-  }
-  return {
-    source: {
-      kind: "asset",
-      assetId: args.assetId,
-      package: { format: "source", commitSha: args.commitSha },
-    },
-    entry: WORKER_SOURCE_CONFIG.entryPath,
-    sourceOfferingIds: [...args.sourceOfferingIds],
-    defaultSourceOfferingId: args.defaultSourceOfferingId,
-  };
-}
+export type DeployedWorker = Awaited<ReturnType<typeof installPackage>>;
 
-/** Orchestrates the steps above and returns the `workerDeploy` input
- * ready to hand to the stock deploy route. */
 export async function deployWorkerSource(
   args: {
     tenantId: string;
@@ -281,31 +57,33 @@ export async function deployWorkerSource(
     declaredSources: readonly DeclaredSource[];
   },
   fetchImpl: typeof fetch = fetch,
-): Promise<WorkflowDeployInput> {
-  const assetId = await ensureWorkerSourceAsset(args.tenantId, fetchImpl);
-  // Minted before the push: the definition binds this credential by name
-  // and requires its use by id, so it must exist before the source does.
-  const hubCredentialId = await ensureAgentHubCredential(
-    { tenantId: args.tenantId, definitionId: WORKER_WORKFLOW_ID, assetId },
-    fetchImpl,
-  );
+): Promise<DeployedWorker> {
   // The catalogs come out of the stored credentials, so a redeploy never
   // reaches an MCP server; only adding one does.
   const mcpServers = (await ensureBuiltInMcpServers(args.tenantId, fetchImpl)).map(
     toMcpServerDeployment,
   );
-  const commitSha = await pushWorkerSource(
-    args.tenantId,
-    assetId,
-    args.tenantDomain,
-    args.declaredSources,
-    hubCredentialId,
-    mcpServers,
-    fetchImpl,
-  );
-  return buildWorkerDeployInput({
-    assetId,
-    commitSha,
+  return installPackage({
+    fetch: fetchImpl,
+    origin: globalThis.location.origin,
+    tenantId: args.tenantId,
+    assetName: WORKER_SOURCE_CONFIG.assetName,
+    displayName: WORKER_SOURCE_CONFIG.displayName,
+    // Minted once the asset exists: the definition binds this credential by
+    // name and requires its use by id, so it must precede the source.
+    files: async (assetId) =>
+      renderWorkerSourceTree(WORKER_SOURCE_CONFIG.packageName, {
+        workflowId: WORKER_WORKFLOW_ID,
+        triggerAddress: `worker@${args.tenantDomain}`,
+        inferencePreferences: args.declaredSources.map((source) => ({ ...source })),
+        systemPrompt: WORKER_SYSTEM_PROMPT,
+        hubCredentialId: await ensureAgentHubCredential(
+          { tenantId: args.tenantId, definitionId: WORKER_WORKFLOW_ID, assetId },
+          fetchImpl,
+        ),
+        mcpServers,
+      }),
+    entry: WORKER_SOURCE_CONFIG.entryPath,
     sourceOfferingIds: args.sourceOfferingIds,
     defaultSourceOfferingId: args.defaultSourceOfferingId,
   });
