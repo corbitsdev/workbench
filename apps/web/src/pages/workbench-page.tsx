@@ -28,6 +28,7 @@ import { VoiceOverlay } from "../voice/voice-overlay";
 import { BenchDrawer } from "../bench/bench-drawer";
 import { BenchPill } from "../bench/bench-pill";
 import { PendingOpeningMessage } from "../bench/pending-opening-message";
+import { WorkingLabel } from "../chat/working-label";
 import { ArtifactsTab } from "../bench/artifacts-tab";
 import { markTurnPending, useWorkerStatus } from "../worker-status";
 import { GrantsTab } from "../bench/grants-tab";
@@ -325,6 +326,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                     workbenchTenantId={workbenchTenantId}
                     participants={participants.data ?? []}
                   />
+                  {workerStatus.tone === "working" ? <WorkingLabel /> : null}
                 </div>
                 {send.error === null ? null : (
                   <p className="chat-thread-error">{errorText(send.error)}</p>
