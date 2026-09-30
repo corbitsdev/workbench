@@ -4,12 +4,7 @@ import { useCommandPaletteNavigation } from "@corbits/react-ui";
 import { ArrowUp, CircleNotch, Microphone, Plus } from "@/lib/icons";
 import { useLayoutEffect, useRef, useState } from "react";
 
-import {
-  activeMention,
-  applyMention,
-  matchMentionQuery,
-  type ActiveMention,
-} from "./mentions";
+import { activeMention, applyMention, matchMentionQuery, type ActiveMention } from "./mentions";
 
 export type ComposerMention = {
   readonly id: string;
@@ -42,8 +37,7 @@ export function Composer({
   const [mention, setMention] = useState<ActiveMention | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const canSend = text.trim() !== "" && !busy && !disabled;
-  const matches =
-    mention === null ? [] : matchMentionQuery(mention.query, mentionables);
+  const matches = mention === null ? [] : matchMentionQuery(mention.query, mentionables);
   const open = mention !== null && matches.length > 0;
 
   // Grow with the text up to the CSS max-height.
@@ -91,20 +85,14 @@ export function Composer({
   return (
     <div className="chat-composer">
       {open ? (
-        <ul
-          className="chat-composer-mentions"
-          role="listbox"
-          aria-label="Mention an agent"
-        >
+        <ul className="chat-composer-mentions" role="listbox" aria-label="Mention an agent">
           {matches.map((candidate) => (
             <li key={candidate.id}>
               <button
                 type="button"
                 role="option"
                 aria-selected={navigation.activeId === candidate.id}
-                data-active={
-                  navigation.activeId === candidate.id ? "" : undefined
-                }
+                data-active={navigation.activeId === candidate.id ? "" : undefined}
                 onMouseEnter={() => navigation.setActiveId(candidate.id)}
                 onMouseDown={(event) => {
                   // Keeps focus in the textarea so the caret fix-up lands.
@@ -112,13 +100,9 @@ export function Composer({
                   choose(candidate.id);
                 }}
               >
-                <span className="chat-composer-mention-name">
-                  {candidate.name}
-                </span>
+                <span className="chat-composer-mention-name">{candidate.name}</span>
                 {candidate.detail === undefined ? null : (
-                  <span className="chat-composer-mention-detail">
-                    {candidate.detail}
-                  </span>
+                  <span className="chat-composer-mention-detail">{candidate.detail}</span>
                 )}
               </button>
             </li>
@@ -153,10 +137,7 @@ export function Composer({
           onClick={(event) => syncMention(event.currentTarget)}
           onBlur={() => setMention(null)}
           onKeyDown={(event) => {
-            if (
-              open &&
-              ["ArrowUp", "ArrowDown", "Enter", "Escape"].includes(event.key)
-            ) {
+            if (open && ["ArrowUp", "ArrowDown", "Enter", "Escape"].includes(event.key)) {
               event.preventDefault();
               navigation.onKeyDown(event);
               return;
@@ -203,10 +184,7 @@ export function Composer({
           title={busy ? "Sending…" : "Send"}
         >
           {busy ? (
-            <CircleNotch
-              className="chat-composer-send-spinner"
-              aria-hidden="true"
-            />
+            <CircleNotch className="chat-composer-send-spinner" aria-hidden="true" />
           ) : (
             <ArrowUp aria-hidden="true" />
           )}
