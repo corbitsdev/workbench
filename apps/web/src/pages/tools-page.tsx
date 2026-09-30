@@ -35,6 +35,7 @@ import {
 import { useDeployedToolPackages } from "../tools/deployed-tool-packages";
 import { useBench } from "../bench-context";
 import { useFromBench } from "../shell/page-crumbs";
+import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { ConfirmButton } from "../components/confirm-button";
 
@@ -262,7 +263,12 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
       <div className="flex h-full min-h-0 flex-col">
         <StageTopBar crumbs={crumbs} />
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="tools-page">{body}</div>
+          <PageLayout
+            title="Tools"
+            subtitle="Official servers first. Secrets never touch your workers."
+          >
+            {body}
+          </PageLayout>
         </div>
       </div>
     );
@@ -287,10 +293,6 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
 
   return stage(
     <div className="flex flex-col gap-8">
-      <header className="tools-head">
-        <h1>Tools</h1>
-        <p>Official servers first. Secrets never touch your workers.</p>
-      </header>
       <Input
         className="tools-filter"
         aria-label="Filter tools"
