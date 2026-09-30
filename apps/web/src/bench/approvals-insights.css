@@ -1,0 +1,32 @@
+.appr {
+  display: grid;
+  gap: 12px;
+}
+.appr-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  font-size: 0.85rem;
+}
+.appr-row b {
+  font-variant-numeric: tabular-nums;
+}
+.appr-row .bi-meter {
+  grid-column: 1 / -1;
+  display: flex;
+  width: auto;
+  margin-right: 0;
+}
+.appr-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  font-size: 0.85rem;
+}
+.appr-line i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+}

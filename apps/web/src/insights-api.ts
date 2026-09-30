@@ -3,7 +3,7 @@
 // deleted run-scope/insights packages and what was dropped.
 
 import { type } from "arktype";
-import { WorkflowRunResponse, paginatedSchema } from "@intx/types";
+import { RunApprovalsResponse, WorkflowRunResponse, paginatedSchema } from "@intx/types";
 
 export const ListingTurnSchema = type({
   status: "string",
@@ -69,4 +69,10 @@ export function runFailureMessage(events: readonly RunEvent[]): string | null {
     if (typeof message === "string") return message;
   }
   return null;
+}
+
+export { RunApprovalsResponse };
+
+export function insightsRunApprovalsPath(tenantId: string, runId: string): string {
+  return `/api/tenants/${tenantId}/workflows/runs/${encodeURIComponent(runId)}/approvals`;
 }

@@ -4,9 +4,11 @@
 import { Badge, RichEmptyState, Skeleton, RUN_STATUS_TONE } from "@corbits/react-ui";
 import { useState, type ReactNode } from "react";
 
+import { ApprovalsCard } from "../bench/approvals-insights";
 import { useAPIQuery } from "../api";
 import { insightsTopLevelRunsPath, TopLevelRunsSchema, type InsightsRun } from "../insights-api";
 import {
+  approvalRunsInRange,
   BENCH_RANGES,
   computeBenchInsights,
   durationLabel,
@@ -201,7 +203,9 @@ export function BenchInsights({
       />
     );
   } else {
-    body = <InsightsBody runs={runs.data} range={range} onOpenRun={onOpenRun} />;
+    body = (
+      <InsightsBody tenantId={tenantId} runs={runs.data} range={range} onOpenRun={onOpenRun} />
+    );
   }
 
   return (
@@ -217,15 +221,18 @@ export function BenchInsights({
 }
 
 function InsightsBody({
+  tenantId,
   runs,
   range,
   onOpenRun,
 }: {
+  readonly tenantId: string;
   readonly runs: { readonly data: readonly InsightsRun[]; readonly nextCursor: string | null };
   readonly range: BenchRange;
   readonly onOpenRun: (id: string) => void;
 }) {
   const stats = computeBenchInsights(runs.data, range);
+  const approvalRuns = approvalRunsInRange(runs.data, range);
   const finished = stats.ok + stats.fail;
   const tiles: readonly (readonly [string, string])[] = [
     ["Runs", formatCount(stats.total)],
@@ -253,6 +260,8 @@ function InsightsBody({
         <p className="insights-note">Every run in this workbench, by how it ended.</p>
         <OutcomeChart days={stats.days} />
       </section>
+
+      <ApprovalsCard tenantId={tenantId} runs={approvalRuns.runs} capped={approvalRuns.capped} />
 
       <section className="insights-panel">
         <h3>By workflow</h3>
