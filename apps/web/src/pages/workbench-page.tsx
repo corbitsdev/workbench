@@ -26,7 +26,9 @@ import {
 import { BenchDrawer } from "../bench/bench-drawer";
 import { BenchPill } from "../bench/bench-pill";
 import { ArtifactsTab } from "../bench/artifacts-tab";
+import { GrantsTab } from "../bench/grants-tab";
 import { InformationTab } from "../bench/information-tab";
+import { ToolsTab } from "../bench/tools-tab";
 import { WorkflowsTab } from "../bench/workflows-tab";
 import { useBench } from "../bench-context";
 import { createFetchStockHub } from "../needs-converge";
@@ -315,6 +317,8 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
               />
             ),
             Artifacts: <ArtifactsTab workbenchTenantId={workbenchTenantId} />,
+            Tools: <ToolsTab workbenchTenantId={workbenchTenantId} />,
+            Grants: <GrantsTab workbenchTenantId={workbenchTenantId} />,
             Workflows: <WorkflowsTab workbenchTenantId={workbenchTenantId} />,
           }}
         />

@@ -4637,3 +4637,15 @@ a.drawer-li:hover,
   width: 0.9rem;
   height: 0.9rem;
 }
+
+.stage-crumb-back {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  margin-right: 0.15rem;
+  color: var(--muted-foreground);
+}
+
+.stage-crumb-back:hover {
+  color: var(--foreground);
+}
