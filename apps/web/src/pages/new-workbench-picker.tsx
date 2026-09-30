@@ -12,6 +12,7 @@ import { useBench } from "../bench-context";
 import { workbenchKeys } from "../chat-path";
 import { createWorkbench, WorkbenchCreateError } from "../workbench-create";
 import { useNavigate } from "../navigation";
+import { ProviderSkipBanner } from "../provider-skip-banner";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { workbenchPath } from "../workbench-path";
 import "./new-workbench.css";
@@ -98,6 +99,7 @@ export function NewWorkbenchPickerRoute() {
           <WorkbenchLoadingState delayMs={0} title="Setting up your workbench…" />
         ) : (
           <>
+            <ProviderSkipBanner />
             <h1 className="new-title">What should this workbench do?</h1>
             <form
               className="new-composer"

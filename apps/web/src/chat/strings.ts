@@ -290,7 +290,7 @@ export const CHAT_STRINGS = {
   turnCancelledTitle: (sender: string) => `You stopped ${sender}'s turn`,
   turnFailedSub: "No reply arrived — the agent may be unavailable.",
   noUsableModelBannerText: "No model is connected yet, so a reply here won't come through.",
-  noUsableModelBannerAction: "Connect a model",
+  noUsableModelBannerAction: "Connect a provider",
   rowMenuLabel: "Conversation actions",
   rowMenuRename: "Rename",
   rowMenuPin: "Pin",

@@ -35,6 +35,8 @@ import {
 } from "@/settings/inference";
 import { redeployMyraForModelChange } from "@/settings/myra-model-redeploy";
 import { tenantKeys } from "@/query-client";
+import { finishDeferredMyraSetup } from "@/deferred-myra-setup";
+import { useSessionUser } from "@/navigation";
 import {
   deleteCredential,
   listCredentials,
@@ -90,6 +92,7 @@ type CredentialsData = {
 
 export function CredentialsSection({ tenantId }: { readonly tenantId: string | null }) {
   const queryClient = useQueryClient();
+  const user = useSessionUser();
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<Credential | null>(null);
   const [loginId, setLoginId] = useState<string | null>(null);
@@ -133,6 +136,8 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
 
   function reload() {
     if (tenantId === null) return;
+    // A provider connected after a skipped onboarding finishes Myra's deploy.
+    if (user !== undefined) void finishDeferredMyraSetup(user);
     void queryClient.invalidateQueries({
       queryKey: tenantKeys.credentials(tenantId),
     });

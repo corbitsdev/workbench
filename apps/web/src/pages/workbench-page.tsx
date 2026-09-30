@@ -40,6 +40,7 @@ import { createFetchStockHub } from "../needs-converge";
 import { workbenchKeys } from "../chat-path";
 import { tenantKeys } from "../query-client";
 import { recordLastWorkbenchId } from "../last-workbench";
+import { ProviderSkipBanner } from "../provider-skip-banner";
 import { redeployWorkbenchAgent } from "../workbench-create";
 import { workbenchIdFromPath } from "../workbench-path";
 
@@ -298,6 +299,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
             </div>
             <div className="workbench-main-composer">
               <PageShell width="prose" className="page-fill">
+                <ProviderSkipBanner />
                 <Composer
                   placeholder={
                     startingAgent === undefined
