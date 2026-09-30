@@ -1,0 +1,59 @@
+/* Phone width: the sidebar is an off-canvas overlay, opened by the toggle. */
+.shell-sidebar-toggle,
+.shell-sidebar-scrim {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  .shell-sidebar-toggle {
+    display: inline-flex;
+    position: fixed;
+    top: 0.5rem;
+    left: 0.5rem;
+    z-index: 30;
+  }
+  .shell-frame .stage-top-bar {
+    padding-left: 3rem;
+  }
+  .shell-frame .shell-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 45;
+    width: min(17.5rem, 85vw);
+    min-width: 0;
+    box-shadow: var(--overlay);
+    transition:
+      transform 300ms var(--ease-drawer),
+      visibility 0s 300ms;
+    transform: translateX(-100%);
+    visibility: hidden;
+  }
+  .shell-frame[data-sidebar-open="true"] .shell-sidebar {
+    transform: none;
+    visibility: visible;
+    transition: transform 300ms var(--ease-drawer);
+  }
+  .shell-frame[data-sidebar-open="true"] .shell-sidebar-toggle {
+    visibility: hidden;
+  }
+  .shell-sidebar-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 44;
+    background: rgb(0 0 0 / 24%);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms ease-out;
+  }
+  .shell-frame[data-sidebar-open="true"] .shell-sidebar-scrim {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-frame .shell-sidebar {
+    transition: none;
+  }
+}
