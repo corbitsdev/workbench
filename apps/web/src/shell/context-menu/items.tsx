@@ -121,7 +121,7 @@ function routineMenu(
         onSelect: () => {
           void (async () => {
             try {
-              await runScheduledWorkflowNow(tenantId, target.id);
+              await runScheduledWorkflowNow(tenantId, target.id, target.name);
               toast(`${target.name} started`);
               actions.onRoutineRan(tenantId);
             } catch (cause) {

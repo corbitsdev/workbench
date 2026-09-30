@@ -8,6 +8,7 @@ import { listChatAgents } from "@/chat/threads-api";
 import { Hash } from "@/lib/icons";
 
 import { useBench } from "../bench-context";
+import { useBenchWorkerStatus } from "../worker-status";
 import { tenantKeys } from "../query-client";
 import { workbenchIdFromPath, workbenchPath } from "../workbench-path";
 import type { HubTenant } from "../needs-converge";
@@ -98,19 +99,50 @@ export function WorkbenchList({
           />
         ))}
       </div>
-      <WorkerGroup path={path} onNavigate={onNavigate} />
+      <WorkerGroup path={path} onNavigate={onNavigate} benches={workbenches} />
     </div>
   );
 }
 
-// No client-side in-flight-turn state is queryable here, so every worker
-// renders idle.
+function WorkerRow({
+  agent,
+  benches,
+  active,
+  onSelect,
+}: {
+  readonly agent: { readonly name: string };
+  readonly benches: readonly HubTenant[];
+  readonly active: boolean;
+  readonly onSelect: () => void;
+}) {
+  // Sidebar workers are the workspace's agents; a bench's copy shares the name.
+  const status = useBenchWorkerStatus(benches, (p) => p.name === agent.name);
+  return (
+    <button
+      type="button"
+      className="shell-ch-row"
+      aria-current={active ? "true" : undefined}
+      data-active={active ? "true" : undefined}
+      onClick={onSelect}
+    >
+      <WorkbenchAvatar kind="worker" name={agent.name} size="sm" status={status.tone} />
+      <span className="shell-ch-meta">
+        <span className="shell-ch-name-row">
+          <span className="shell-ch-name">{agent.name}</span>
+        </span>
+      </span>
+    </button>
+  );
+}
+
 function WorkerGroup({
   path,
   onNavigate,
+  benches,
 }: {
   readonly path: string;
   readonly onNavigate: (to: string) => void;
+  readonly benches: readonly HubTenant[];
 }) {
   const { selectedTenantId } = useBench();
   const agents = useQuery({
@@ -125,23 +157,14 @@ function WorkerGroup({
       <SectionLabel>Workers</SectionLabel>
       {workers.map((agent) => {
         const to = `/workers/${agent.id}`;
-        const active = path === to;
         return (
-          <button
+          <WorkerRow
             key={agent.id}
-            type="button"
-            className="shell-ch-row"
-            aria-current={active ? "true" : undefined}
-            data-active={active ? "true" : undefined}
-            onClick={() => onNavigate(to)}
-          >
-            <WorkbenchAvatar kind="worker" name={agent.name} size="sm" status="idle" />
-            <span className="shell-ch-meta">
-              <span className="shell-ch-name-row">
-                <span className="shell-ch-name">{agent.name}</span>
-              </span>
-            </span>
-          </button>
+            agent={agent}
+            benches={benches}
+            active={path === to}
+            onSelect={() => onNavigate(to)}
+          />
         );
       })}
     </div>

@@ -1,8 +1,6 @@
 export * from "./artifact-summary";
 export { sortArtifacts, filterArtifacts } from "./sort-filter";
 export type { ArtifactSort } from "./sort-filter";
-export { ArtifactCard } from "./artifact-card";
-export type { ArtifactCardMeta, ArtifactCardProps } from "./artifact-card";
 export {
   LIBRARY_KIND_SEGMENTS,
   artifactMatchesLibraryKindSegment,

@@ -2,6 +2,8 @@
 // already carries, and a card catalog for the servers it could add.
 
 import { useState } from "react";
+
+import "../tools/tools-page.css";
 import {
   Badge,
   Button,
@@ -24,7 +26,7 @@ import { QueryView } from "@/lib/api-query";
 import { Plugs } from "@/lib/icons";
 
 import { describeApiError } from "@/lib/api-query";
-import { MCP_SERVER_CATALOG, type McpCatalogEntry, type McpServer } from "../mcp-servers";
+import { MCP_SERVER_CATALOG, type McpCatalogEntry } from "../mcp-servers";
 import {
   describeRedeployResult,
   useAddMcpServer,
@@ -34,14 +36,9 @@ import {
 } from "../tools/mcp-servers-query";
 import { useDeployedToolPackages } from "../tools/deployed-tool-packages";
 import { useBench } from "../bench-context";
+import { useFromBench } from "../shell/page-crumbs";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { ConfirmButton } from "../components/confirm-button";
-
-const AUTH_LABEL: Record<McpServer["auth"], string> = {
-  none: "No sign-in",
-  oauth: "Sign in",
-  token: "Token",
-};
 
 /** The handle a pasted URL's server is stored under; the host's first label
  * reads better than a random id and is what a person would have typed. */
@@ -51,95 +48,144 @@ function handleFromUrl(url: string): string {
   return label.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-");
 }
 
-function McpServersTable({
-  servers,
-  onRemove,
-  removing,
+function toolHost(url: string): string {
+  return new URL(url).hostname;
+}
+
+function ToolTile({
+  mark,
+  name,
+  desc,
+  official,
+  children,
 }: {
-  readonly servers: readonly McpServerRow[];
-  readonly onRemove: (server: McpServerRow) => void;
-  readonly removing: boolean;
+  readonly mark: string;
+  readonly name: string;
+  readonly desc: string;
+  readonly official: boolean;
+  readonly children: React.ReactNode;
 }) {
   return (
-    <Table aria-label="MCP servers">
-      <TableHeader>
-        <TableRow>
-          <TableHead>Server</TableHead>
-          <TableHead>URL</TableHead>
-          <TableHead>Auth</TableHead>
-          <TableHead>Tools</TableHead>
-          <TableHead>Agents</TableHead>
-          <TableHead />
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {servers.map((server) => (
-          <TableRow key={server.credentialId}>
-            <TableCell className="font-medium">{server.name}</TableCell>
-            <TableCell className="text-muted-foreground">{server.url}</TableCell>
-            <TableCell className="text-muted-foreground">{AUTH_LABEL[server.auth]}</TableCell>
-            <TableCell className="text-right tabular-nums">{server.tools.length}</TableCell>
-            <TableCell className="text-muted-foreground">
-              {server.agentNames.length === 0 ? "—" : server.agentNames.join(", ")}
-            </TableCell>
-            <TableCell className="text-right">
-              <ConfirmButton
-                size="sm"
-                disabled={removing}
-                confirmLabel="Remove?"
-                onConfirm={() => {
-                  onRemove(server);
-                }}
-              >
-                Remove
-              </ConfirmButton>
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <div className="tool-tile">
+      <div className="tool-tile-mark" aria-hidden="true">
+        {mark}
+      </div>
+      <h3 className="tool-tile-title">
+        {name}
+        <Badge tone="neutral">{official ? "Official" : "Custom"}</Badge>
+      </h3>
+      <p className="tool-tile-desc">{desc}</p>
+      {children}
+    </div>
   );
 }
 
-function DiscoverCard({
+function ConnectedTile({
+  server,
+  onRemove,
+  removing,
+}: {
+  readonly server: McpServerRow;
+  readonly onRemove: () => void;
+  readonly removing: boolean;
+}) {
+  const official = MCP_SERVER_CATALOG.some((entry) => entry.handle === server.handle);
+  const agents = server.agentNames.length === 0 ? "" : ` · ${server.agentNames.join(", ")}`;
+  return (
+    <ToolTile
+      mark={server.name.slice(0, 1).toLocaleUpperCase()}
+      name={server.name}
+      desc={`${toolHost(server.url)}${agents}`}
+      official={official}
+    >
+      <div className="tool-tile-foot">
+        <Badge tone="success">{`${String(server.tools.length)} tools live`}</Badge>
+        <span style={{ flex: 1 }} />
+        <ConfirmButton
+          size="sm"
+          disabled={removing}
+          confirmLabel="Disconnect?"
+          onConfirm={onRemove}
+        >
+          Disconnect
+        </ConfirmButton>
+      </div>
+    </ToolTile>
+  );
+}
+
+function AvailableTile({
   entry,
-  added,
-  onAdd,
-  adding,
+  onConnect,
+  busy,
 }: {
   readonly entry: McpCatalogEntry;
-  readonly added: boolean;
-  readonly onAdd: () => void;
-  readonly adding: boolean;
+  readonly onConnect: (token?: string) => void;
+  readonly busy: boolean;
 }) {
+  const [asking, setAsking] = useState(false);
+  const [token, setToken] = useState("");
+  const keyless = entry.auth === "none";
+
   return (
-    <Card className="flex flex-col gap-3 p-4">
-      <div>
-        <CardTitle>{entry.name}</CardTitle>
-        <CardDescription>{entry.url}</CardDescription>
-      </div>
-      <div className="mt-auto flex items-center justify-between gap-3">
-        <Badge tone={entry.auth === "none" ? "neutral" : "info"}>
-          {entry.auth === "none" ? "No sign-in needed" : "Sign-in required"}
-        </Badge>
-        {added ? (
-          <span className="text-sm text-muted-foreground">Added</span>
-        ) : entry.auth === "none" ? (
-          <Button size="sm" disabled={adding} onClick={onAdd}>
-            Add
+    <ToolTile
+      mark={entry.name.slice(0, 1).toLocaleUpperCase()}
+      name={entry.name}
+      desc={toolHost(entry.url)}
+      official
+    >
+      {asking ? (
+        <form
+          className="tool-tile-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onConnect(token);
+            setAsking(false);
+            setToken("");
+          }}
+        >
+          <Input
+            aria-label={`${entry.name} token`}
+            type="password"
+            placeholder="Bearer token"
+            value={token}
+            onChange={(event) => {
+              setToken(event.target.value);
+            }}
+          />
+          <div className="tool-tile-form-actions">
+            <Button size="sm" variant="outline" type="submit" disabled={busy || token === ""}>
+              Connect
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              type="button"
+              onClick={() => {
+                setAsking(false);
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <div className="tool-tile-foot">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              if (keyless) onConnect();
+              else setAsking(true);
+            }}
+          >
+            Connect
           </Button>
-        ) : (
-          <Button size="sm" disabled title="Signing in to an MCP server isn't wired up yet.">
-            Sign in
-          </Button>
-        )}
-      </div>
-      {entry.auth !== "none" && !added ? (
-        <p className="text-xs text-muted-foreground">
-          Until sign-in lands, add this server below with a token you already have.
-        </p>
-      ) : null}
-    </Card>
+          <span className="tool-tile-hint">{keyless ? "No key needed" : "Token"}</span>
+        </div>
+      )}
+    </ToolTile>
   );
 }
 
@@ -207,7 +253,11 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
   const serversQuery = useMcpServers(tenantId);
   const add = useAddMcpServer(tenantId);
   const remove = useRemoveMcpServer(tenantId);
+  const [filter, setFilter] = useState("");
   const crumbs = [{ label: "Tools" }];
+  const needle = filter.trim().toLocaleLowerCase();
+  const matches = (item: { readonly name: string }) =>
+    needle === "" || item.name.toLocaleLowerCase().includes(needle);
 
   function stage(body: React.ReactNode) {
     return (
@@ -231,9 +281,7 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
   function addServer(input: { url: string; name: string; handle: string; token?: string }) {
     add.mutate(input, {
       onSuccess: (result) => {
-        toast(
-          `${result.server.name} added to the workspace catalog — ${describeRedeployResult(result)}`,
-        );
+        toast(`${result.server.name} connected — ${describeRedeployResult(result)}`);
       },
       onError: (cause: unknown) => {
         toast(describeApiError(cause, "adding this server"));
@@ -243,61 +291,79 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
 
   return stage(
     <div className="flex flex-col gap-8 px-4 pb-5 sm:px-7">
-      <Section
-        title="MCP servers"
-        description="The workspace catalog, shared by every workbench: a server's tools reach the agents whose definitions bind it."
-      >
-        <QueryView query={serversQuery} label="the workspace's MCP servers" skeleton="rows">
-          {(servers) =>
-            servers.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No MCP servers yet. Add one from Discover below.
-              </p>
-            ) : (
-              <McpServersTable
-                servers={servers}
-                removing={remove.isPending}
-                onRemove={(server) => {
-                  remove.mutate(server, {
-                    onSuccess: (result) => {
-                      toast(
-                        `${server.name} removed from the workspace catalog — ${describeRedeployResult(result)}`,
-                      );
-                    },
-                    onError: (cause: unknown) => {
-                      toast(describeApiError(cause, "removing this server"));
-                    },
-                  });
-                }}
-              />
-            )
-          }
-        </QueryView>
-      </Section>
+      <Input
+        className="tools-filter"
+        aria-label="Filter tools"
+        placeholder="Filter tools"
+        value={filter}
+        onChange={(event) => {
+          setFilter(event.target.value);
+        }}
+      />
 
-      <Section title="Discover" description="Servers the workspace can add.">
-        <div className="grid gap-4 sm:grid-cols-2">
-          {MCP_SERVER_CATALOG.map((entry) => (
-            <DiscoverCard
-              key={entry.handle}
-              entry={entry}
-              adding={add.isPending}
-              added={
-                serversQuery.kind === "ready" &&
-                serversQuery.data.some((server) => server.handle === entry.handle)
-              }
-              onAdd={() => {
-                addServer({
-                  url: entry.url,
-                  name: entry.name,
-                  handle: entry.handle,
-                });
-              }}
-            />
-          ))}
-          <AddByUrl onAdd={addServer} adding={add.isPending} />
-        </div>
-      </Section>
+      <QueryView query={serversQuery} label="the workspace's MCP servers" skeleton="rows">
+        {(servers) => {
+          const connected = servers.filter(matches);
+          const available = MCP_SERVER_CATALOG.filter(
+            (entry) => !servers.some((server) => server.handle === entry.handle) && matches(entry),
+          );
+          return (
+            <>
+              <Section
+                title="Connected"
+                description="The workspace catalog, shared by every workbench: a server's tools reach the agents whose definitions bind it."
+              >
+                {connected.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nothing connected yet.</p>
+                ) : (
+                  <div className="tools-grid">
+                    {connected.map((server) => (
+                      <ConnectedTile
+                        key={server.credentialId}
+                        server={server}
+                        removing={remove.isPending}
+                        onRemove={() => {
+                          remove.mutate(server, {
+                            onSuccess: (result) => {
+                              toast(
+                                `${server.name} disconnected — ${describeRedeployResult(result)}`,
+                              );
+                            },
+                            onError: (cause: unknown) => {
+                              toast(describeApiError(cause, "disconnecting this server"));
+                            },
+                          });
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </Section>
+
+              <Section title="Available" description="Official servers first.">
+                <div className="tools-grid">
+                  {available.map((entry) => (
+                    <AvailableTile
+                      key={entry.handle}
+                      entry={entry}
+                      busy={add.isPending}
+                      onConnect={(token) => {
+                        addServer({
+                          url: entry.url,
+                          name: entry.name,
+                          handle: entry.handle,
+                          ...(token === undefined ? {} : { token }),
+                        });
+                      }}
+                    />
+                  ))}
+                  <AddByUrl onAdd={addServer} adding={add.isPending} />
+                </div>
+              </Section>
+            </>
+          );
+        }}
+      </QueryView>
 
       <Section
         title="Tool packages"
@@ -343,6 +409,7 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
 // A thin adapter that resolves which workbench's registry is listed.
 export function ToolsRoute() {
   const { selectedTenantId } = useBench();
+  const fromBench = useFromBench();
 
-  return <ToolsPage tenantId={selectedTenantId} />;
+  return <ToolsPage tenantId={fromBench ?? selectedTenantId} />;
 }

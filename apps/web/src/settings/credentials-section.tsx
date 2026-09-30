@@ -14,16 +14,8 @@ import {
   DialogTitle,
   EmptyState,
   Input,
-  SettingsPanel,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
 } from "@corbits/react-ui";
 import { reportError } from "@corbits/error-sink";
-import type { CredentialType } from "@intx/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
@@ -46,9 +38,6 @@ import { tenantKeys } from "@/query-client";
 import { finishDeferredMyraSetup } from "@/deferred-myra-setup";
 import { useSessionUser } from "@/navigation";
 import {
-  createCredential,
-  createProvider,
-  credentialTypes,
   deleteCredential,
   listCredentials,
   listProviders,
@@ -58,6 +47,8 @@ import {
 } from "./credentials-api";
 import { SETTINGS_STRINGS } from "./strings";
 import { ConfirmButton } from "../components/confirm-button";
+import { ProviderConnectStep } from "../onboarding/provider-connect-step";
+import { SettingsGroup, SettingsRow } from "./rows";
 
 type CatalogProvider = typeof ModelProviderResponse.infer;
 type CatalogOffering = typeof ModelOfferingResponse.infer;
@@ -139,7 +130,6 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
     enabled: tenantId !== null,
   });
   const query = toAPIQuery(result);
-  const providers = result.data?.providers ?? [];
   const catalogProviders = result.data?.catalogProviders ?? [];
   const catalogOfferings = result.data?.catalogOfferings ?? [];
   const catalogModels = result.data?.catalogModels ?? [];
@@ -158,32 +148,6 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
       queryKey: ["tenant", tenantId, "settings-models"],
     });
   }
-
-  const create = useMutation({
-    mutationFn: async ({
-      name,
-      type,
-      secret,
-    }: {
-      readonly name: string;
-      readonly type: CredentialType;
-      readonly secret: string;
-    }) => {
-      if (tenantId === null) throw new Error("no workbench selected");
-      const existing = providers.find((provider) => provider.name === name);
-      const provider = existing !== undefined ? existing : await createProvider(tenantId, name);
-      return createCredential(tenantId, {
-        providerId: provider.id,
-        name,
-        type,
-        secret,
-      });
-    },
-    onSuccess: () => {
-      setCreateOpen(false);
-      reload();
-    },
-  });
 
   // Re-signing in files the tokens under the same credential name, so the
   // hub replaces the material in place and every offering keeps pointing at it.
@@ -316,15 +280,15 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
   return (
     <QueryView query={query} label={SETTINGS_STRINGS.credentialsLoadError}>
       {({ credentials }) => (
-        <SettingsPanel
+        <SettingsGroup
           title={SETTINGS_STRINGS.credentialsSectionTitle}
           description={SETTINGS_STRINGS.credentialsSectionDescription}
-        >
-          <div className="settings-section-toolbar">
+          action={
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
               {SETTINGS_STRINGS.credentialsCreateAction}
             </Button>
-          </div>
+          }
+        >
           {del.error === null || del.error === undefined ? null : (
             <p className="settings-inline-error" role="alert">
               {SETTINGS_STRINGS.credentialsDeleteError}
@@ -342,12 +306,14 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
             onDelete={(credential) => del.mutate(credential)}
             onSignIn={(credential) => signIn.mutate(credential)}
           />
-          <CreateCredentialDialog
+          <AddProviderDialog
+            tenantId={tenantId}
             open={createOpen}
             onOpenChange={setCreateOpen}
-            onCreate={(name, type, secret) => create.mutate({ name, type, secret })}
-            submitting={create.isPending}
-            error={create.error === null ? null : SETTINGS_STRINGS.credentialsCreateError}
+            onConnected={() => {
+              setCreateOpen(false);
+              reload();
+            }}
           />
           <EditCredentialDialog
             credential={editing}
@@ -359,7 +325,7 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
             submitting={update.isPending}
             error={update.error === null ? null : SETTINGS_STRINGS.credentialsEditError}
           />
-        </SettingsPanel>
+        </SettingsGroup>
       )}
     </QueryView>
   );
@@ -387,22 +353,19 @@ function CredentialsTable({
     );
   }
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>{SETTINGS_STRINGS.credentialsNameLabel}</TableHead>
-          <TableHead>{SETTINGS_STRINGS.credentialsTypeLabel}</TableHead>
-          <TableHead>{SETTINGS_STRINGS.credentialsStatusLabel}</TableHead>
-          <TableHead className="settings-actions-cell">Actions</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {credentials.map((credential) => (
-          <TableRow key={credential.id}>
-            <TableCell>{credential.name}</TableCell>
-            <TableCell>{credential.type}</TableCell>
-            <TableCell>{credential.status}</TableCell>
-            <TableCell className="settings-actions-cell">
+    <>
+      {credentials.map((credential) => (
+        <SettingsRow
+          key={credential.id}
+          title={credential.name}
+          meta={
+            <>
+              <span>{credential.type}</span>
+              <span>{credential.status}</span>
+            </>
+          }
+          actions={
+            <>
               {credential.type === "oauth_token" && oauthProviderOf(credential) !== null ? (
                 <Button
                   variant="outline"
@@ -425,44 +388,32 @@ function CredentialsTable({
               >
                 {SETTINGS_STRINGS.credentialsDeleteAction}
               </ConfirmButton>
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+            </>
+          }
+        />
+      ))}
+    </>
   );
 }
 
-function CreateCredentialDialog({
+function AddProviderDialog({
+  tenantId,
   open,
   onOpenChange,
-  onCreate,
-  submitting,
-  error = null,
+  onConnected,
 }: {
+  readonly tenantId: string;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
-  readonly onCreate: (name: string, type: CredentialType, secret: string) => void;
-  readonly submitting: boolean;
-  readonly error?: string | null;
+  readonly onConnected: () => void;
 }) {
-  const [name, setName] = useState("");
-  const [type, setType] = useState<CredentialType>("api_key");
-  const [secret, setSecret] = useState("");
-  const canSubmit = name.trim().length > 0 && secret.trim().length > 0;
-
-  function reset() {
-    setName("");
-    setType("api_key");
-    setSecret("");
-  }
-
+  const [error, setError] = useState<string | null>(null);
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
         onOpenChange(next);
-        if (!next) reset();
+        if (!next) setError(null);
       }}
     >
       <DialogContent>
@@ -473,61 +424,18 @@ function CreateCredentialDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
-          <form
-            id="create-credential-form"
-            className="settings-form-field"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (canSubmit) onCreate(name.trim(), type, secret);
-            }}
-          >
-            <label className="settings-form-field">
-              <span>{SETTINGS_STRINGS.credentialsNameLabel}</span>
-              <Input value={name} onChange={(event) => setName(event.target.value)} autoFocus />
-            </label>
-            <label className="settings-form-field">
-              <span>{SETTINGS_STRINGS.credentialsTypeLabel}</span>
-              <select
-                className="settings-select"
-                value={type}
-                onChange={(event) => setType(event.target.value as CredentialType)}
-              >
-                {credentialTypes.map((candidate) => (
-                  <option key={candidate} value={candidate}>
-                    {candidate}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="settings-form-field">
-              <span>{SETTINGS_STRINGS.credentialsSecretLabel}</span>
-              <Input
-                type="password"
-                value={secret}
-                onChange={(event) => setSecret(event.target.value)}
-                placeholder={SETTINGS_STRINGS.credentialsSecretPlaceholder}
-              />
-            </label>
-            {error !== null && (
-              <p className="settings-inline-error" role="alert">
-                {error}
-              </p>
-            )}
-          </form>
+          <ProviderConnectStep
+            tenantId={tenantId}
+            onConnected={onConnected}
+            onError={setError}
+            onSkip={() => onOpenChange(false)}
+          />
+          {error !== null && (
+            <p className="settings-inline-error" role="alert">
+              {error}
+            </p>
+          )}
         </DialogBody>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {SETTINGS_STRINGS.credentialsCreateCancel}
-          </Button>
-          <Button
-            type="submit"
-            form="create-credential-form"
-            variant="primary"
-            disabled={!canSubmit || submitting}
-          >
-            {SETTINGS_STRINGS.credentialsCreateSubmit}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
