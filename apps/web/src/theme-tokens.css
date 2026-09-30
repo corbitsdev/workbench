@@ -120,8 +120,8 @@
 /* Canvas: the warm Corbits cream. */
 [data-theme="canvas"] {
   --canvas: var(--cream);
-  --surface: #fff;
-  --surface-sunk: color-mix(in srgb, var(--cream) 38%, #fff);
+  --surface: color-mix(in srgb, var(--cream) 30%, #fff);
+  --surface-sunk: color-mix(in srgb, var(--cream) 55%, #fff);
   --ink-2: var(--charcoal-soft);
   --ink-3: color-mix(in srgb, var(--charcoal) 68%, #fff);
   --hover: rgb(43 38 39 / 5%);
