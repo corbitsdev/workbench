@@ -395,7 +395,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
         <BenchDrawer
           open={drawerOpen}
           title={tenant.data?.name ?? "Workbench"}
-          subtitle={benchDescription === "" ? workerStatus.text : benchDescription}
+          subtitle={benchDescription}
           onClose={closeDrawer}
           tabs={{
             Information: (

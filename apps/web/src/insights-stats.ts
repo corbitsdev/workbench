@@ -4,7 +4,9 @@
 
 import { runOutcomeStatus, withListingAbandoned } from "@corbits/workflows/client";
 
+import { isAgentDeploySourceAssetName } from "./agent-deploy";
 import type { InsightsRun } from "./insights-api";
+import { MYRA_SOURCE_CONFIG } from "./myra-source";
 
 /** Compact integer; null/undefined → em-dash. Lifted out of the deleted
  * `@corbits/insights/client` — this app's own copy since it has
@@ -21,10 +23,15 @@ export function durationLabel(ms: number): string {
   return `${(ms / 60_000).toFixed(1)}m`;
 }
 
-// Identity pass: the native `GET /workflows/runs` feed already excludes
-// non-top-level runs, kept only for callers that still name it explicitly.
+// The native feed already excludes non-top-level runs; what remains to drop
+// are the platform's own deploy-source runs (Myra and created agents), which
+// are plumbing, not a person's workflows.
 export function purposeRunsForInsights(runs: readonly InsightsRun[]): readonly InsightsRun[] {
-  return runs;
+  return runs.filter(
+    (run) =>
+      run.definitionName !== MYRA_SOURCE_CONFIG.assetName &&
+      !isAgentDeploySourceAssetName(run.definitionName),
+  );
 }
 
 // Falls back to definition name since the native feed carries no
@@ -145,7 +152,7 @@ export function computeBenchInsights(
   }
   const start = days[0]?.date.getTime() ?? 0;
 
-  const inRange = runs.filter((run) => {
+  const inRange = purposeRunsForInsights(runs).filter((run) => {
     const t = Date.parse(run.createdAt);
     return !Number.isNaN(t) && t >= start && t <= now;
   });
