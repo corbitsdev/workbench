@@ -3,7 +3,6 @@
 // catalog — skills are authored here, private by default or shared.
 
 import {
-  PageShell,
   Button,
   EmptyState,
   RichEmptyState,
@@ -29,6 +28,7 @@ import { CreateSkillDialog, type SkillCreateInput } from "./create-skill-dialog"
 import { useBench } from "../bench-context";
 import { SKILLS_PATH_PREFIX } from "../path-ids";
 import { skillDisplayName } from "../skill-display-name";
+import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
 
 type RegistryState =
@@ -113,12 +113,15 @@ export function SkillsPage({
         <StageTopBar
           crumbs={crumbs}
           {...(filter === undefined ? {} : { filter: { label: "Filter skills", ...filter } })}
-          actions={actions}
         />
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <PageShell width="full" className="page-fill">
+          <PageLayout
+            title="Skills"
+            subtitle="Know-how your workers draw on. Ask for more in any bench."
+            actions={actions}
+          >
             {body}
-          </PageShell>
+          </PageLayout>
         </div>
       </div>
     );
@@ -189,8 +192,7 @@ export function SkillsPage({
           description={`Nothing matches “${query.trim()}”.`}
         />
       ) : (
-        <div className="px-4 pb-5 sm:px-7">
-          <p className="page-lede">Know-how your workers draw on. Ask for more in any bench.</p>
+        <div>
           <Table aria-label="Skills">
             <TableHeader>
               <TableRow>
