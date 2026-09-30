@@ -1951,22 +1951,21 @@ select:disabled,
    question per phase. Deliberately does not reuse `--radius` — this chrome
    commits to square corners everywhere, the rest of the app does not. */
 .onboarding-shell {
-  display: grid;
   min-height: 100svh;
   background: var(--background);
 }
 
 .onboarding-form-col {
-  position: relative;
   display: flex;
   flex-direction: column;
+  min-height: 100svh;
 }
 
 .onboarding-brand {
   display: flex;
   align-items: center;
   gap: 0.625rem;
-  padding: 2rem;
+  padding: 1.5rem 2rem;
   font-size: 1rem;
   font-weight: 600;
   letter-spacing: -0.025em;
@@ -1978,8 +1977,8 @@ select:disabled,
   width: 1.75rem;
   flex-shrink: 0;
   place-items: center;
-  border-radius: 0;
-  background: var(--shell-accent);
+  border-radius: var(--radius);
+  background: var(--primary);
   color: var(--primary-foreground);
 }
 
@@ -1989,59 +1988,54 @@ select:disabled,
 }
 
 .onboarding-form-slot {
-  display: flex;
   flex: 1;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem 2rem 4rem;
+  padding: 4vh 1.5rem 4rem;
 }
 
 .onboarding-form {
   width: 100%;
-  max-width: 30rem;
+  max-width: 35rem;
+  margin: 0 auto;
 }
 
-.onboarding-panel {
-  position: relative;
-  display: none;
-  overflow: hidden;
+/* Step progress: charcoal for done, ink-on-line for now, muted for ahead. */
+.onboarding-progress {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 1.75rem;
+  padding: 0;
+  list-style: none;
+}
+
+.onboarding-progress li {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.onboarding-progress li[data-state="done"] {
   background: var(--foreground);
 }
 
-.dark .onboarding-panel {
-  background: var(--card);
+.onboarding-progress li[data-state="now"] {
+  background: var(--shell-accent);
 }
 
-.onboarding-panel-fallback {
-  position: absolute;
-  inset: 0;
-  height: 100%;
-  width: 100%;
-  object-fit: cover;
-}
-
-.onboarding-panel-dither {
-  position: absolute;
-  inset: 0;
-}
-
-@media (min-width: 64rem) {
-  .onboarding-shell {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .onboarding-panel {
-    display: block;
-  }
+.onboarding-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin-top: 1.25rem;
 }
 
 /* One focused question per phase, large type, no card chrome around it —
    the whitespace of the form column does the framing. */
 .onboarding-title {
   margin: 0 0 0.75rem;
-  font-size: 2rem;
+  font-size: 1.875rem;
   line-height: 1.15;
-  font-weight: 600;
+  font-weight: 800;
   letter-spacing: -0.02em;
 }
 
@@ -2074,32 +2068,6 @@ select:disabled,
 
 .onboarding-phase--credential .onboarding-content {
   gap: 0.875rem;
-}
-
-/* Square corners throughout the wizard's own inputs and buttons — the one
-   deliberate departure from the app's default `--radius`. */
-.onboarding-content input,
-.onboarding-content textarea,
-.onboarding-content button,
-.onboarding-content [role="radiogroup"] button {
-  border-radius: 0;
-}
-
-/* The escape hatch below the form: low-emphasis on purpose, since
-   connecting a provider is still the primary path — this is only for the
-   account that genuinely has nothing to paste yet. */
-.onboarding-credential-skip {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.25rem;
-  margin-top: -0.25rem;
-}
-
-.onboarding-credential-skip-hint {
-  margin: 0;
-  font-size: 0.8125rem;
-  color: var(--muted-foreground);
 }
 
 /* The one-click paths sit above the key forms, side by side in a
@@ -2181,12 +2149,6 @@ select:disabled,
   margin: 0;
   font-size: 0.8125rem;
   color: var(--muted-foreground);
-}
-
-.onboarding-name-form button[type="submit"],
-.onboarding-credential-form button[type="submit"] {
-  margin-top: 0.5rem;
-  align-self: flex-start;
 }
 
 .onboarding-provider-picker {
