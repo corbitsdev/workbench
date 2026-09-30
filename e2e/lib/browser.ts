@@ -81,13 +81,16 @@ export function bootBrowserApp(): () => BrowserApp {
     server = Bun.serve({ port: 0, fetch: () => new Response("booting", { status: 503 }) });
     const origin = `http://localhost:${String(server.port)}`;
     process.env["BASE_URL"] = origin;
+    // The in-process sidecar dials the hub's own port back over WebSocket.
+    process.env["PORT"] = String(server.port);
 
     const { createHubServer } = await import("../../apps/hub/src/server");
     const hub = await createHubServer();
     server.reload({
-      fetch: async (req: Request) => {
+      websocket: hub.websocket as Bun.WebSocketHandler<unknown>,
+      fetch: async (req, srv) => {
         const { pathname } = new URL(req.url);
-        if (pathname.startsWith("/api") || pathname === "/status") return hub.fetch(req);
+        if (pathname.startsWith("/api") || pathname === "/status") return hub.fetch(req, srv);
         const file = Bun.file(path.join(DIST_DIR, pathname));
         if (pathname !== "/" && (await file.exists())) return new Response(file);
         return new Response(Bun.file(path.join(DIST_DIR, "index.html")));
