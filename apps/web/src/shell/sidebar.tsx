@@ -63,9 +63,7 @@ export function Sidebar({
             >
               New Agent
             </MenuItem>
-            <MenuItem onSelect={() => onNavigate(NEW_WORKBENCH_PATH)}>
-              New Workbench
-            </MenuItem>
+            <MenuItem onSelect={() => onNavigate(NEW_WORKBENCH_PATH)}>New Workbench</MenuItem>
           </MenuContent>
         </Menu>
       </div>

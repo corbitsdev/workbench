@@ -18,8 +18,7 @@
    (injected at runtime, unrelated to this stylesheet); this just stops
    react-ui's override from fighting it. Higher specificity than that rule
    wins the cascade on its own, so this is safe regardless of load order. */
-[data-sonner-toaster][data-x-position="right"]
-  [data-sonner-toast].corbits-toast {
+[data-sonner-toaster][data-x-position="right"] [data-sonner-toast].corbits-toast {
   left: auto !important;
   transform: none !important;
 }
@@ -40,8 +39,7 @@ html {
 /* Inputs in side drawers already have a visible control boundary. Color that
    edge on focus so the focus treatment reads as one control, not a second
    outline outside it. */
-[data-slot="dialog-content"][data-side="right"]
-  [data-slot="input"]:focus-visible {
+[data-slot="dialog-content"][data-side="right"] [data-slot="input"]:focus-visible {
   outline: none;
   border-color: var(--accent-rail, var(--primary));
 }
@@ -114,9 +112,7 @@ select:disabled,
    Scoped to the sidebar so stage content keeps library defaults. */
 .shell-sidebar button:not(:disabled):not([aria-disabled="true"]),
 .shell-sidebar [data-slot="button"]:not(:disabled):not([aria-disabled="true"]),
-.shell-sidebar
-  [data-slot="sidebar-item-row"]
-  button:not(:disabled):not([aria-disabled="true"]),
+.shell-sidebar [data-slot="sidebar-item-row"] button:not(:disabled):not([aria-disabled="true"]),
 .shell-sidebar .shell-ch-row:not(:disabled):not([aria-disabled="true"]) {
   cursor: pointer;
 }
@@ -199,10 +195,7 @@ select:disabled,
 /* Shared dialog craft — layout/scroll/chrome on react-ui data slots only.
    Feature forms and dialog body content keep their own styles. */
 [data-slot="dialog-content"][data-side="center"] {
-  width: min(
-    calc(100vw - (var(--dialog-gutter) * 2)),
-    var(--dialog-content-max-width)
-  );
+  width: min(calc(100vw - (var(--dialog-gutter) * 2)), var(--dialog-content-max-width));
   max-height: var(--dialog-content-max-height);
   overflow: hidden;
 }
@@ -861,8 +854,7 @@ select:disabled,
   align-items: center;
   gap: 0.5rem;
   padding: 0.45rem 0.7rem;
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
 .shell-routine-new {
@@ -1036,8 +1028,7 @@ select:disabled,
   justify-content: space-between;
   gap: 0.5rem;
   padding-bottom: 0.55rem;
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
 .shell-canvas-pane-heading {
@@ -1665,9 +1656,7 @@ select:disabled,
 }
 
 .shell-sidebar .shell-panel-search [data-slot="input"]::placeholder,
-.shell-sidebar
-  [data-slot="sidebar-panel-body"]
-  [data-slot="input"]::placeholder {
+.shell-sidebar [data-slot="sidebar-panel-body"] [data-slot="input"]::placeholder {
   color: var(--shell-panel-faint);
 }
 
@@ -1683,9 +1672,7 @@ select:disabled,
   box-shadow: none;
 }
 
-.shell-sidebar
-  [data-slot="sidebar-panel-body"]
-  [data-slot="input"]:focus-visible {
+.shell-sidebar [data-slot="sidebar-panel-body"] [data-slot="input"]:focus-visible {
   outline: none;
   border-color: var(--foreground);
   box-shadow: 0 0 0 1px var(--foreground);
@@ -1716,19 +1703,14 @@ select:disabled,
    left edge. Selector doubles as the kill for react-ui's bg-primary/10
    selected wash. */
 .shell-sidebar [data-slot="sidebar-item-row"] > div.bg-primary\/10,
-.shell-sidebar
-  [data-slot="sidebar-item-row"]
-  > div:has(button[aria-current="true"]) {
+.shell-sidebar [data-slot="sidebar-item-row"] > div:has(button[aria-current="true"]) {
   background-color: var(--background);
   color: var(--shell-accent);
   box-shadow: inset 2px 0 0 0 var(--shell-accent);
 }
 
 .shell-sidebar [data-slot="sidebar-item-row"] > div.bg-primary\/10 > button,
-.shell-sidebar
-  [data-slot="sidebar-item-row"]
-  > div:has(button[aria-current="true"])
-  > button {
+.shell-sidebar [data-slot="sidebar-item-row"] > div:has(button[aria-current="true"]) > button {
   font-weight: 600;
 }
 
@@ -1766,12 +1748,7 @@ select:disabled,
 }
 
 /* Mock .count: the trailing meta slot when it is plain text. */
-.shell-sidebar
-  [data-slot="sidebar-item-row"]
-  > div
-  > button
-  > span
-  + span:last-child {
+.shell-sidebar [data-slot="sidebar-item-row"] > div > button > span + span:last-child {
   font-size: 0.72rem;
   color: var(--shell-panel-faint);
 }
@@ -2277,8 +2254,7 @@ select:disabled,
    attention-seeking animation, fully off under reduced motion.
    DESIGN.md's motion ceiling is 300ms — stays at 280ms. */
 .onboarding-phase {
-  animation: onboarding-phase-in var(--duration-large, 300ms)
-    var(--ease-out, ease) both;
+  animation: onboarding-phase-in var(--duration-large, 300ms) var(--ease-out, ease) both;
 }
 
 /* The wait phases drop the usual title/subtitle/form stack for the shared
@@ -2560,8 +2536,7 @@ select:disabled,
 
 .insights-grid > .insights-panel {
   border: 0;
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
 .insights-grid > .insights-panel:last-child {
@@ -2859,11 +2834,7 @@ tr.insights-row-clickable:hover {
 }
 
 /* The current row's copy follows the row's accent ink. */
-.shell-sidebar
-  [data-slot="sidebar-item-row"]
-  button[aria-current="true"]
-  .panel-row-copy
-  strong {
+.shell-sidebar [data-slot="sidebar-item-row"] button[aria-current="true"] .panel-row-copy strong {
   color: inherit;
 }
 
@@ -3748,9 +3719,7 @@ tr.insights-row-clickable:hover {
   list-style: none;
 }
 /* A stopped schedule stays listed, dimmed, since only a new one revives it. */
-.workbench-info-schedule-list
-  > li[data-stopped="true"]
-  .workbench-info-cell-primary {
+.workbench-info-schedule-list > li[data-stopped="true"] .workbench-info-cell-primary {
   color: var(--muted-foreground);
   text-decoration: line-through;
 }

@@ -1,31 +1,14 @@
 // Profile menu (settings, theme, sign out) and the Tools button.
 
-import {
-  Moon,
-  Palette,
-  Plugs,
-  SignOut,
-  SlidersHorizontal,
-  Sun,
-  type Icon,
-} from "@/lib/icons";
+import { Moon, Palette, Plugs, SignOut, SlidersHorizontal, Sun, type Icon } from "@/lib/icons";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { IdentityAvatar } from "../chat/avatar";
 import { useSessionUser, useSignOut } from "../navigation";
 import { matchesRoute, SETTINGS_PATH } from "../routes";
-import {
-  isTheme,
-  setTheme,
-  THEMES,
-  useTheme,
-  type Theme,
-} from "../theme-store";
+import { isTheme, setTheme, THEMES, useTheme, type Theme } from "../theme-store";
 
-const THEME_OPTIONS: Record<
-  Theme,
-  { readonly label: string; readonly icon: Icon }
-> = {
+const THEME_OPTIONS: Record<Theme, { readonly label: string; readonly icon: Icon }> = {
   light: { label: "Light", icon: Sun },
   dark: { label: "Dark", icon: Moon },
   canvas: { label: "Canvas", icon: Palette },
@@ -44,18 +27,12 @@ export function SidebarFooter({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const radioRefs = useRef<Partial<Record<Theme, HTMLButtonElement | null>>>(
-    {},
-  );
+  const radioRefs = useRef<Partial<Record<Theme, HTMLButtonElement | null>>>({});
 
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: PointerEvent) => {
-      if (
-        event.target instanceof Node &&
-        !rootRef.current?.contains(event.target)
-      )
-        setOpen(false);
+      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) setOpen(false);
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
@@ -82,8 +59,7 @@ export function SidebarFooter({
           : 0;
     if (step === 0) return;
     event.preventDefault();
-    const next =
-      THEMES[(THEMES.indexOf(theme) + step + THEMES.length) % THEMES.length];
+    const next = THEMES[(THEMES.indexOf(theme) + step + THEMES.length) % THEMES.length];
     if (next === undefined) return;
     setTheme(next);
     radioRefs.current[next]?.focus();
@@ -103,11 +79,7 @@ export function SidebarFooter({
         aria-label="Account"
         onClick={() => setOpen((value) => !value)}
       >
-        <IdentityAvatar
-          kind="person"
-          name={name}
-          principalId={user?.id ?? name}
-        />
+        <IdentityAvatar kind="person" name={name} principalId={user?.id ?? name} />
       </button>
       <button
         type="button"
@@ -120,18 +92,9 @@ export function SidebarFooter({
         Tools
       </button>
       {open ? (
-        <div
-          className="sb-menu"
-          role="menu"
-          aria-label="Account"
-          onKeyDown={onMenuKeyDown}
-        >
+        <div className="sb-menu" role="menu" aria-label="Account" onKeyDown={onMenuKeyDown}>
           <div className="sb-menu-head">
-            <IdentityAvatar
-              kind="person"
-              name={name}
-              principalId={user?.id ?? name}
-            />
+            <IdentityAvatar kind="person" name={name} principalId={user?.id ?? name} />
             <div>
               <b>{name}</b>
               {user !== undefined ? <span>{user.email}</span> : null}

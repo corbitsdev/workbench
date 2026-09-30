@@ -1,11 +1,7 @@
 // Sparkle/Sparkles is banned outright — it read as a generic "AI" cliché.
 // A curated re-export, not a full pass-through, so a stray import can't
 // reach for an off-list icon or tiptoe around the stroke-width rule.
-import {
-  LucideProvider,
-  type LucideIcon,
-  type LucideProps,
-} from "lucide-react";
+import { LucideProvider, type LucideIcon, type LucideProps } from "lucide-react";
 import type { ReactNode } from "react";
 
 export type Icon = LucideIcon;
