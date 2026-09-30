@@ -6,8 +6,6 @@ import { decodedOrNull } from "@corbits/url-path";
 
 export const SETTINGS_PATH_PREFIX = "/settings";
 export const WORKERS_PATH_PREFIX = "/workers";
-// Kept under its old name for the sidebar until its own cutover.
-export const AGENTS_PATH_PREFIX = WORKERS_PATH_PREFIX;
 export const SKILLS_PATH_PREFIX = "/skills";
 export const ARTIFACTS_PATH_PREFIX = "/artifacts";
 export const TOOLS_PATH_PREFIX = "/tools";
