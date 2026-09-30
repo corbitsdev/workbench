@@ -7,6 +7,16 @@
       name="description"
       content="Corbits Workbench: deploy, run, and supervise agents from one interface."
     />
+    <script>
+      // Paint in the saved theme before React mounts; theme-store.ts writes the key.
+      try {
+        var t = localStorage.getItem("corbits-theme:last");
+        var r = document.documentElement;
+        if (t === "dark" || t === "canvas") r.setAttribute("data-theme", t);
+        if (t === "dark") r.classList.add("dark");
+        r.style.colorScheme = t === "dark" ? "dark" : "light";
+      } catch (e) {}
+    </script>
     <title>Corbits Workbench</title>
     <link rel="icon" type="image/svg+xml" href="/corbits-favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />

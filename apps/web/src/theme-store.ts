@@ -12,6 +12,8 @@ export function isTheme(value: unknown): value is Theme {
 }
 
 const DEFAULT_KEY = "corbits-theme";
+// Unscoped copy of the last-set theme; the boot script in index.html reads it.
+const LAST_KEY = "corbits-theme:last";
 
 let storageKey = DEFAULT_KEY;
 let current: Theme = "light";
@@ -33,6 +35,7 @@ function apply(theme: Theme) {
   else root.setAttribute("data-theme", theme);
   // react-ui's `dark:` variant keys off the class.
   root.classList.toggle("dark", theme === "dark");
+  root.style.colorScheme = theme === "dark" ? "dark" : "light";
 }
 
 function commit(theme: Theme) {
@@ -53,6 +56,7 @@ export function setTheme(theme: Theme) {
   commit(theme);
   try {
     window.localStorage.setItem(storageKey, theme);
+    window.localStorage.setItem(LAST_KEY, theme);
   } catch (error) {
     reportError(error, { operation: "theme_persist" });
   }
