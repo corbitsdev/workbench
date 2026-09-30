@@ -1,9 +1,12 @@
+import { reportError } from "@corbits/error-sink";
+
 /** Decodes a URL path segment, reading a malformed one as no selection
  * rather than throwing. */
 export function decodedOrNull(segment: string): string | null {
   try {
     return decodeURIComponent(segment);
-  } catch {
+  } catch (cause) {
+    reportError(cause, { operation: "url_path_decode" });
     return null;
   }
 }

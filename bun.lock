@@ -198,6 +198,9 @@
     "packages/url-path": {
       "name": "@corbits/url-path",
       "version": "0.0.1",
+      "dependencies": {
+        "@corbits/error-sink": "workspace:*",
+      },
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
