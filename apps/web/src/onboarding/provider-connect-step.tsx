@@ -222,7 +222,8 @@ export function ProviderConnectStep({
   readonly tenantId: string;
   readonly onConnected: (offering: ExistingOffering) => void;
   readonly onError: (message: string) => void;
-  readonly onSkip: () => void;
+  /** Omitted outside onboarding: only the first-run flow can be skipped. */
+  readonly onSkip?: () => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
@@ -523,9 +524,11 @@ export function ProviderConnectStep({
         <Button type="submit" variant="primary" disabled={submitting || waiting || !ready}>
           {submitLabel}
         </Button>
-        <Button type="button" variant="ghost" onClick={onSkip}>
-          Skip for now
-        </Button>
+        {onSkip === undefined ? null : (
+          <Button type="button" variant="ghost" onClick={onSkip}>
+            Skip for now
+          </Button>
+        )}
       </div>
     </form>
   );
