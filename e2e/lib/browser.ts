@@ -4,11 +4,11 @@
 // local Chrome. A UI test file calls `bootBrowserApp()` once and gets a
 // fresh page per test via `newPage()`.
 import { afterAll, beforeAll, describe } from "bun:test";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { dbGate } from "./db-gate";
-import { createDisposableHubDataDir } from "./disposable-hub-data-dir";
+import { bootHub, type BootedHub } from "./hub";
 import { REPO_ROOT } from "./database-url";
 
 const DEFAULT_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -54,79 +54,31 @@ async function ensureWebBuild(): Promise<void> {
   if ((await proc.exited) !== 0) throw new Error("apps/web build failed");
 }
 
-// The process provisioner deliberately lets sidecars outlive the hub (they
-// are recovered from pid files on the next boot), so a test hub must reap
-// its own or they redial a dead port forever.
-function killSidecars(hubDataDir: string): void {
-  const pidFiles: string[] = [];
-  try {
-    for (const dir of readdirSync(hubDataDir)) {
-      if (!dir.startsWith("process-provisioner")) continue;
-      const root = path.join(hubDataDir, dir, "allocations");
-      for (const alloc of readdirSync(root)) {
-        for (const unit of readdirSync(path.join(root, alloc))) {
-          pidFiles.push(path.join(root, alloc, unit, "sidecar.pid"));
-        }
-      }
-    }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-  }
-  for (const file of pidFiles) {
-    let pid: number;
-    try {
-      pid = Number(readFileSync(file, "utf8").trim());
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
-      throw error;
-    }
-    if (!Number.isInteger(pid) || pid <= 0) continue;
-    try {
-      process.kill(pid, "SIGKILL");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-    }
-  }
-}
-
 /** Registers beforeAll/afterAll that boot and tear down hub + web + Chrome. */
 export function bootBrowserApp(): () => BrowserApp {
-  let dataDir: ReturnType<typeof createDisposableHubDataDir> | undefined;
-  let hub:
-    | Awaited<ReturnType<typeof import("../../apps/hub/src/server").createHubServer>>
-    | undefined;
   let app: BrowserApp | undefined;
   let browser: Browser | undefined;
   let server: ReturnType<typeof Bun.serve> | undefined;
 
   beforeAll(async () => {
-    const executablePath = chromePath();
-    if (executablePath === undefined) throw new Error("Chrome not found");
-    // Per file, at run time: every file boots against its own data dir.
-    dataDir = createDisposableHubDataDir();
+    if (chromePath() === undefined) throw new Error("Chrome not found");
     await ensureWebBuild();
-
-    const url = new URL(process.env["DATABASE_URL"] ?? "");
-    process.env["DB_HOST"] = url.hostname;
-    process.env["DB_PORT"] = url.port === "" ? "5432" : url.port;
-    process.env["DB_USER"] = decodeURIComponent(url.username);
-    process.env["DB_PASSWORD"] = decodeURIComponent(url.password);
-    process.env["DB_NAME"] = url.pathname.replace(/^\//, "");
-    process.env["CREDENTIAL_ENCRYPTION_KEY"] ??= "0".repeat(64);
-    process.env["PRINCIPAL_KEY_ENCRYPTION_KEY"] ??= "1".repeat(64);
-    process.env["SIDECAR_CREDENTIAL_ENCRYPTION_KEY"] ??= "2".repeat(64);
-    process.env["HUB_ALLOW_GIT_INSIDE_WORK_TREE"] = "1";
 
     // Bind first so BASE_URL (Better Auth's trusted origin) names the real port.
     server = Bun.serve({ port: 0, fetch: () => new Response("booting", { status: 503 }) });
-    const origin = `http://localhost:${String(server.port)}`;
-    process.env["BASE_URL"] = origin;
-    // The in-process sidecar dials the hub's own port back over WebSocket.
-    process.env["PORT"] = String(server.port);
+  }, 300_000);
 
-    const { createHubServer } = await import("../../apps/hub/src/server");
-    hub = await createHubServer();
-    const booted = hub;
+  // The in-process sidecar dials the hub's own port back over WebSocket.
+  const hub = bootHub({
+    baseUrl: () => `http://localhost:${String(server?.port)}`,
+    port: () => server?.port ?? 0,
+  });
+
+  beforeAll(async () => {
+    const executablePath = chromePath();
+    if (executablePath === undefined || server === undefined) throw new Error("Chrome not found");
+    const origin = `http://localhost:${String(server.port)}`;
+    const booted: BootedHub = hub();
     server.reload({
       websocket: booted.websocket as Bun.WebSocketHandler<unknown>,
       fetch: async (req, srv) => {
@@ -162,9 +114,6 @@ export function bootBrowserApp(): () => BrowserApp {
   afterAll(async () => {
     await browser?.close();
     await server?.stop(true);
-    await hub?.shutdown();
-    if (dataDir !== undefined) killSidecars(dataDir.hubDataDir);
-    dataDir?.restore();
   });
 
   return () => {
