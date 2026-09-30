@@ -57,17 +57,12 @@ function WorkbenchMessageRow({
   const matched = participants.find((participant) =>
     sameAddress(participant.address, message.address),
   );
-  const kind =
-    message.author !== "me" && matched?.kind === "agent" ? "agent" : "person";
+  const kind = message.author !== "me" && matched?.kind === "agent" ? "agent" : "person";
   // The person's own send carries a trailing roster block so agents in the
   // workbench can hand off to each other; it's never something a person should
   // see echoed back at them.
-  const body =
-    message.author === "me" ? stripRoster(message.body) : message.body;
-  const { pkg, renderedBody } = resolveMessagePackage(
-    message.attachments,
-    body,
-  );
+  const body = message.author === "me" ? stripRoster(message.body) : message.body;
+  const { pkg, renderedBody } = resolveMessagePackage(message.attachments, body);
   return (
     <div className="chat-thread-message" data-author={message.author}>
       <span className="shell-ch-avatar">
@@ -85,11 +80,7 @@ function WorkbenchMessageRow({
           pkg={pkg}
         />
         {onReply === undefined ? null : (
-          <button
-            type="button"
-            className="workbench-replies-link"
-            onClick={() => onReply(message)}
-          >
+          <button type="button" className="workbench-replies-link" onClick={() => onReply(message)}>
             Reply
           </button>
         )}
@@ -128,11 +119,7 @@ function AgentRedeployer({
   return null;
 }
 
-function Workbench({
-  workbenchTenantId,
-}: {
-  readonly workbenchTenantId: string;
-}) {
+function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }) {
   const queryClient = useQueryClient();
   const [openThread, setOpenThread] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -144,19 +131,14 @@ function Workbench({
   });
   const participants = useQuery({
     queryKey: workbenchKeys.participants(workbenchTenantId),
-    queryFn: () =>
-      listWorkbenchParticipants(workbenchTenantId, tenant.data?.domain ?? ""),
+    queryFn: () => listWorkbenchParticipants(workbenchTenantId, tenant.data?.domain ?? ""),
     // The workbench tenant's domain is read first; a person's mailbox address
     // depends on it, so participants wait for it rather than racing it.
     enabled: tenant.data !== undefined,
     // Poll while any agent has no live run yet, so the workbench notices its own
     // redeploy finishing without a manual refresh.
     refetchInterval: (query) =>
-      (query.state.data ?? []).some(
-        (p) => p.kind === "agent" && p.address === "",
-      )
-        ? 3000
-        : false,
+      (query.state.data ?? []).some((p) => p.kind === "agent" && p.address === "") ? 3000 : false,
   });
   const timeline = useQuery({
     queryKey: workbenchKeys.timeline(workbenchTenantId),
@@ -183,9 +165,7 @@ function Workbench({
     [workbenchTenantId, queryClient],
   );
 
-  const agents = (participants.data ?? []).filter(
-    (participant) => participant.kind === "agent",
-  );
+  const agents = (participants.data ?? []).filter((participant) => participant.kind === "agent");
   // Released by a hub restart: the asset is still here but nothing is live.
   const releasedAgents = agents.filter(
     (agent): agent is WorkbenchParticipant & { assetName: string } =>
@@ -217,19 +197,12 @@ function Workbench({
   });
 
   const messages = timeline.data ?? [];
-  const latestMessage = [...messages].sort(
-    (a, b) => Date.parse(b.at) - Date.parse(a.at),
-  )[0];
-  const openedChain =
-    openThread === null ? [] : ancestorChain(messages, openThread);
+  const latestMessage = [...messages].sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0];
+  const openedChain = openThread === null ? [] : ancestorChain(messages, openThread);
   const opened = openedChain.at(-1);
   const failure: unknown = timeline.error ?? participants.error;
 
-  if (
-    failure !== null &&
-    failure !== undefined &&
-    timeline.data === undefined
-  ) {
+  if (failure !== null && failure !== undefined && timeline.data === undefined) {
     return (
       <PageShell width="full" className="page-fill">
         <EmptyState
@@ -298,11 +271,7 @@ function Workbench({
             <aside className="workbench-subthread" aria-label="Replies">
               <div className="workbench-subthread-head">
                 <h2>Replies</h2>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setOpenThread(null)}
-                >
+                <Button variant="ghost" size="sm" onClick={() => setOpenThread(null)}>
                   Close
                 </Button>
               </div>
@@ -325,9 +294,7 @@ function Workbench({
                 busy={send.isPending}
                 disabled={startingAgent !== undefined}
                 mentionables={mentionables}
-                onSend={(text) =>
-                  send.mutate({ content: text, inReplyTo: opened.messageId })
-                }
+                onSend={(text) => send.mutate({ content: text, inReplyTo: opened.messageId })}
               />
             </aside>
           )}

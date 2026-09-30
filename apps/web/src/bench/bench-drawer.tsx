@@ -63,12 +63,7 @@ export function BenchDrawer({
             <h2>{title}</h2>
             <p>{subtitle}</p>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label="Close drawer"
-            onClick={onClose}
-          >
+          <Button variant="ghost" size="sm" aria-label="Close drawer" onClick={onClose}>
             <X size={16} aria-hidden="true" />
           </Button>
         </div>
@@ -88,9 +83,7 @@ export function BenchDrawer({
         </div>
         <div className="drawer-body" role="tabpanel">
           {body ?? (
-            <p className="workbench-info-empty-note">
-              {tab} is coming to this drawer soon.
-            </p>
+            <p className="workbench-info-empty-note">{tab} is coming to this drawer soon.</p>
           )}
         </div>
       </div>

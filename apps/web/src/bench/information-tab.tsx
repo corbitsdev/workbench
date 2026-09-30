@@ -21,14 +21,11 @@ export function InformationTab({
   readonly latestMessage: WorkbenchMessage | undefined;
   readonly participants: readonly WorkbenchParticipant[];
 }) {
-  const anyAgentStarting = participants.some(
-    (p) => p.kind === "agent" && p.address === "",
-  );
+  const anyAgentStarting = participants.some((p) => p.kind === "agent" && p.address === "");
   const approvalsQuery = usePendingApprovals(workbenchTenantId, {
     refetchInterval: anyAgentStarting ? 3000 : false,
   });
-  const pendingApprovals =
-    approvalsQuery.kind === "ready" ? approvalsQuery.data : null;
+  const pendingApprovals = approvalsQuery.kind === "ready" ? approvalsQuery.data : null;
 
   return (
     <>
@@ -37,9 +34,7 @@ export function InformationTab({
           <h2>Latest activity</h2>
         </div>
         {latestMessage === undefined ? (
-          <p className="workbench-info-empty-note">
-            Nothing yet — say something to get started.
-          </p>
+          <p className="workbench-info-empty-note">Nothing yet — say something to get started.</p>
         ) : (
           <p className="workbench-info-cell-context">
             {resolveParticipantName(latestMessage, participants)} ·{" "}
@@ -52,9 +47,7 @@ export function InformationTab({
         <div className="workbench-info-panel-header">
           <h2>Approvals</h2>
         </div>
-        {approvalsQuery.kind === "loading" ? (
-          <Skeleton className="h-16 w-full" />
-        ) : null}
+        {approvalsQuery.kind === "loading" ? <Skeleton className="h-16 w-full" /> : null}
         {approvalsQuery.kind === "error" ? (
           <p className="workbench-info-empty-note">{approvalsQuery.message}</p>
         ) : null}
@@ -64,20 +57,13 @@ export function InformationTab({
         {pendingApprovals !== null && pendingApprovals.length > 0 ? (
           <ul className="workbench-info-approval-list">
             {pendingApprovals.map((item) => (
-              <ApprovalRow
-                key={item.id}
-                item={item}
-                tenantId={workbenchTenantId}
-              />
+              <ApprovalRow key={item.id} item={item} tenantId={workbenchTenantId} />
             ))}
           </ul>
         ) : null}
       </section>
 
-      <WorkbenchSchedulesPanel
-        workbenchTenantId={workbenchTenantId}
-        participants={participants}
-      />
+      <WorkbenchSchedulesPanel workbenchTenantId={workbenchTenantId} participants={participants} />
 
       <section className="workbench-info-panel">
         <div className="workbench-info-panel-header">

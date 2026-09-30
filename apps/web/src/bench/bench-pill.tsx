@@ -25,11 +25,7 @@ export function BenchPill({
       onClick={onToggle}
     >
       {worker === undefined ? null : (
-        <IdentityAvatar
-          kind="agent"
-          name={worker.name}
-          principalId={worker.id}
-        />
+        <IdentityAvatar kind="agent" name={worker.name} principalId={worker.id} />
       )}
       <b>{benchName}</b>
       <span className="bench-pill-status">{status}</span>
