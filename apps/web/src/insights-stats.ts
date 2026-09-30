@@ -215,6 +215,29 @@ export function computeBenchInsights(
   };
 }
 
+/** Non-archived artifacts created on or after `sinceMs`. */
+export function countSavedArtifacts(
+  artifacts: readonly { readonly archivedAt: string | null; readonly createdAt: string }[],
+  sinceMs: number,
+): number {
+  return artifacts.filter((a) => a.archivedAt === null && Date.parse(a.createdAt) >= sinceMs)
+    .length;
+}
+
+/** The four headline tiles shared by the Insights page and the drawer tab. */
+export function benchInsightTiles(
+  stats: BenchInsights,
+  saved: string,
+): readonly (readonly [string, string])[] {
+  const finished = stats.ok + stats.fail;
+  return [
+    ["Runs", formatCount(stats.total)],
+    ["Succeeded", finished === 0 ? "—" : `${Math.round((stats.ok / finished) * 100)}%`],
+    ["Median run", stats.medianMs === null ? "—" : durationLabel(stats.medianMs)],
+    ["Artifacts saved", saved],
+  ];
+}
+
 /** Most recent in-range runs whose approvals the Insights cards fetch. */
 export const APPROVAL_RUN_CAP = 50;
 

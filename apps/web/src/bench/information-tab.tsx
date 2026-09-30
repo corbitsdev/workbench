@@ -1,10 +1,9 @@
 import { Button, Skeleton, formatRelativeTime } from "@corbits/react-ui";
 import { toast } from "@corbits/react-ui/ui/toast";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useContext, useState } from "react";
 
 import { ArtifactListPageSchema, useAPIQuery } from "@/api";
-import { ApprovalRow } from "@/chat/approval-row";
 import { IdentityAvatar } from "@/chat/avatar";
 import type { WorkbenchParticipant } from "@/chat/threads-api";
 import { libraryArtifactPath } from "@/library";
@@ -17,10 +16,13 @@ import { scheduleSentence } from "@/pages/routines-page";
 import { listScheduledWorkflows } from "@/routines-api";
 import { skillDisplayName } from "@/skill-display-name";
 import { listSkills } from "@/skills-api";
+import { principalLabel } from "../settings/identity";
+import { listPrincipals } from "../settings/tenancy-api";
 import { WorkbenchSchedulesPanel } from "../pages/workbench-schedules-panel";
 import { usePendingApprovals } from "../pending-approvals";
 import { benchLink } from "../shell/page-crumbs";
 import type { WorkerStatus } from "../worker-status";
+import { DrawerTabContext } from "./bench-drawer";
 import "./description.css";
 import { DESCRIPTION_MAX, useBenchDescription } from "./description";
 import { DEFAULT_WORKER_NAME, WORKER_NAME_MAX, useWorkerName } from "./worker-name";
@@ -28,10 +30,13 @@ import { DEFAULT_WORKER_NAME, WORKER_NAME_MAX, useWorkerName } from "./worker-na
 function Section({
   title,
   action,
+  onAction,
   children,
 }: {
   readonly title: string;
   readonly action?: { readonly to: string; readonly label: string };
+  /** A head button, for an action that stays in the drawer. */
+  readonly onAction?: { readonly onClick: () => void; readonly label: string };
   readonly children: React.ReactNode;
 }) {
   return (
@@ -39,6 +44,11 @@ function Section({
       <div className="drawer-sec-head">
         <h3>{title}</h3>
         {action === undefined ? null : <Link to={action.to}>{action.label}</Link>}
+        {onAction === undefined ? null : (
+          <button type="button" onClick={onAction.onClick}>
+            {onAction.label}
+          </button>
+        )}
       </div>
       {children}
     </section>
@@ -48,15 +58,28 @@ function Section({
 function AboutSection({ workbenchTenantId }: { readonly workbenchTenantId: string }) {
   const { description, save } = useBenchDescription(workbenchTenantId);
   const [draft, setDraft] = useState<string | null>(null);
-  const value = draft ?? description;
+  const editing = draft !== null;
   const dirty = draft !== null && draft.trim() !== description;
+  if (!editing) {
+    return (
+      <Section
+        title="About"
+        onAction={{
+          label: description === "" ? "Add" : "Edit",
+          onClick: () => setDraft(description),
+        }}
+      >
+        <p className="drawer-about">{description === "" ? "No description yet." : description}</p>
+      </Section>
+    );
+  }
   return (
-    <Section title="About">
+    <Section title="About" onAction={{ label: "Cancel", onClick: () => setDraft(null) }}>
       <form
         className="bench-description-form"
         onSubmit={(event) => {
           event.preventDefault();
-          save.mutate(value.trim(), {
+          save.mutate(draft.trim(), {
             onSuccess: () => setDraft(null),
             onError: (cause) => toast(cause instanceof Error ? cause.message : String(cause)),
           });
@@ -66,7 +89,8 @@ function AboutSection({ workbenchTenantId }: { readonly workbenchTenantId: strin
           aria-label="Description"
           placeholder="Add a description"
           maxLength={DESCRIPTION_MAX}
-          value={value}
+          value={draft}
+          autoFocus
           onChange={(event) => setDraft(event.target.value)}
         />
         <div className="bench-description-actions">
@@ -74,10 +98,53 @@ function AboutSection({ workbenchTenantId }: { readonly workbenchTenantId: strin
             Save
           </Button>
           <span className="bench-description-count">
-            {value.length}/{DESCRIPTION_MAX}
+            {draft.length}/{DESCRIPTION_MAX}
           </span>
         </div>
       </form>
+    </Section>
+  );
+}
+
+function MembersSummary({
+  workbenchTenantId,
+  participants,
+}: {
+  readonly workbenchTenantId: string;
+  readonly participants: readonly WorkbenchParticipant[];
+}) {
+  const setTab = useContext(DrawerTabContext);
+  // Same key as the Members tab so the two share one fetch.
+  const people = useQuery({
+    queryKey: [...tenantKeys.principals(workbenchTenantId), "members"],
+    queryFn: async () => (await listPrincipals(workbenchTenantId)).filter((p) => p.kind === "user"),
+  });
+  const workers = participants.filter((p) => p.kind === "agent");
+  const humans = people.data ?? [];
+  const workersText = `${workers.length} worker${workers.length === 1 ? "" : "s"}`;
+  const peopleText = humans.length === 1 ? "1 person" : `${humans.length} people`;
+  return (
+    <Section title="Members" onAction={{ label: "Manage", onClick: () => setTab("Members") }}>
+      <div className="drawer-li" style={{ cursor: "default" }}>
+        <span className="drawer-stack">
+          {workers.map((w) => (
+            <IdentityAvatar key={w.id} kind="agent" name={w.name} principalId={w.id} />
+          ))}
+          {humans.map((p) => (
+            <IdentityAvatar
+              key={p.id}
+              kind="person"
+              name={principalLabel(p.displayName).label}
+              principalId={p.id}
+            />
+          ))}
+        </span>
+        <span className="drawer-li-t">
+          <span>
+            {workersText}, {peopleText}
+          </span>
+        </span>
+      </div>
     </Section>
   );
 }
@@ -188,11 +255,25 @@ export function InformationTab({
           <p className="workbench-info-empty-note">Nothing is waiting on you.</p>
         ) : null}
         {pendingApprovals !== null && pendingApprovals.length > 0 ? (
-          <ul className="workbench-info-approval-list">
+          <div className="drawer-list">
             {pendingApprovals.map((item) => (
-              <ApprovalRow key={item.id} item={item} tenantId={workbenchTenantId} />
+              <div key={item.id} className="drawer-li">
+                <IdentityAvatar
+                  kind="agent"
+                  name={item.agentName}
+                  principalId={item.agentAddress}
+                />
+                <span className="drawer-li-t">
+                  <b>{item.headline}</b>
+                  <span>
+                    {item.agentName}
+                    {item.toolName === undefined ? "" : ` · ${item.toolName}`}
+                  </span>
+                </span>
+                <span className="drawer-pill">Waiting</span>
+              </div>
             ))}
-          </ul>
+          </div>
         ) : null}
       </Section>
 
@@ -246,6 +327,8 @@ export function InformationTab({
           ))}
         </div>
       </Section>
+
+      <MembersSummary workbenchTenantId={workbenchTenantId} participants={participants} />
 
       <Section
         title="Skills"

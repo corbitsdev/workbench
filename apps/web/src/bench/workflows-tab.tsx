@@ -24,7 +24,7 @@ export function WorkflowsTab({ workbenchTenantId }: { readonly workbenchTenantId
     <section className="drawer-sec">
       <div className="drawer-sec-head">
         <h3>Scheduled here</h3>
-        <Link to={benchLink(WORKFLOWS_PATH_PREFIX, workbenchTenantId)}>See all</Link>
+        <Link to={benchLink(WORKFLOWS_PATH_PREFIX, workbenchTenantId)}>Open all</Link>
       </div>
       {flows.isLoading ? <Skeleton className="h-16 w-full" /> : null}
       {flows.isError ? (

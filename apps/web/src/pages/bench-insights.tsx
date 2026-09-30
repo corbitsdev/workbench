@@ -19,7 +19,9 @@ import {
 import {
   approvalRunsInRange,
   BENCH_RANGES,
+  benchInsightTiles,
   computeBenchInsights,
+  countSavedArtifacts,
   durationLabel,
   formatCount,
   runDisplayName,
@@ -57,7 +59,14 @@ function dayLabel(date: Date): string {
   });
 }
 
-export function OutcomeChart({ days }: { readonly days: readonly BenchDay[] }) {
+export function OutcomeChart({
+  days,
+  weekdayAxis = false,
+}: {
+  readonly days: readonly BenchDay[];
+  /** Weekday initials on the axis, for the drawer's 7-day chart. */
+  readonly weekdayAxis?: boolean;
+}) {
   const [active, setActive] = useState<number | null>(null);
   const max = Math.max(...days.map((d) => d.ok + d.fail + d.other), 1);
   const every = days.length > 30 ? 14 : days.length > 7 ? 5 : 1;
@@ -115,7 +124,11 @@ export function OutcomeChart({ days }: { readonly days: readonly BenchDay[] }) {
       <div className="bi-x" aria-hidden="true">
         {days.map((d, i) => (
           <span key={d.date.getTime()}>
-            {i % every === 0 ? `${d.date.getMonth() + 1}/${d.date.getDate()}` : ""}
+            {weekdayAxis
+              ? d.date.toLocaleDateString("en-US", { weekday: "narrow" })
+              : i % every === 0
+                ? `${d.date.getMonth() + 1}/${d.date.getDate()}`
+                : ""}
           </span>
         ))}
       </div>
@@ -244,7 +257,6 @@ function InsightsBody({
 }) {
   const stats = computeBenchInsights(runs.data, range);
   const approvalRuns = approvalRunsInRange(runs.data, range);
-  const finished = stats.ok + stats.fail;
   const artifacts = useAPIQuery(`/api/tenants/${tenantId}/artifacts`, ArtifactListPageSchema);
   const schedules = useQuery({
     queryKey: tenantKeys.schedules(tenantId),
@@ -263,18 +275,9 @@ function InsightsBody({
   const rangeStart = stats.days[0]?.date.getTime() ?? 0;
   const savedCount =
     artifacts.kind === "ready"
-      ? formatCount(
-          artifacts.data.artifacts.filter(
-            (a) => a.archivedAt === null && Date.parse(a.createdAt) >= rangeStart,
-          ).length,
-        )
+      ? formatCount(countSavedArtifacts(artifacts.data.artifacts, rangeStart))
       : "—";
-  const tiles: readonly (readonly [string, string])[] = [
-    ["Runs", formatCount(stats.total)],
-    ["Succeeded", finished === 0 ? "—" : `${Math.round((stats.ok / finished) * 100)}%`],
-    ["Median run", stats.medianMs === null ? "—" : durationLabel(stats.medianMs)],
-    ["Artifacts saved", savedCount],
-  ];
+  const tiles = benchInsightTiles(stats, savedCount);
 
   return (
     <div className="bi-page">
