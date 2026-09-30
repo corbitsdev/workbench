@@ -5,6 +5,7 @@
 import "@corbits/react-ui/styles.css";
 import "./app.css";
 import "./tailwind.css";
+import "./theme-tokens.css";
 
 import { StrictMode } from "react";
 import { createRoot, type Root as ReactRoot } from "react-dom/client";

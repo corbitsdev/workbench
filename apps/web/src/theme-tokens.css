@@ -1,0 +1,179 @@
+/* Theme tokens. `:root` is Light; `<html data-theme="dark|canvas">` swaps the
+   semantic roles. Components read semantic names, never a hex. Imported last
+   in main.tsx so the react-ui var mapping below wins the cascade. */
+
+:root {
+  /* Brand palette. */
+  --cream: #f7ead5;
+  --charcoal: #2b2627;
+  --charcoal-soft: #5c5555;
+  --orange: #e98428;
+  --orange-hover: #d4771f;
+  --orange-tint: #f2b277;
+  --blue: #607c9a;
+  --blue-tint: #c5d2de;
+  --green: #7b9974;
+  --green-tint: #c1d1be;
+  --red: #9e4a45; /* Canyon Red: destructive only */
+  --red-hover: #8a3f3b;
+  --red-tint: #e5c6c1;
+
+  /* Semantic roles: Light (default). A theme is one block of these. */
+  --canvas: #f3f3f2;
+  --surface: #ffffff;
+  --surface-sunk: #f7f7f6;
+  --ink: var(--charcoal);
+  --ink-2: #57534f;
+  --ink-3: #75706c;
+  --hover: rgb(0 0 0 / 4.5%);
+  --press: rgb(0 0 0 / 8%);
+  --line: rgb(0 0 0 / 8%);
+  --line-strong: rgb(0 0 0 / 16%);
+  --action: var(--orange);
+  --action-hover: var(--orange-hover);
+  --action-ink: var(--charcoal);
+  --attention-wash: color-mix(in srgb, var(--orange) 11%, #fff);
+  --info: var(--blue);
+  --info-wash: color-mix(in srgb, var(--blue-tint) 40%, #fff);
+  --success: var(--green);
+  --success-wash: color-mix(in srgb, var(--green-tint) 40%, #fff);
+  --primary: var(--charcoal);
+  --primary-hover: #3d3738;
+  --primary-ink: #fff;
+  --danger: var(--red);
+  --danger-hover: var(--red-hover);
+  --danger-ink: #fff;
+  --danger-wash: color-mix(in srgb, var(--red-tint) 40%, #fff);
+  --chart-ok: #3b6fa8;
+  --chart-fail: #a4453d;
+
+  /* Worker hues: brand tints, charcoal marks. */
+  --hue-orange-bg: var(--orange-tint);
+  --hue-blue-bg: var(--blue-tint);
+  --hue-green-bg: var(--green-tint);
+  --hue-ink: var(--charcoal);
+
+  /* Elevation: ring-as-border. */
+  --raised: 0 0 0 1px rgb(0 0 0 / 6%), 0 1px 2px -1px rgb(0 0 0 / 6%), 0 2px 4px 0 rgb(0 0 0 / 4%);
+  --raised-hover:
+    0 0 0 1px rgb(0 0 0 / 8%), 0 1px 2px -1px rgb(0 0 0 / 8%), 0 2px 4px 0 rgb(0 0 0 / 6%);
+  --floating: 0 4px 12px -2px rgb(0 0 0 / 12%), 0 0 0 1px rgb(0 0 0 / 6%);
+  --overlay: 0 16px 48px -8px rgb(0 0 0 / 16%), 0 0 0 1px rgb(0 0 0 / 6%);
+
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-full: 9999px;
+
+  --font-body: "Red Hat Display", "Open Sans", Roboto, Arial, sans-serif;
+  --font-mono: "Space Mono", "Fira Code", Menlo, Consolas, monospace;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --ink-soft: var(--ink-2);
+  --ink-faint: var(--ink-3);
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --canvas: #0e0e0e;
+  --surface: #181818;
+  --surface-sunk: #141414;
+  --ink: #f2f2f2;
+  --ink-2: #bdbdbd;
+  --ink-3: #8f8f8f;
+  --hover: rgb(255 255 255 / 5%);
+  --press: rgb(255 255 255 / 9%);
+  --line: rgb(255 255 255 / 8%);
+  --line-strong: rgb(255 255 255 / 16%);
+  --action: var(--orange);
+  --action-hover: #f09544;
+  --action-ink: #111;
+  --attention-wash: rgb(233 132 40 / 14%);
+  --info: #8fa9c4;
+  --info-wash: rgb(96 124 154 / 22%);
+  --success: #9db896;
+  --success-wash: rgb(123 153 116 / 20%);
+  --primary: #f2f2f2;
+  --primary-hover: #fff;
+  --primary-ink: #111;
+  --danger: #d4857b; /* Canyon Red, lifted for black */
+  --danger-hover: #dc948a;
+  --danger-ink: #111;
+  --danger-wash: rgb(158 74 69 / 24%);
+  --chart-ok: #5a8bc8;
+  --chart-fail: #d0665a;
+  --hue-orange-bg: #bf6b20;
+  --hue-blue-bg: #2d455c;
+  --hue-green-bg: #425a3d;
+  --hue-ink: #f7ead5;
+  --raised: 0 0 0 1px rgb(255 255 255 / 8%);
+  --raised-hover: 0 0 0 1px rgb(255 255 255 / 13%);
+  --floating: 0 0 0 1px rgb(255 255 255 / 10%), 0 4px 12px -2px rgb(0 0 0 / 50%);
+  --overlay: 0 0 0 1px rgb(255 255 255 / 10%), 0 16px 48px -8px rgb(0 0 0 / 70%);
+  color-scheme: dark;
+}
+
+/* Canvas: the warm Corbits cream. */
+[data-theme="canvas"] {
+  --canvas: var(--cream);
+  --surface: #fff;
+  --surface-sunk: color-mix(in srgb, var(--cream) 38%, #fff);
+  --ink-2: var(--charcoal-soft);
+  --ink-3: color-mix(in srgb, var(--charcoal) 68%, #fff);
+  --hover: rgb(43 38 39 / 5%);
+  --press: rgb(43 38 39 / 9%);
+  --line: rgb(43 38 39 / 10%);
+  --line-strong: rgb(43 38 39 / 20%);
+  --attention-wash: color-mix(in srgb, var(--orange-tint) 32%, #fff);
+}
+
+/* react-ui's shadcn vars follow the semantic roles, so every surface built
+   on them flips with the theme. Names that collide (--primary, --success)
+   are the semantic tokens themselves and are not remapped. */
+:root {
+  --radius: var(--r-md);
+  --background: var(--canvas);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface);
+  --popover-foreground: var(--ink);
+  --primary-foreground: var(--primary-ink);
+  --primary-active: var(--primary-hover);
+  --primary-emphasis: var(--action-hover);
+  --secondary: var(--surface-sunk);
+  --secondary-foreground: var(--ink);
+  --muted: var(--surface-sunk);
+  --muted-foreground: var(--ink-2);
+  --accent: var(--hover);
+  --accent-foreground: var(--ink);
+  --success-foreground: var(--action-ink);
+  --destructive: var(--danger);
+  --destructive-foreground: var(--danger-ink);
+  --border: var(--line);
+  --border-strong: var(--line-strong);
+  --input: var(--line-strong);
+  --ring: var(--action);
+  --ok: var(--success);
+  --warn: var(--action-hover);
+  --chart-1: var(--chart-ok);
+  --chart-2: var(--success);
+  --chart-3: var(--info);
+  --chart-4: var(--ink-3);
+  --chart-5: var(--chart-fail);
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-body);
+}
+code,
+pre,
+kbd {
+  font-family: var(--font-mono);
+}

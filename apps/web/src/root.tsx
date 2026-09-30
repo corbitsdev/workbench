@@ -2,8 +2,8 @@
 // first-login hook, and the theme shell everything else renders inside.
 // Kept out of `main.tsx` so the entry module owns nothing but the mount.
 
-import { ThemeProvider, Toaster, toast } from "@corbits/react-ui";
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { Toaster, toast } from "@corbits/react-ui";
+import { useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore } from "react";
 
 import { getLogger } from "@/lib/client-log";
 import { App } from "./app";
@@ -13,6 +13,7 @@ import { getPath, navigateTo, subscribeToPath } from "./router-store";
 import { ONBOARDING_PATH } from "./routes";
 import { fetchSession, signOut } from "./session";
 import type { SessionState, SessionUser } from "./session";
+import { setThemeStorageKey } from "./theme-store";
 
 const log = getLogger("web.session");
 
@@ -74,13 +75,15 @@ export function Root() {
     });
   }, []);
 
-  // Per-user storage key so theme follows the account; not synced to the
-  // preferences store since ThemeProvider owns mode entirely internally.
+  // Per-user storage key so the theme follows the account.
   const themeStorageKey =
     session.kind === "signed-in" ? `corbits-theme:${session.user.id}` : "corbits-theme";
+  useLayoutEffect(() => {
+    setThemeStorageKey(themeStorageKey);
+  }, [themeStorageKey]);
 
   return (
-    <ThemeProvider storageKey={themeStorageKey} defaultMode="light">
+    <>
       <App
         path={path}
         navigate={navigate}
@@ -93,6 +96,6 @@ export function Root() {
         onRetryProvisioning={handleRetryProvisioning}
       />
       <Toaster position="bottom-right" />
-    </ThemeProvider>
+    </>
   );
 }
