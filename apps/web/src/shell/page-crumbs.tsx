@@ -26,11 +26,18 @@ export function benchLink(path: string, benchId: string | null): string {
 
 export type PageCrumb = { readonly label: string; readonly href?: string };
 
-function useFromWorkbench(): { readonly id: string; readonly name: string | null } | null {
+/** The workbench tenant id named by `?from=`, or null. Full-page views scope
+ * their data to it instead of the last-opened workbench. */
+export function useFromBench(): string | null {
   // The path store re-renders this on navigation; it keeps the pathname
   // only, so the query string is read fresh.
   useSyncExternalStore(subscribeToPath, getPath);
   const id = new URLSearchParams(window.location.search).get(FROM_PARAM);
+  return id === null || id === "" ? null : id;
+}
+
+function useFromWorkbench(): { readonly id: string; readonly name: string | null } | null {
+  const id = useFromBench();
   const { selectedTenantId } = useBench();
   const tenantId = selectedTenantId ?? "";
   const workbenches = useQuery({
