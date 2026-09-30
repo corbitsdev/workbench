@@ -1,6 +1,6 @@
 // Builds and publishes Myra's deployable definition entirely over stock
 // routes, ending with a `WorkflowDeployInput` pinned to the pushed commit.
-import { ASSISTANT_SYSTEM_PROMPT } from "@corbits/myra/prompt";
+import { ASSISTANT_SYSTEM_PROMPT } from "@corbits/worker/prompt";
 import {
   ASSISTANT_STEP_ID,
   ASSISTANT_WORKFLOW_ID,
@@ -11,7 +11,7 @@ import {
   memoryToolsCredentialBinding,
   memoryToolsCredentialUseRequirement,
   type McpServerDeployment,
-} from "@corbits/myra/workflow-ids";
+} from "@corbits/worker/workflow-ids";
 import { renderBundledWorkflowSourceTree } from "@corbits/workflows/client";
 import { type } from "arktype";
 
@@ -195,7 +195,7 @@ export async function pushMyraSource(
   // Half a megabyte of bundled entry text, needed only during setup — kept
   // out of the app's entry chunk the same way the git client is.
   const { MYRA_BUNDLE_BUILD_EXPORT, MYRA_DIRECTORS_BUNDLE, MYRA_WORKFLOW_BUNDLE } =
-    await import("@corbits/myra/bundle");
+    await import("@corbits/worker/bundle");
   const tree = renderBundledWorkflowSourceTree({
     packageName: MYRA_SOURCE_CONFIG.packageName,
     bundle: MYRA_WORKFLOW_BUNDLE,

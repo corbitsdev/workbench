@@ -1,7 +1,7 @@
 # Myra's hand-built definition.json
 
 `buildMyraDefinitionJson` in `apps/web/src/myra-deploy.ts` is the
-function-free projection of what `@corbits/myra`'s `buildMyraWorkflow`
+function-free projection of what `@corbits/worker`'s `buildMyraWorkflow`
 produces, written to the asset's `definition.json` for readers — the entry
 itself is a bundle no reader can slice apart.
 

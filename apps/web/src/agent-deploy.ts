@@ -13,7 +13,7 @@ import {
   memoryToolsCredentialBinding,
   memoryToolsCredentialUseRequirement,
   type McpServerDeployment,
-} from "@corbits/myra/workflow-ids";
+} from "@corbits/worker/workflow-ids";
 
 import { ensureAgentHubCredential } from "./agent-hub-credential";
 import { personMailAddress } from "./mail-address";
@@ -87,7 +87,7 @@ export function buildAgentDefinitionJson(args: {
         drainBehavior: "wait",
         // No `timeout`: it stays armed across an approval park, so any
         // finite value aborts a run waiting on a person to answer an
-        // ask-gated tool call (see agents/myra/src/index.ts).
+        // ask-gated tool call (see packages/worker/src/index.ts).
         triggers: "unbounded",
         input: { from: "trigger.payload" },
       },
@@ -109,7 +109,7 @@ async function renderAgentSourceTree(
   },
 ): Promise<Record<string, string>> {
   const { MYRA_BUNDLE_BUILD_EXPORT, MYRA_DIRECTORS_BUNDLE, MYRA_WORKFLOW_BUNDLE } =
-    await import("@corbits/myra/bundle");
+    await import("@corbits/worker/bundle");
   return renderBundledWorkflowSourceTree({
     packageName,
     bundle: MYRA_WORKFLOW_BUNDLE,

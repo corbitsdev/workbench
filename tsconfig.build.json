@@ -2,7 +2,7 @@
   "files": [],
   "references": [
     {
-      "path": "./agents/myra/tsconfig.src.json"
+      "path": "./packages/worker/tsconfig.src.json"
     },
     {
       "path": "./apps/sidecar/tsconfig.src.json"

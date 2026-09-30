@@ -4,7 +4,7 @@
 // to the artifact tools and requires its use on the deployer's authority, so
 // nothing here touches grants. The agent never holds the secret: the sidecar
 // shapes a mediated fetch from it and hands the tools only that.
-import { agentHubCredentialName, HUB_PROVIDER_NAME } from "@corbits/myra/workflow-ids";
+import { agentHubCredentialName, HUB_PROVIDER_NAME } from "@corbits/worker/workflow-ids";
 import { type } from "arktype";
 
 /** `@corbits/credential-header`'s raw-`authorization` preset sends the

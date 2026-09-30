@@ -16,11 +16,11 @@ import {
   mcpProviderName,
   type McpServerDeployment,
   type McpTool,
-} from "@corbits/myra/workflow-ids";
+} from "@corbits/worker/workflow-ids";
 import { type } from "arktype";
 
 export { MCP_SERVER_CATALOG };
-export type { McpCatalogEntry } from "@corbits/myra/workflow-ids";
+export type { McpCatalogEntry } from "@corbits/worker/workflow-ids";
 
 export class McpServerError extends Error {}
 

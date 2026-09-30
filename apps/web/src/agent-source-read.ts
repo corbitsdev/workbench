@@ -5,7 +5,7 @@ import {
   parseWorkflowSourceDefinition,
   WORKFLOW_SOURCE_DEFINITION_PATH,
 } from "@corbits/workflows/client";
-import { MCP_TOOLS_PACKAGE } from "@corbits/myra/workflow-ids";
+import { MCP_TOOLS_PACKAGE } from "@corbits/worker/workflow-ids";
 import { type } from "arktype";
 
 import { fetchSourceFile } from "./git-fetch";

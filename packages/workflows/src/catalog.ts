@@ -3,7 +3,7 @@
 // Read straight off each package's `corbits.workflow` block, no second copy.
 import { type } from "arktype";
 
-import assistantPkg from "../../../agents/myra/package.json";
+import assistantPkg from "../../../packages/worker/package.json";
 
 const CorbitsWorkflowBlock = type({
   assetName: "string > 0",

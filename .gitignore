@@ -38,7 +38,7 @@ e2e/browser/shots/
 *.tgz
 
 # Generated Myra workflow bundle (built on demand, never committed)
-agents/myra/bundle/
+packages/worker/bundle/
 
 # Local clickable mockups (design artifacts, never committed)
 .mockups/

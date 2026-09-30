@@ -40,7 +40,7 @@ address.
 
 ## Agents and workflows
 
-Myra (`agents/myra`) is the only agent Workbench ships. Her tools are
+Myra (`packages/worker`) is the only agent Workbench ships. Her tools are
 `@intx/tools-mail` over her mail transport, `@intx/tools-posix` over her
 working tree, and the `@corbits/artifacts`, `@corbits/memory` and
 `@corbits/mcp` sidecar bundles. A bundle that calls back into the hub or

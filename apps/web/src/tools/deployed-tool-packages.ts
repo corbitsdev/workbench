@@ -3,7 +3,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { reportError } from "@corbits/error-sink";
-import myraPackage from "@corbits/myra/package.json";
+import myraPackage from "@corbits/worker/package.json";
 
 import { toAPIQuery, type APIQuery } from "@/lib/api-query";
 

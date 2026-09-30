@@ -32,7 +32,6 @@ local [Ollama](https://ollama.com) works with no key, see
 | ------------- | ---------------------------------------------------------------- |
 | `apps/`       | `hub` (API), `web` (React client), `sidecar` (execution host)    |
 | `packages/`   | Corbits libraries                                                |
-| `agents/`     | `@corbits/myra`, the one shipped agent                           |
 | `vendor/intx` | Hand-copied Interchange packages, see [VENDORED.md](VENDORED.md) |
 
 ## Develop
@@ -47,5 +46,4 @@ Conventions live in [AGENTS.md](AGENTS.md).
 ## License
 
 The application is GPLv2 with the [AI Exception](GPLv2-AI-Exception.md);
-see [LICENSE.md](LICENSE.md). Libraries under `packages/` and `agents/`
-are LGPL-2.1.
+see [LICENSE.md](LICENSE.md). Libraries under `packages/`\nare LGPL-2.1.
