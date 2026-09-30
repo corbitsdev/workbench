@@ -190,6 +190,17 @@ export function createGrant(tenantId: string, input: CreateGrantInput): Promise<
   });
 }
 
+export function updateGrant(
+  tenantId: string,
+  grantId: string,
+  patch: { readonly effect: GrantEffect },
+): Promise<Grant> {
+  return request(`/api/tenants/${tenantId}/grants/${grantId}`, GrantResponse, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
 export function revokeGrant(tenantId: string, grantId: string): Promise<void> {
   return request<void>(`/api/tenants/${tenantId}/grants/${grantId}`, (data) => data as void, {
     method: "DELETE",

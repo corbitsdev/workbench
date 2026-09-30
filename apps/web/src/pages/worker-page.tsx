@@ -13,11 +13,16 @@ import { isDefaultWorker, listChatAgents, type ChatAgent } from "@/chat/threads-
 import { ChatCircle } from "@/lib/icons";
 import { QueryView, describeApiError } from "@/lib/api-query";
 import { listTopLevelRuns } from "../agents-api";
-import { createGrant, revokeGrant, type Grant } from "../settings/tenancy-api";
+import { updateGrant, type Grant } from "../settings/tenancy-api";
 import { agentSlugFromSourceAssetName, deployAgentSource } from "../agent-deploy";
 import { readAgentMcpHandles, readAgentSource } from "../agent-source-read";
-import { readGrantSnapshot, saveGrantSnapshot } from "../worker-grants-carry";
-import { TOOL_PREFIX, readWorkerToolGrants, workerToolGrantsKey } from "../worker-tool-grants";
+import {
+  TOOL_PREFIX,
+  effectiveToolGrants,
+  readWorkerToolGrants,
+  toolEffectsToCarry,
+  workerToolGrantsKey,
+} from "../worker-tool-grants";
 import { useBench } from "../bench-context";
 import { Link } from "../navigation";
 import { tenantKeys } from "../query-client";
@@ -58,12 +63,15 @@ function InstructionsCard({
       if (slug === null) throw new Error(`${agent.assetName} is not an editable worker`);
       const mcpHandles = await readAgentMcpHandles(tenantId, agent.id, agent.assetName);
       const current = await readWorkerToolGrants(tenantId, agent);
-      if (current !== null) {
-        saveGrantSnapshot(tenantId, agent.assetName, current.principalId, current.tools);
-      }
       await deployAgentSource({
         tenantId,
-        input: { name: agent.name, systemPrompt, slug, mcpHandles },
+        input: {
+          name: agent.name,
+          systemPrompt,
+          slug,
+          mcpHandles,
+          toolEffects: current === null ? [] : toolEffectsToCarry(current.tools),
+        },
       });
     },
     onSuccess: async () => {
@@ -144,34 +152,24 @@ function PermissionsCard({
 }) {
   const queryClient = useQueryClient();
   const key = workerToolGrantsKey(tenantId, agent.id);
-  // While a redeploy's permissions are waiting for the new run to start,
-  // keep looking for its principal.
-  const carrying = readGrantSnapshot(tenantId, agent.assetName) !== null;
   const query = useQuery({
     queryKey: key,
     queryFn: () => readWorkerToolGrants(tenantId, agent),
-    refetchInterval: carrying ? 5000 : false,
   });
 
-  // Create the new grant before revoking the old one so a failure never
-  // leaves the tool ungoverned.
+  // Every row for the tool moves together, so a redeploy's requirement
+  // beside the tool's own row can't outrank the choice.
   const setMode = useMutation({
     mutationFn: async (input: {
-      readonly principalId: string;
-      readonly grant: Grant;
+      readonly grants: readonly Grant[];
+      readonly resource: string;
       readonly effect: GrantEffect;
     }) => {
-      await createGrant(tenantId, {
-        principalId: input.principalId,
-        resource: input.grant.resource,
-        action: "invoke",
-        effect: input.effect,
-        origin: "creator",
-      });
-      await revokeGrant(tenantId, input.grant.id);
+      const rows = input.grants.filter((grant) => grant.resource === input.resource);
+      await Promise.all(rows.map((row) => updateGrant(tenantId, row.id, { effect: input.effect })));
     },
     onSuccess: (_data, input) => {
-      toast(`${input.grant.resource.slice(TOOL_PREFIX.length)}: ${input.effect}`);
+      toast(`${input.resource.slice(TOOL_PREFIX.length)}: ${input.effect}`);
     },
     onError: (cause) => {
       reportError(cause, { operation: "worker_permission_set", tenantId });
@@ -199,9 +197,9 @@ function PermissionsCard({
         </p>
       ) : (
         <div className="mt-3">
-          {query.data.tools.map((grant) => {
+          {effectiveToolGrants(query.data.tools).map((grant) => {
             const name = grant.resource.slice(TOOL_PREFIX.length);
-            const principalId = query.data?.principalId ?? "";
+            const all = query.data?.tools ?? [];
             return (
               <div
                 key={grant.id}
@@ -223,7 +221,12 @@ function PermissionsCard({
                         aria-checked={active}
                         disabled={setMode.isPending}
                         onClick={() => {
-                          if (!active) setMode.mutate({ principalId, grant, effect: mode.effect });
+                          if (!active)
+                            setMode.mutate({
+                              grants: all,
+                              resource: grant.resource,
+                              effect: mode.effect,
+                            });
                         }}
                         className={`h-[26px] rounded-(--r-sm) px-2.5 text-[12.5px] font-semibold ${
                           active ? "bg-(--card) text-(--ink) shadow-sm" : "text-(--ink-3)"
