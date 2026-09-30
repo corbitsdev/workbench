@@ -28,7 +28,8 @@ import { useTenantQuery } from "../routines-api";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { WORKERS_PATH_PREFIX } from "../path-ids";
 import { workbenchPath } from "../workbench-path";
-import { StatusPill, useWorkbenchList, workerStatus } from "./workers-page";
+import { useWorkerBenches } from "../worker-benches";
+import { StatusPill, workerStatus } from "./workers-page";
 
 function sourceKey(tenantId: string, agentId: string) {
   return [...tenantKeys.agents(tenantId), "source", agentId] as const;
@@ -307,8 +308,7 @@ export function WorkerRoute({ agentId }: { readonly agentId: string }) {
     selectedTenantId !== null,
     () => listChatAgents(selectedTenantId as string),
   );
-  const benches = useWorkbenchList(selectedTenantId);
-  const bench = benches.data?.[0];
+  const { byWorker } = useWorkerBenches();
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -328,6 +328,8 @@ export function WorkerRoute({ agentId }: { readonly agentId: string }) {
             );
           }
           const status = workerStatus(agent);
+          const agentBenches = byWorker.get(agent.id) ?? [];
+          const bench = agentBenches[0];
           return (
             <>
               <StageTopBar
@@ -359,7 +361,7 @@ export function WorkerRoute({ agentId }: { readonly agentId: string }) {
                           className="inline-flex h-9 items-center gap-2 rounded-(--r-md) bg-(--primary) px-4 text-[14px] font-bold text-(--primary-foreground)"
                         >
                           <ChatCircle />
-                          Open {bench.title}
+                          Open {bench.name}
                         </Link>
                       )}
                     </div>
@@ -372,16 +374,18 @@ export function WorkerRoute({ agentId }: { readonly agentId: string }) {
                         <DetailsCard tenantId={selectedTenantId} agent={agent} />
                         <Card className="p-5">
                           <CardTitle className="text-[14px]">Workbench</CardTitle>
-                          {benches.data === undefined || benches.data.length === 0 ? (
-                            <p className="mt-2 text-[13.5px] text-(--ink-3)">No workbenches yet.</p>
+                          {agentBenches.length === 0 ? (
+                            <p className="mt-2 text-[13.5px] text-(--ink-3)">
+                              Not in a workbench yet.
+                            </p>
                           ) : (
-                            benches.data.map((item) => (
+                            agentBenches.map((item) => (
                               <Link
                                 key={item.id}
                                 to={workbenchPath(item.id)}
                                 className="mt-2 block text-[13.5px] font-semibold underline-offset-2 hover:underline"
                               >
-                                {item.title}
+                                {item.name}
                               </Link>
                             ))
                           )}
