@@ -39,16 +39,17 @@ async function runFlow(page: Page, origin: string): Promise<void> {
   await page.type("input[type=password]", "sk-ant-placeholder");
   await clickText(page, "button", "Connect");
 
-  // A workspace with no workbenches lands on the new-workbench prompt.
-  await waitForText(page, "What should this workbench do?");
-  await page.type("textarea[aria-label='What should this workbench do?']", FIRST_WORKBENCH);
+  // Connecting installs Myra, then the ready screen hands off to the
+  // new-workbench prompt (a workspace with no workbenches).
+  await clickText(page, "button", "Start your first workbench");
+  await page.waitForSelector("textarea", { timeout: STEP_TIMEOUT });
+  await page.type("textarea", FIRST_WORKBENCH);
   await page.click("button[aria-label='Start this workbench']");
 
-  await page.waitForFunction(
-    `document.querySelector("[aria-label='Workbenches']")?.innerText.includes(${JSON.stringify(FIRST_WORKBENCH)})`,
-    { timeout: STEP_TIMEOUT },
-  );
-  expect(page.url()).not.toEndWith("/new");
+  // Creating the workbench navigates to its own page, which shows the prompt.
+  await page.waitForFunction(`location.pathname.startsWith("/w/")`, { timeout: STEP_TIMEOUT });
+  await waitForText(page, FIRST_WORKBENCH);
+  expect(new URL(page.url()).pathname).toStartWith("/w/");
 }
 
 // The test database outlives a run, so each run signs up a distinct alice.
