@@ -1,8 +1,3 @@
-/* Canvas surface is near-white; the Tools button sits on the sunk token. */
-[data-theme="canvas"] .sb-tools {
-  background: var(--surface-sunk);
-}
-
 /* The mark is a 28px ink circle, off-center inside the 36px button like the mockup. */
 .sb-profile {
   padding: 1px 6px;
@@ -13,17 +8,4 @@
   height: 28px;
   font-size: 12.5px;
   font-weight: 800;
-}
-
-.sb-tools {
-  gap: 10px;
-  padding: 0 20px;
-  border-radius: 10px;
-  font-size: 14px;
-}
-
-.sb-tools svg {
-  width: 18px;
-  height: 18px;
-  stroke-width: 2;
 }
