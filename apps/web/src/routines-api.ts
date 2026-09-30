@@ -21,6 +21,10 @@ export const ScheduledWorkflowDefinition = type({
   /** The cron expression firing this deployment's live run, or null when no
    * `@corbits/cron` row is addressed at it. */
   schedule: "string | null",
+  /** The cron row's id, or null when none is addressed at this deployment. */
+  scheduleId: "string | null",
+  /** False while the cron row is paused; true when it fires or none exists. */
+  scheduleEnabled: "boolean",
 });
 
 export type ScheduledWorkflowDefinition = typeof ScheduledWorkflowDefinition.infer;
@@ -42,6 +46,8 @@ export const CronSchedule = type({
    * never fires again, and a later redeploy does not resume it. */
   stoppedAt: "string | null",
   stoppedReason: "string | null",
+  /** False while the schedule is paused: the ticker skips it until resumed. */
+  enabled: "boolean",
   createdAt: "string",
 });
 
@@ -92,6 +98,32 @@ export async function createCronSchedule(
     throw new ApiQueryError(`Unexpected response shape: ${parsed.summary}`, undefined, path);
   }
   return parsed.schedule;
+}
+
+async function setScheduleEnabled(
+  tenantId: string,
+  id: string,
+  action: "pause" | "resume",
+): Promise<CronSchedule> {
+  const path = `${cronPath(tenantId)}/${encodeURIComponent(id)}/${action}`;
+  const response = await fetch(path, { method: "POST", headers: { accept: "application/json" } });
+  if (response.status === 401) throw new UnauthenticatedError();
+  if (!response.ok) {
+    throw new ApiQueryError(`The server answered ${response.status}.`, response.status, path);
+  }
+  const parsed = CreatedCronSchedule(await response.json());
+  if (parsed instanceof type.errors) {
+    throw new ApiQueryError(`Unexpected response shape: ${parsed.summary}`, undefined, path);
+  }
+  return parsed.schedule;
+}
+
+export function pauseSchedule(tenantId: string, id: string): Promise<CronSchedule> {
+  return setScheduleEnabled(tenantId, id, "pause");
+}
+
+export function resumeSchedule(tenantId: string, id: string): Promise<CronSchedule> {
+  return setScheduleEnabled(tenantId, id, "resume");
 }
 
 export async function deleteCronSchedule(tenantId: string, id: string): Promise<void> {
@@ -158,10 +190,8 @@ export async function listScheduledWorkflows(
   const nameByAssetId = new Map(assets.map((asset) => [asset.id, asset.name]));
   // A schedule names its target by definition name, which is the source
   // asset's name — so a redeploy keeps the row joined to the same row here.
-  const expressionByDefinitionName = new Map(
-    schedules
-      .filter((row) => row.stoppedAt === null)
-      .map((row) => [row.definitionName, row.expression]),
+  const scheduleByDefinitionName = new Map(
+    schedules.filter((row) => row.stoppedAt === null).map((row) => [row.definitionName, row]),
   );
   return deployments
     .filter((deployment) => {
@@ -170,6 +200,7 @@ export async function listScheduledWorkflows(
     })
     .map((deployment) => {
       const name = nameByAssetId.get(deployment.definitionAssetId);
+      const row = name === undefined ? undefined : scheduleByDefinitionName.get(name);
       return {
         definitionId: deployment.id,
         assetId: deployment.definitionAssetId,
@@ -178,7 +209,9 @@ export async function listScheduledWorkflows(
         status: deployment.status === "deployed" ? "deployed" : "stopped",
         createdAt: deployment.createdAt,
         updatedAt: deployment.createdAt,
-        schedule: name === undefined ? null : (expressionByDefinitionName.get(name) ?? null),
+        schedule: row?.expression ?? null,
+        scheduleId: row?.id ?? null,
+        scheduleEnabled: row?.enabled ?? true,
       };
     });
 }

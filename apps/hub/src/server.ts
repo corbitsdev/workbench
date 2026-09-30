@@ -86,7 +86,7 @@ import {
   refreshXaiTokens,
 } from "@corbits/xai-provider";
 import { createAgentTokenVerifier, mountAgentTokens } from "@corbits/agent-token";
-import { createCronTicker, createRunTriggerCronDeliver, mountCron } from "@corbits/cron";
+import { createCronTicker, createCronRoutes, createRunTriggerCronDeliver } from "@corbits/cron";
 import {
   createHubMailboxAuthorizeSender,
   createHubPersistMailWithSessionEnsure,
@@ -642,15 +642,13 @@ export async function createHubServer({
   let cronTicker: { start(): void; stop(): void } | undefined;
   let oauthTokenRefresher: { start(): void; stop(): void } | undefined;
   {
-    const cronApp = new Hono<TenantEnv>();
-    mountCron(cronApp, {
-      db,
-      requireTenantMember: (ctx, tenantId) => {
-        const c = ctx as { get(key: "tenant"): { id: string } };
-        return c.get("tenant").id === tenantId;
-      },
-    });
-    app.route("/", cronApp);
+    app.route(
+      `${TENANT_PREFIX}/cron`,
+      createCronRoutes({
+        db,
+        requireGrant: createRequireGrant({ grantStore, conditionRegistry: grantConditionRegistry }),
+      }),
+    );
 
     cronTicker = createCronTicker({
       db,

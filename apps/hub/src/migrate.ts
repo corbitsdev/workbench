@@ -9,7 +9,7 @@ import { runMigrations } from "@intx/db";
 import { sql } from "drizzle-orm";
 import postgres from "postgres";
 import { applyAgentTokenMigrations } from "@corbits/agent-token/migrations";
-import { applyCronMigrations } from "@corbits/cron";
+import { runCronMigrations } from "@corbits/cron/migrations";
 import { createMailboxDb, runMailboxMigrations } from "@corbits/mailbox";
 import { runArtifactMigrations } from "@corbits/artifacts";
 import { runMemoryMigrations } from "@corbits/memory";
@@ -83,7 +83,7 @@ async function applyMigrations(
   if (!(await platformSchemaPresent(db, schema))) {
     await runMigrations(config, { schema });
   }
-  await applyCronMigrations(databaseUrl, { tenantSchema: schema });
+  await runCronMigrations(config, { schema });
   await applyAgentTokenMigrations(databaseUrl, { tenantSchema: schema });
 
   const mailboxDb = createMailboxDb(databaseUrl);

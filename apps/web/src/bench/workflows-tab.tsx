@@ -44,6 +44,9 @@ export function WorkflowsTab({ workbenchTenantId }: { readonly workbenchTenantId
                 <b>{definition.name}</b>
                 <span>{scheduleSentence(definition.schedule)}</span>
               </Link>
+              {definition.status === "deployed" && !definition.scheduleEnabled ? (
+                <span className="drawer-li-m">Paused</span>
+              ) : null}
               {definition.status === "deployed" ? (
                 <RunNowButton
                   variant="outline"
