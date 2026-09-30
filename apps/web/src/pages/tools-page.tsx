@@ -5,13 +5,11 @@ import { useState } from "react";
 
 import "../tools/tools-page.css";
 import {
-  Badge,
   Button,
   Card,
   CardDescription,
   CardTitle,
   Input,
-  PageShell,
   RichEmptyState,
   Section,
   Table,
@@ -72,7 +70,7 @@ function ToolTile({
       </div>
       <h3 className="tool-tile-title">
         {name}
-        <Badge tone="neutral">{official ? "Official" : "Custom"}</Badge>
+        <span className="tool-kind">{official ? "Official" : "Custom"}</span>
       </h3>
       <p className="tool-tile-desc">{desc}</p>
       {children}
@@ -99,7 +97,7 @@ function ConnectedTile({
       official={official}
     >
       <div className="tool-tile-foot">
-        <Badge tone="success">{`${String(server.tools.length)} tools live`}</Badge>
+        <span className="tool-live">{`${String(server.tools.length)} tools live`}</span>
         <span style={{ flex: 1 }} />
         <ConfirmButton
           size="sm"
@@ -264,9 +262,7 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
       <div className="flex h-full min-h-0 flex-col">
         <StageTopBar crumbs={crumbs} />
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <PageShell width="full" className="page-fill">
-            {body}
-          </PageShell>
+          <div className="tools-page">{body}</div>
         </div>
       </div>
     );
@@ -290,7 +286,11 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
   }
 
   return stage(
-    <div className="flex flex-col gap-8 px-4 pb-5 sm:px-7">
+    <div className="flex flex-col gap-8">
+      <header className="tools-head">
+        <h1>Tools</h1>
+        <p>Official servers first. Secrets never touch your workers.</p>
+      </header>
       <Input
         className="tools-filter"
         aria-label="Filter tools"
