@@ -7,7 +7,7 @@
 .shell-frame .shell-sidebar {
   background: transparent;
   border-right: 0;
-  padding: 10px 0 8px;
+  padding: 10px 8px 8px;
 }
 
 .shell-frame .shell-main {
@@ -24,8 +24,20 @@
 
 .shell-sidebar .shell-sidebar-brand-row {
   height: 40px;
-  padding: 0 10px 0 16px;
+  gap: 2px;
+  padding: 0 2px 0 8px;
   margin-bottom: 8px;
+}
+
+.shell-sidebar .shell-sidebar-brand-row button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+
+.shell-sidebar .shell-sidebar-brand-row button svg {
+  width: 16px;
+  height: 16px;
 }
 
 .shell-sidebar .shell-sidebar-wordmark {
@@ -33,12 +45,13 @@
 }
 
 .shell-sidebar [data-slot="sidebar-panel-body"] {
+  margin: 0 -8px;
   padding: 0 8px;
 }
 
 .shell-sidebar .panel-stack {
-  gap: 14px;
-  padding: 4px 0;
+  gap: 18px;
+  padding: 0;
 }
 
 .shell-sidebar .panel-stack-group {
@@ -47,6 +60,7 @@
 
 .shell-sidebar .shell-panel-section-label {
   padding: 0 8px 4px;
+  margin-bottom: 3px;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0;
@@ -109,9 +123,11 @@
   color: var(--ink);
 }
 
-.sb-bottom .sb-menu {
-  left: 8px;
-  right: 8px;
+.shell-sidebar .shell-ch-row .wb-av {
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+  font-weight: 800;
 }
 
 .sb-menu-head > div b {
