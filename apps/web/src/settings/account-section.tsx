@@ -12,9 +12,8 @@ import { resolveAvatarFill } from "@/chat";
 import { IdentityAvatar } from "@/chat/avatar";
 import webPackage from "../../package.json";
 import { getAccount, type Account } from "./api";
-import { Segmented, SettingsGroup, SettingsRow } from "./rows";
+import { SettingsGroup, SettingsRow } from "./rows";
 import { SETTINGS_STRINGS } from "./strings";
-import { isTheme, setTheme, useTheme } from "../theme-store";
 
 /** The repo's own issue tracker — read off this package's manifest (set
  * from `git remote`) rather than a hardcoded org/repo guess. */
@@ -39,7 +38,6 @@ export function AccountSection({ onSignOut }: { readonly onSignOut?: () => void 
           />
         )}
       </QueryView>
-      <AppearanceSection />
     </>
   );
 }
@@ -124,32 +122,6 @@ export function AccountSectionView({
         }
       />
       <p className="settings-field-hint">{SETTINGS_STRINGS.accountReadOnlyNote}</p>
-    </SettingsGroup>
-  );
-}
-
-/** Theme row, wired to the theme store, which applies and persists the choice. */
-export function AppearanceSection() {
-  const theme = useTheme();
-  return (
-    <SettingsGroup title={SETTINGS_STRINGS.appearanceSectionTitle}>
-      <SettingsRow
-        title={SETTINGS_STRINGS.appearanceThemeLabel}
-        actions={
-          <Segmented
-            label={SETTINGS_STRINGS.appearanceThemeLabel}
-            value={theme}
-            options={[
-              { value: "light", label: SETTINGS_STRINGS.themeLight },
-              { value: "dark", label: SETTINGS_STRINGS.themeDark },
-              { value: "canvas", label: SETTINGS_STRINGS.themeCanvas },
-            ]}
-            onChange={(next) => {
-              if (isTheme(next)) setTheme(next);
-            }}
-          />
-        }
-      />
     </SettingsGroup>
   );
 }

@@ -74,24 +74,31 @@
   display: inline-flex;
   padding: 2px;
   gap: 2px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--r-md);
+  background: var(--hover);
 }
 
 .settings-seg-option {
-  padding: 0.3rem 0.9rem;
+  height: 28px;
+  padding: 0 12px;
   border: 0;
-  border-radius: 999px;
+  border-radius: 6px;
   background: transparent;
-  color: var(--muted-foreground);
+  color: var(--ink-3);
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: 13px;
+  font-weight: 700;
   cursor: pointer;
 }
 
+.settings-seg-option:hover {
+  color: var(--ink);
+}
+
 .settings-seg-option[aria-checked="true"] {
-  background: var(--primary);
-  color: var(--primary-foreground);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--raised);
 }
 
 .settings-seg-option:focus-visible {
