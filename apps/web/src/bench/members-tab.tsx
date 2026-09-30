@@ -1,22 +1,74 @@
 import { RichEmptyState, Skeleton } from "@corbits/react-ui";
 import { useQuery } from "@tanstack/react-query";
 
-import { IdentityAvatar, WorkbenchAvatar } from "@/chat/avatar";
-import type { WorkbenchParticipant } from "@/chat/threads-api";
+import { WorkbenchAvatar } from "@/chat/avatar";
+import { listChatAgents, type WorkbenchParticipant } from "@/chat/threads-api";
+import { CaretRight } from "@/lib/icons";
 import { Link } from "../navigation";
 import { tenantKeys } from "../query-client";
 import { principalLabel } from "../settings/identity";
 import { listPrincipals } from "../settings/tenancy-api";
+import { useWorkerRole } from "../worker-role-query";
+import { useWorkerStatus } from "../worker-status";
+import "./drawer.css";
 
-/** Humans are the bench tenant's user principals; agents are the bench's
- * workers, already listed as participants. */
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function WorkerRow({
+  workbenchTenantId,
+  participant,
+}: {
+  readonly workbenchTenantId: string;
+  readonly participant: WorkbenchParticipant;
+}) {
+  const agents = useQuery({
+    queryKey: tenantKeys.agents(workbenchTenantId),
+    queryFn: () => listChatAgents(workbenchTenantId),
+  });
+  const agent = agents.data?.find((a) => a.id === participant.id);
+  const status = useWorkerStatus(workbenchTenantId, participant.id);
+  const body = (
+    <>
+      <WorkbenchAvatar kind="worker" name={participant.name} size="md" status={status.tone} />
+      <span className="drawer-list-text">
+        <b>{participant.name}</b>
+        {agent === undefined ? null : (
+          <WorkerRoleLine workbenchTenantId={workbenchTenantId} agent={agent} />
+        )}
+      </span>
+      <CaretRight size={14} aria-hidden="true" />
+    </>
+  );
+  return (
+    <li>
+      <Link className="drawer-list-link" to={`/workers/${encodeURIComponent(participant.id)}`}>
+        {body}
+      </Link>
+    </li>
+  );
+}
+
+function WorkerRoleLine({
+  workbenchTenantId,
+  agent,
+}: {
+  readonly workbenchTenantId: string;
+  readonly agent: Parameters<typeof useWorkerRole>[1];
+}) {
+  return <span>{useWorkerRole(workbenchTenantId, agent)}</span>;
+}
+
+/** Humans are the bench tenant's user principals; workers are the bench's
+ * agents, already listed as participants. */
 export function MembersTab({
   workbenchTenantId,
   participants,
   loading,
 }: {
   readonly workbenchTenantId: string;
-  /** True until the roster resolves; an empty list then isn't "no agents". */
+  /** True until the roster resolves; an empty list then isn't "no workers". */
   readonly loading: boolean;
   readonly participants: readonly WorkbenchParticipant[];
 }) {
@@ -26,13 +78,14 @@ export function MembersTab({
     queryKey: [...tenantKeys.principals(workbenchTenantId), "members"],
     queryFn: async () => (await listPrincipals(workbenchTenantId)).filter((p) => p.kind === "user"),
   });
-  const agents = participants.filter((p) => p.kind === "agent");
+  const workers = participants.filter((p) => p.kind === "agent");
 
   return (
     <div>
       <section className="drawer-sec">
         <div className="drawer-sec-head">
           <h3>People</h3>
+          <Link to="/settings/people">Invite</Link>
         </div>
         {people.isPending ? <Skeleton className="h-12 w-full" /> : null}
         {people.isError ? (
@@ -47,16 +100,14 @@ export function MembersTab({
         ) : null}
         <ul className="drawer-list">
           {(people.data ?? []).map((person) => {
-            const { label } = principalLabel(person.displayName);
-            const detail = [person.email, person.roles.map((r) => r.name).join(", ")]
-              .filter((s): s is string => s !== undefined && s !== "")
-              .join(" · ");
+            const name = capitalize(principalLabel(person.displayName).label);
+            const role = person.roles.map((r) => capitalize(r.name)).join(", ");
             return (
               <li key={person.id}>
-                <IdentityAvatar kind="person" name={label} principalId={person.id} />
+                <WorkbenchAvatar kind="person" name={name} size="md" />
                 <span className="drawer-list-text">
-                  <b>{label}</b>
-                  <span>{detail}</span>
+                  <b>{name}</b>
+                  {role === "" ? null : <span>{role}</span>}
                 </span>
               </li>
             );
@@ -65,39 +116,17 @@ export function MembersTab({
       </section>
       <section className="drawer-sec">
         <div className="drawer-sec-head">
-          <h3>Agents</h3>
+          <h3>Workers</h3>
+          <Link to="/workers">Add</Link>
         </div>
         {loading ? <Skeleton className="h-12 w-full" /> : null}
-        {!loading && agents.length === 0 ? (
-          <p className="workbench-info-empty-note">No agents yet.</p>
+        {!loading && workers.length === 0 ? (
+          <p className="workbench-info-empty-note">No workers yet.</p>
         ) : null}
         <ul className="drawer-list">
-          {agents.map((agent) => {
-            const workerId = agent.assetName === undefined ? undefined : agent.id;
-            const body = (
-              <>
-                <WorkbenchAvatar kind="worker" name={agent.name} size="md" />
-                <span className="drawer-list-text">
-                  <b>{agent.name}</b>
-                  <span>{agent.address === "" ? "Starting" : "Running"}</span>
-                </span>
-              </>
-            );
-            return (
-              <li key={agent.id}>
-                {workerId === undefined ? (
-                  body
-                ) : (
-                  <Link
-                    className="drawer-list-link"
-                    to={`/workers/${encodeURIComponent(workerId)}`}
-                  >
-                    {body}
-                  </Link>
-                )}
-              </li>
-            );
-          })}
+          {workers.map((worker) => (
+            <WorkerRow key={worker.id} workbenchTenantId={workbenchTenantId} participant={worker} />
+          ))}
         </ul>
       </section>
     </div>
