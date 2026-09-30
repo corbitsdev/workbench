@@ -1,5 +1,5 @@
 // Workflows: an ops table of deployed workflow definitions, including
-// paused (`stopped`) ones. Pause/resume and run-now are the only writes.
+// paused (`stopped`) ones. Run-now is the only write.
 import { EmptyState, RichEmptyState, RunNowButton } from "@corbits/react-ui";
 import { cronSentence } from "@corbits/workflows/client";
 import { useState } from "react";

@@ -30,6 +30,8 @@ for a name no definition carries is rejected the same way
 
 ## Run-now and pause/resume
 
-Neither has a backing stock route (`/deployments` is list/create only; no
-per-deployment PATCH or trigger route exists), so both stay rejected
-promises naming the missing route.
+Run now posts to the stock trigger route
+(`POST /workflows/:runId/mail`, `:runId` = the deployment id), carrying the
+cron row's subject and body when one exists. A 409 means the run has ended.
+Pause/resume has no stock or `@corbits/cron` primitive, so no control is
+shown.
