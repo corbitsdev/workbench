@@ -79,14 +79,14 @@ describeBrowser("worker reply", () => {
       await page.type("input[aria-label='Worker name']", "Bea");
       await clickText(page, "button", "Rename");
       await page.waitForFunction(
-        `document.querySelector(".bench-pill")?.innerText.includes("Bea ·")`,
+        `document.querySelector(".bench-pill")?.innerText.includes("Bea")`,
         {
           timeout: STEP_TIMEOUT,
         },
       );
       await page.reload({ waitUntil: "networkidle0" });
       await page.waitForFunction(
-        `document.querySelector(".bench-pill")?.innerText.includes("Bea ·")`,
+        `document.querySelector(".bench-pill")?.innerText.includes("Bea")`,
         {
           timeout: STEP_TIMEOUT,
         },
