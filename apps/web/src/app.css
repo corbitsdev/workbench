@@ -18,7 +18,8 @@
    (injected at runtime, unrelated to this stylesheet); this just stops
    react-ui's override from fighting it. Higher specificity than that rule
    wins the cascade on its own, so this is safe regardless of load order. */
-[data-sonner-toaster][data-x-position="right"] [data-sonner-toast].corbits-toast {
+[data-sonner-toaster][data-x-position="right"]
+  [data-sonner-toast].corbits-toast {
   left: auto !important;
   transform: none !important;
 }
@@ -39,7 +40,8 @@ html {
 /* Inputs in side drawers already have a visible control boundary. Color that
    edge on focus so the focus treatment reads as one control, not a second
    outline outside it. */
-[data-slot="dialog-content"][data-side="right"] [data-slot="input"]:focus-visible {
+[data-slot="dialog-content"][data-side="right"]
+  [data-slot="input"]:focus-visible {
   outline: none;
   border-color: var(--accent-rail, var(--primary));
 }
@@ -112,7 +114,9 @@ select:disabled,
    Scoped to the sidebar so stage content keeps library defaults. */
 .shell-sidebar button:not(:disabled):not([aria-disabled="true"]),
 .shell-sidebar [data-slot="button"]:not(:disabled):not([aria-disabled="true"]),
-.shell-sidebar [data-slot="sidebar-item-row"] button:not(:disabled):not([aria-disabled="true"]),
+.shell-sidebar
+  [data-slot="sidebar-item-row"]
+  button:not(:disabled):not([aria-disabled="true"]),
 .shell-sidebar .shell-ch-row:not(:disabled):not([aria-disabled="true"]) {
   cursor: pointer;
 }
@@ -195,7 +199,10 @@ select:disabled,
 /* Shared dialog craft — layout/scroll/chrome on react-ui data slots only.
    Feature forms and dialog body content keep their own styles. */
 [data-slot="dialog-content"][data-side="center"] {
-  width: min(calc(100vw - (var(--dialog-gutter) * 2)), var(--dialog-content-max-width));
+  width: min(
+    calc(100vw - (var(--dialog-gutter) * 2)),
+    var(--dialog-content-max-width)
+  );
   max-height: var(--dialog-content-max-height);
   overflow: hidden;
 }
@@ -854,7 +861,8 @@ select:disabled,
   align-items: center;
   gap: 0.5rem;
   padding: 0.45rem 0.7rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
 .shell-routine-new {
@@ -1028,7 +1036,8 @@ select:disabled,
   justify-content: space-between;
   gap: 0.5rem;
   padding-bottom: 0.55rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
 .shell-canvas-pane-heading {
@@ -1656,7 +1665,9 @@ select:disabled,
 }
 
 .shell-sidebar .shell-panel-search [data-slot="input"]::placeholder,
-.shell-sidebar [data-slot="sidebar-panel-body"] [data-slot="input"]::placeholder {
+.shell-sidebar
+  [data-slot="sidebar-panel-body"]
+  [data-slot="input"]::placeholder {
   color: var(--shell-panel-faint);
 }
 
@@ -1672,7 +1683,9 @@ select:disabled,
   box-shadow: none;
 }
 
-.shell-sidebar [data-slot="sidebar-panel-body"] [data-slot="input"]:focus-visible {
+.shell-sidebar
+  [data-slot="sidebar-panel-body"]
+  [data-slot="input"]:focus-visible {
   outline: none;
   border-color: var(--foreground);
   box-shadow: 0 0 0 1px var(--foreground);
@@ -1703,14 +1716,19 @@ select:disabled,
    left edge. Selector doubles as the kill for react-ui's bg-primary/10
    selected wash. */
 .shell-sidebar [data-slot="sidebar-item-row"] > div.bg-primary\/10,
-.shell-sidebar [data-slot="sidebar-item-row"] > div:has(button[aria-current="true"]) {
+.shell-sidebar
+  [data-slot="sidebar-item-row"]
+  > div:has(button[aria-current="true"]) {
   background-color: var(--background);
   color: var(--shell-accent);
   box-shadow: inset 2px 0 0 0 var(--shell-accent);
 }
 
 .shell-sidebar [data-slot="sidebar-item-row"] > div.bg-primary\/10 > button,
-.shell-sidebar [data-slot="sidebar-item-row"] > div:has(button[aria-current="true"]) > button {
+.shell-sidebar
+  [data-slot="sidebar-item-row"]
+  > div:has(button[aria-current="true"])
+  > button {
   font-weight: 600;
 }
 
@@ -1748,7 +1766,12 @@ select:disabled,
 }
 
 /* Mock .count: the trailing meta slot when it is plain text. */
-.shell-sidebar [data-slot="sidebar-item-row"] > div > button > span + span:last-child {
+.shell-sidebar
+  [data-slot="sidebar-item-row"]
+  > div
+  > button
+  > span
+  + span:last-child {
   font-size: 0.72rem;
   color: var(--shell-panel-faint);
 }
@@ -2254,7 +2277,8 @@ select:disabled,
    attention-seeking animation, fully off under reduced motion.
    DESIGN.md's motion ceiling is 300ms — stays at 280ms. */
 .onboarding-phase {
-  animation: onboarding-phase-in var(--duration-large, 300ms) var(--ease-out, ease) both;
+  animation: onboarding-phase-in var(--duration-large, 300ms)
+    var(--ease-out, ease) both;
 }
 
 /* The wait phases drop the usual title/subtitle/form stack for the shared
@@ -2536,7 +2560,8 @@ select:disabled,
 
 .insights-grid > .insights-panel {
   border: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--foreground) 10%, transparent);
 }
 
 .insights-grid > .insights-panel:last-child {
@@ -2834,7 +2859,11 @@ tr.insights-row-clickable:hover {
 }
 
 /* The current row's copy follows the row's accent ink. */
-.shell-sidebar [data-slot="sidebar-item-row"] button[aria-current="true"] .panel-row-copy strong {
+.shell-sidebar
+  [data-slot="sidebar-item-row"]
+  button[aria-current="true"]
+  .panel-row-copy
+  strong {
   color: inherit;
 }
 
@@ -3719,7 +3748,9 @@ tr.insights-row-clickable:hover {
   list-style: none;
 }
 /* A stopped schedule stays listed, dimmed, since only a new one revives it. */
-.workbench-info-schedule-list > li[data-stopped="true"] .workbench-info-cell-primary {
+.workbench-info-schedule-list
+  > li[data-stopped="true"]
+  .workbench-info-cell-primary {
   color: var(--muted-foreground);
   text-decoration: line-through;
 }
@@ -4194,4 +4225,160 @@ tr.insights-row-clickable:hover {
   .bi-soon {
     grid-template-columns: 1fr;
   }
+}
+
+/* Sidebar bottom: profile button, Tools button, account menu. */
+.sb-bottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 0;
+  margin-top: 6px;
+  border-top: 1px solid var(--line);
+  position: relative;
+}
+.sb-profile {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border: 0;
+  background: transparent;
+  border-radius: var(--r-md);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.sb-profile:hover {
+  background: var(--hover);
+}
+.sb-tools {
+  flex: 1;
+  height: 36px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--raised);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    box-shadow 150ms ease-out,
+    transform 160ms var(--ease-out);
+}
+.sb-tools:hover {
+  box-shadow: var(--raised-hover);
+}
+.sb-tools:active {
+  transform: scale(0.97);
+}
+.sb-tools[data-active="true"] {
+  box-shadow: 0 0 0 1.5px var(--ink);
+}
+.sb-profile:focus-visible,
+.sb-tools:focus-visible,
+.sb-menu-item:focus-visible,
+.sb-menu-theme button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+.sb-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  min-width: 220px;
+  padding: 4px;
+  z-index: 40;
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--floating);
+  transform-origin: bottom left;
+}
+.sb-menu-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+}
+.sb-menu-head b {
+  display: block;
+  font-size: 13.5px;
+  line-height: 1.2;
+}
+.sb-menu-head span {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.sb-menu-sep {
+  height: 1px;
+  background: var(--line);
+  margin: 4px 6px;
+}
+.sb-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 34px;
+  border: 0;
+  background: transparent;
+  padding: 0 10px;
+  border-radius: var(--r-md);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  color: var(--ink);
+  cursor: pointer;
+}
+.sb-menu-item:hover {
+  background: var(--hover);
+}
+.sb-menu-item svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  color: var(--ink-3);
+}
+.sb-menu-theme {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  margin: 4px 6px;
+  padding: 2px;
+  border-radius: var(--r-md);
+  background: var(--hover);
+}
+.sb-menu-theme button {
+  height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.sb-menu-theme button:hover {
+  color: var(--ink);
+}
+.sb-menu-theme button[data-active="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--raised);
+}
+.sb-menu-theme svg {
+  width: 0.9rem;
+  height: 0.9rem;
 }

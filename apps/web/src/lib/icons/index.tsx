@@ -1,7 +1,11 @@
 // Sparkle/Sparkles is banned outright — it read as a generic "AI" cliché.
 // A curated re-export, not a full pass-through, so a stray import can't
 // reach for an off-list icon or tiptoe around the stroke-width rule.
-import { LucideProvider, type LucideIcon, type LucideProps } from "lucide-react";
+import {
+  LucideProvider,
+  type LucideIcon,
+  type LucideProps,
+} from "lucide-react";
 import type { ReactNode } from "react";
 
 export type Icon = LucideIcon;
@@ -51,7 +55,9 @@ export {
   MessageCircleMore as ChatCircleDots,
   Mic as Microphone,
   Minimize2 as ArrowsIn,
+  Moon,
   MoonStar as MoonStars,
+  Palette,
   Paperclip,
   Pencil as PencilSimple,
   Pin as PushPin,
@@ -68,6 +74,7 @@ export {
   Square as Stop,
   SquareArrowOutUpRight as ArrowSquareOut,
   Star,
+  Sun,
   TriangleAlert as Warning,
   User,
   UserPlus,
