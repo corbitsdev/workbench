@@ -140,7 +140,10 @@ export async function resolveExistingOffering(
   const models = await getResolvedCatalog(tenantId, fetchImpl);
   const offerings = models
     .flatMap((model) =>
-      model.offerings.map((offering) => ({ ...offering, model: model.canonicalName })),
+      model.offerings.map((offering) => ({
+        ...offering,
+        model: model.canonicalName,
+      })),
     )
     .sort((a, b) => a.priority - b.priority);
   const defaultSourceOfferingId = offerings[0]?.offeringId;
@@ -173,15 +176,15 @@ export function ProviderConnectStep({
   readonly onConnected: (offering: ExistingOffering) => void;
   readonly onError: (message: string) => void;
 }) {
-  const [selected, setSelected] = useState<string>(PROVIDER_OPTIONS[0]?.id ?? "anthropic");
+  const [selected, setSelected] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [baseURL, setBaseURL] = useState("");
   const [modelName, setModelName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [loginId, setLoginId] = useState<string | null>(null);
 
-  const option =
-    PROVIDER_OPTIONS.find((candidate) => candidate.id === selected) ?? PROVIDER_OPTIONS[0];
+  // No provider is preselected: the person chooses.
+  const option = PROVIDER_OPTIONS.find((candidate) => candidate.id === selected);
   const isLocal = option?.local === true;
   const oauthProvider = option?.oauthProvider;
 
@@ -200,10 +203,11 @@ export function ProviderConnectStep({
   const modelKnown = !isLocal || tags.includes(modelName);
 
   const ready =
-    oauthProvider !== undefined ||
-    (isLocal
-      ? baseURL.trim().length > 0 && modelName.trim().length > 0 && modelKnown
-      : apiKey.trim().length > 0);
+    option !== undefined &&
+    (oauthProvider !== undefined ||
+      (isLocal
+        ? baseURL.trim().length > 0 && modelName.trim().length > 0 && modelKnown
+        : apiKey.trim().length > 0));
 
   function fail(cause: unknown, operation: string) {
     const refId = reportError(cause, { operation, tenantId });
@@ -215,7 +219,10 @@ export function ProviderConnectStep({
     if (loginId !== null) {
       // Abandoning a login must free the fixed loopback port it holds.
       void cancelProviderLogin(tenantId, loginId).catch((cause: unknown) => {
-        reportError(cause, { operation: "onboarding.cancel-provider-login", tenantId });
+        reportError(cause, {
+          operation: "onboarding.cancel-provider-login",
+          tenantId,
+        });
       });
       setLoginId(null);
     }
@@ -334,7 +341,7 @@ export function ProviderConnectStep({
       <RadioGroup
         name="provider"
         label="Inference provider"
-        value={selected}
+        value={selected ?? ""}
         onValueChange={selectOption}
       >
         {PROVIDER_OPTIONS.map((candidate) => (
@@ -346,7 +353,7 @@ export function ProviderConnectStep({
           />
         ))}
       </RadioGroup>
-      {oauthProvider !== undefined ? (
+      {option === undefined ? null : oauthProvider !== undefined ? (
         <p>
           {waiting
             ? "Finish signing in on the tab that opened, then come back here."
