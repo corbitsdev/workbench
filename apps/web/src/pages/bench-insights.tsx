@@ -1,0 +1,287 @@
+// The bench-scoped Insights dashboard: every number is computed from the
+// stock `GET /workflows/runs` listing of the bench's own tenant.
+
+import { Badge, RichEmptyState, Skeleton, RUN_STATUS_TONE } from "@corbits/react-ui";
+import { useState } from "react";
+
+import { useAPIQuery } from "../api";
+import { insightsTopLevelRunsPath, TopLevelRunsSchema } from "../insights-api";
+import {
+  BENCH_RANGES,
+  computeBenchInsights,
+  durationLabel,
+  formatCount,
+  runDisplayName,
+  type BenchDay,
+  type BenchRange,
+} from "../insights-stats";
+import { formatWhen } from "./insights-page";
+
+const RANGE_LABEL: Readonly<Record<BenchRange, string>> = {
+  7: "Last 7 days",
+  30: "Last 30 days",
+  90: "Last 90 days",
+};
+
+const COMING_LATER = [
+  ["Tokens and cost", "Per worker, per workflow, per model"],
+  ["Tool calls", "Which tools ran, how often, and which failed"],
+  ["Latency", "Time to first reply and time per step"],
+] as const;
+
+function dayLabel(date: Date): string {
+  return date.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function OutcomeChart({ days }: { readonly days: readonly BenchDay[] }) {
+  const [active, setActive] = useState<number | null>(null);
+  const max = Math.max(...days.map((d) => d.ok + d.fail), 1);
+  const every = days.length > 30 ? 14 : days.length > 7 ? 5 : 1;
+  const shown = active === null ? undefined : days[active];
+  return (
+    <div className="bi-chart">
+      <div className="bi-legend">
+        <span>
+          <i style={{ background: "var(--chart-ok, #3B6FA8)" }} />
+          Succeeded
+        </span>
+        <span>
+          <i style={{ background: "var(--chart-fail, #A4453D)" }} />
+          Failed
+        </span>
+      </div>
+      <div className="bi-bars" style={{ gap: days.length > 30 ? 1 : 4 }}>
+        {days.map((d, i) => (
+          <div
+            key={d.date.getTime()}
+            className="bi-col"
+            tabIndex={0}
+            role="img"
+            aria-label={`${dayLabel(d.date)}: ${d.ok} succeeded, ${d.fail} failed`}
+            onMouseEnter={() => setActive(i)}
+            onMouseLeave={() => setActive(null)}
+            onFocus={() => setActive(i)}
+            onBlur={() => setActive(null)}
+          >
+            {d.ok > 0 ? (
+              <i
+                style={{
+                  height: `${(d.ok / max) * 100}%`,
+                  background: "var(--chart-ok, #3B6FA8)",
+                }}
+              />
+            ) : null}
+            {d.fail > 0 ? (
+              <i
+                style={{
+                  height: `${(d.fail / max) * 100}%`,
+                  background: "var(--chart-fail, #A4453D)",
+                }}
+              />
+            ) : null}
+          </div>
+        ))}
+      </div>
+      <div className="bi-x" aria-hidden="true">
+        {days.map((d, i) => (
+          <span key={d.date.getTime()}>
+            {i % every === 0 ? `${d.date.getMonth() + 1}/${d.date.getDate()}` : ""}
+          </span>
+        ))}
+      </div>
+      {shown !== undefined && active !== null ? (
+        <div
+          className="bi-tip"
+          role="tooltip"
+          style={{ left: `${((active + 0.5) / days.length) * 100}%` }}
+        >
+          <b>{dayLabel(shown.date)}</b>
+          {shown.ok} succeeded · {shown.fail} failed
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Meter({
+  ok,
+  fail,
+  total,
+}: {
+  readonly ok: number;
+  readonly fail: number;
+  readonly total: number;
+}) {
+  return (
+    <span className="bi-meter" aria-hidden="true">
+      <i
+        style={{
+          width: `${(ok / total) * 100}%`,
+          background: "var(--chart-ok, #3B6FA8)",
+        }}
+      />
+      {fail > 0 ? (
+        <i
+          style={{
+            width: `${(fail / total) * 100}%`,
+            background: "var(--chart-fail, #A4453D)",
+          }}
+        />
+      ) : null}
+    </span>
+  );
+}
+
+export function BenchInsights({
+  tenantId,
+  onOpenRun,
+}: {
+  readonly tenantId: string;
+  readonly onOpenRun: (id: string) => void;
+}) {
+  const [range, setRange] = useState<BenchRange>(7);
+  const runs = useAPIQuery(insightsTopLevelRunsPath(tenantId), TopLevelRunsSchema);
+
+  if (runs.kind === "loading") return <Skeleton className="h-48 w-full" />;
+  if (runs.kind !== "ready") {
+    return (
+      <RichEmptyState
+        title="Couldn't load insights"
+        description="Something went wrong on our side. Try again in a moment."
+        {...(runs.kind === "error" ? { actions: [{ label: "Retry", onClick: runs.retry }] } : {})}
+      />
+    );
+  }
+
+  const stats = computeBenchInsights(runs.data.data, range);
+  const finished = stats.ok + stats.fail;
+  const tiles: readonly (readonly [string, string])[] = [
+    ["Runs", formatCount(stats.total)],
+    ["Succeeded", finished === 0 ? "—" : `${Math.round((stats.ok / finished) * 100)}%`],
+    ["Median run", stats.medianMs === null ? "—" : durationLabel(stats.medianMs)],
+  ];
+
+  return (
+    <div className="insights-layout">
+      <div className="bi-seg" role="tablist" aria-label="Range">
+        {BENCH_RANGES.map((r) => (
+          <button
+            key={r}
+            type="button"
+            role="tab"
+            aria-selected={r === range}
+            aria-label={RANGE_LABEL[r]}
+            title={RANGE_LABEL[r]}
+            className={r === range ? "active" : ""}
+            onClick={() => setRange(r)}
+          >
+            {r}d
+          </button>
+        ))}
+      </div>
+      {runs.data.nextCursor !== null ? (
+        <p className="insights-note">Figures reflect the 100 most recent runs — more exist.</p>
+      ) : null}
+
+      <div className="bi-stats">
+        {tiles.map(([label, value]) => (
+          <div key={label} className="bi-stat">
+            <div className="bi-stat-v">{value}</div>
+            <div className="bi-stat-k">{label}</div>
+          </div>
+        ))}
+      </div>
+
+      <section className="insights-panel">
+        <h3>Runs per day</h3>
+        <p className="insights-note">Every run in this workbench, by how it ended.</p>
+        <OutcomeChart days={stats.days} />
+      </section>
+
+      <section className="insights-panel">
+        <h3>By workflow</h3>
+        {stats.workflows.length === 0 ? (
+          <RichEmptyState
+            title="No runs yet"
+            description={`Nothing ran in the last ${range} days.`}
+          />
+        ) : (
+          <div className="bi-scroll">
+            <table className="bi-table">
+              <thead>
+                <tr>
+                  <th>Workflow</th>
+                  <th>Runs</th>
+                  <th>Succeeded</th>
+                  <th>Median</th>
+                  <th>Last run</th>
+                </tr>
+              </thead>
+              <tbody>
+                {stats.workflows.map((w) => {
+                  const done = w.ok + w.fail;
+                  return (
+                    <tr key={w.key}>
+                      <td>
+                        <strong>{w.name}</strong>
+                      </td>
+                      <td>{w.runs}</td>
+                      <td>
+                        {done === 0 ? (
+                          "—"
+                        ) : (
+                          <>
+                            <Meter ok={w.ok} fail={w.fail} total={done} />
+                            {Math.round((w.ok / done) * 100)}%
+                          </>
+                        )}
+                      </td>
+                      <td>{w.medianMs === null ? "—" : durationLabel(w.medianMs)}</td>
+                      <td>{formatWhen(w.lastRun)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="insights-panel">
+        <h3>Recent failures</h3>
+        {stats.failures.length === 0 ? (
+          <p className="insights-note">No failures in the last {range} days.</p>
+        ) : (
+          <ul className="bi-fails">
+            {stats.failures.map((run) => (
+              <li key={run.id}>
+                <button type="button" onClick={() => onOpenRun(run.id)}>
+                  <Badge tone={RUN_STATUS_TONE.failed}>Failed</Badge>
+                  <strong>{runDisplayName(run)}</strong>
+                  <span>{formatWhen(run.createdAt)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section>
+        <h3 className="bi-later-h">Coming later</h3>
+        <p className="insights-note">These need usage data the platform doesn't report yet.</p>
+        <div className="bi-soon">
+          {COMING_LATER.map(([title, detail]) => (
+            <div key={title}>
+              <b>{title}</b>
+              <span>{detail}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}

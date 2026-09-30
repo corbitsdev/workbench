@@ -30,6 +30,7 @@ import { SignedOutNotice, type APIQuery } from "@/lib/api-query";
 import { workbenchesQueryKey, listWorkbenches } from "@/chat/workbench-tenants";
 
 import { useBench } from "../bench-context";
+import { BenchInsights } from "./bench-insights";
 import { resolveWorkbenchInsightsScope } from "../insights-workbench-scope";
 import { parseInsightsPath } from "../insights-path";
 import {
@@ -682,7 +683,9 @@ export function InsightsPage({
 function InsightsWorkbenchPage({
   workbenchesLoading,
   resolution,
+  onOpenRun,
 }: {
+  readonly onOpenRun: (id: string) => void;
   readonly workbenchesLoading: boolean;
   readonly resolution: ReturnType<typeof resolveWorkbenchInsightsScope>;
 }) {
@@ -731,11 +734,7 @@ function InsightsWorkbenchPage({
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <PageShell width="full" className="page-fill">
-          <RichEmptyState
-            icon={<ChartBar />}
-            title="This workbench's activity lives in its own conversation"
-            description="Open the workbench to read its conversation."
-          />
+          <BenchInsights tenantId={resolution.tenantId} onOpenRun={onOpenRun} />
         </PageShell>
       </div>
     </div>
@@ -795,6 +794,7 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
 function InsightsWorkbenchPageRoute({
   workbenchId,
   benchTenantId,
+  onOpenRun,
 }: {
   readonly workbenchId: string;
   readonly benchTenantId: string | null;
@@ -802,7 +802,13 @@ function InsightsWorkbenchPageRoute({
 }) {
   const { workbenches, isLoading } = useWorkbenchList(benchTenantId);
   const resolution = resolveWorkbenchInsightsScope(workbenches, workbenchId);
-  return <InsightsWorkbenchPage workbenchesLoading={isLoading} resolution={resolution} />;
+  return (
+    <InsightsWorkbenchPage
+      workbenchesLoading={isLoading}
+      resolution={resolution}
+      onOpenRun={onOpenRun}
+    />
+  );
 }
 
 function useWorkbenchList(tenantId: string | null) {
