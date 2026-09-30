@@ -26,12 +26,14 @@ import {
 import { VoiceOverlay } from "../voice/voice-overlay";
 import { BenchDrawer } from "../bench/bench-drawer";
 import { BenchPill } from "../bench/bench-pill";
+import { ArtifactsTab } from "../bench/artifacts-tab";
 import { useWorkerStatus } from "../worker-status";
 import { GrantsTab } from "../bench/grants-tab";
 import { InformationTab } from "../bench/information-tab";
 import { InsightsTab } from "../bench/insights-tab";
 import { MembersTab } from "../bench/members-tab";
 import { ToolsTab } from "../bench/tools-tab";
+import { WorkflowsTab } from "../bench/workflows-tab";
 import { useBench } from "../bench-context";
 import { createFetchStockHub } from "../needs-converge";
 import { workbenchKeys } from "../chat-path";
@@ -333,6 +335,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                 participants={participants.data ?? []}
               />
             ),
+            Artifacts: <ArtifactsTab workbenchTenantId={workbenchTenantId} />,
             Tools: <ToolsTab workbenchTenantId={workbenchTenantId} />,
             Grants: <GrantsTab workbenchTenantId={workbenchTenantId} />,
             Insights: <InsightsTab workbenchTenantId={workbenchTenantId} />,
@@ -342,6 +345,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                 participants={participants.data ?? []}
               />
             ),
+            Workflows: <WorkflowsTab workbenchTenantId={workbenchTenantId} />,
           }}
         />
       </div>

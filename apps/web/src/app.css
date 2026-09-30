@@ -4052,6 +4052,88 @@ tr.insights-row-clickable:hover {
   overflow-y: auto;
   padding: 20px;
 }
+.drawer-sec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.drawer-sec-head h3 {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--ink-2);
+}
+.drawer-sec-head a {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  text-decoration: none;
+}
+.drawer-sec-head a:hover {
+  color: var(--ink);
+}
+.drawer-list {
+  display: grid;
+  gap: 2px;
+}
+.drawer-li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 6px 8px;
+  margin: 0 -8px;
+  border-radius: var(--r-md);
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 120ms ease;
+}
+a.drawer-li:hover,
+.drawer-li:hover {
+  background: var(--hover);
+}
+.drawer-li > svg {
+  color: var(--ink-3);
+  flex: 0 0 auto;
+}
+.drawer-li-t {
+  flex: 1;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.drawer-li-t b,
+.drawer-li-t span {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.drawer-li-t b {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.drawer-li-t span {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.drawer-li-m {
+  font-size: 12px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.drawer-file-ic {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-md);
+  background: var(--surface-sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink-3);
+}
 @media (max-width: 860px) {
   .wb[data-drawer="open"] {
     grid-template-columns: minmax(0, 1fr) 0px;
