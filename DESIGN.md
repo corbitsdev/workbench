@@ -177,13 +177,13 @@ monospace (code, IDs, numeric/tabular contexts). Both are declared once in
 `apps/web/src/tailwind.css`'s `@theme` block; consumers use `font-sans` /
 `font-mono`, never a font-family override.
 
-**Icons.** Phosphor, bold weight only, imported exclusively through
+**Icons.** Lucide, 2px stroke only, imported exclusively through
 `@/lib/icons` (`apps/web/src/lib/icons/index.tsx`) — never straight from
-`@phosphor-icons/react` or from any other icon package. That module is a
+`lucide-react` or from any other icon package. That module is a
 curated re-export: only glyphs the product actually uses are named there,
-so a stray import can't reach for an off-list icon or a different weight.
-`BoldIconProvider` sets the bold default once at the app root; call sites
-never repeat `weight="bold"`. **Sparkle and Sparkles are banned outright**
+so a stray import can't reach for an off-list icon or a different stroke.
+`BoldIconProvider` sets the `1em` size and 2px stroke once at the app root;
+call sites never repeat `strokeWidth`. **Sparkle and Sparkles are banned outright**
 — they read as a generic "AI" cliché. Every spot that used to carry one
 now carries a glyph that means something specific to what it marks.
 

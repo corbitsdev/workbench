@@ -1,88 +1,85 @@
 // Sparkle/Sparkles is banned outright — it read as a generic "AI" cliché.
 // A curated re-export, not a full pass-through, so a stray import can't
-// reach for an off-list icon or tiptoe around the bold-weight rule.
-import { IconContext, type Icon, type IconProps } from "@phosphor-icons/react";
+// reach for an off-list icon or tiptoe around the stroke-width rule.
+import { LucideProvider, type LucideIcon, type LucideProps } from "lucide-react";
 import type { ReactNode } from "react";
 
-export type { Icon, IconProps };
+export type Icon = LucideIcon;
+export type IconProps = LucideProps;
 
 export {
   Archive,
-  ArrowBendUpLeft,
-  ArrowClockwise,
   ArrowDown,
   ArrowLeft,
-  ArrowsDownUp,
-  ArrowsIn,
-  ArrowsOut,
-  ArrowSquareOut,
+  ArrowRight,
   ArrowUp,
+  ArrowUpDown as ArrowsDownUp,
   Bell,
-  BookBookmark,
-  CaretDown,
-  CaretLeft,
-  CaretRight,
-  ChartBar,
-  ChatCircle,
-  ChatCircleDots,
+  BookMarked as BookBookmark,
+  Bot as Robot,
   Check,
-  CircleNotch,
+  ChartColumn as ChartBar,
+  ChevronDown as CaretDown,
+  ChevronLeft as CaretLeft,
+  ChevronRight as CaretRight,
+  CircleAlert as WarningCircle,
+  CircleUser as UserCircle,
+  CirclePlay as PlayCircle,
   Clock,
   Compass,
+  CornerUpLeft as ArrowBendUpLeft,
   Copy,
   Cpu,
-  DotsThree,
-  FileDashed,
+  Diff as GitDiff,
+  Ellipsis as DotsThree,
   FileText,
-  FlowArrow,
+  FileQuestionMark as FileDashed,
   FolderOpen,
   GitBranch,
-  GitDiff,
   GitPullRequest,
   Hash,
   Key,
-  Lightning,
-  LinkSimple,
-  ListBullets,
+  Layers as Stack,
+  LayoutGrid as SquaresFour,
+  Link as LinkSimple,
+  List as ListBullets,
+  LoaderCircle as CircleNotch,
   Lock,
-  MagnifyingGlass,
-  Microphone,
-  MoonStars,
-  PaperPlaneRight,
+  LogOut as SignOut,
+  Maximize2 as ArrowsOut,
+  MessageCircle as ChatCircle,
+  MessageCircleMore as ChatCircleDots,
+  Mic as Microphone,
+  Minimize2 as ArrowsIn,
+  MoonStar as MoonStars,
   Paperclip,
-  PencilSimple,
-  PlayCircle,
+  Pencil as PencilSimple,
+  Pin as PushPin,
+  PinOff as PushPinSlash,
+  Plug as Plugs,
   Plus,
-  Plugs,
-  PushPin,
-  PushPinSlash,
   Repeat,
-  Robot,
+  RotateCw as ArrowClockwise,
+  Search as MagnifyingGlass,
+  Send as PaperPlaneRight,
   Shield,
-  SignOut,
   SlidersHorizontal,
-  Smiley,
-  Stack,
+  Smile as Smiley,
+  Square as Stop,
+  SquareArrowOutUpRight as ArrowSquareOut,
   Star,
-  Stop,
-  SquaresFour,
+  TriangleAlert as Warning,
   User,
-  UserCircle,
   UserPlus,
   Users,
-  Warning,
-  WarningCircle,
+  Workflow as FlowArrow,
   X,
-} from "@phosphor-icons/react";
+  Zap as Lightning,
+} from "lucide-react";
 
-// `IconContext.Provider` replaces Phosphor's whole context value rather
-// than merging it, so every library default (`size`) must be restated
-// alongside the override — dropping it silently un-sizes bare glyphs.
-export const boldIconContextValue = { size: "1em", weight: "bold" } as const;
-
-/** Wraps a subtree so every Phosphor icon under it defaults to bold weight
- * without repeating `weight="bold"` at each call site. Mounted once at each
- * app's root (see `apps/web/src/app.tsx`). */
+/** Wraps a subtree so every icon under it defaults to a 2px stroke without
+ * repeating it at each call site (the `1em` default size is `tailwind.css`).
+ * Mounted once at each app's root (see `apps/web/src/app.tsx`). */
 export function BoldIconProvider({ children }: { children: ReactNode }) {
-  return <IconContext.Provider value={boldIconContextValue}>{children}</IconContext.Provider>;
+  return <LucideProvider strokeWidth={2}>{children}</LucideProvider>;
 }

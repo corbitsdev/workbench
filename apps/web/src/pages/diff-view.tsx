@@ -4,13 +4,14 @@
 import { Badge, Table, TableBody, TableCell, TableRow } from "@corbits/react-ui";
 import { diffText } from "@/lib/text-diff";
 import type { DiffLine } from "@/lib/text-diff";
-import { useMemo } from "react";
+import { ArrowRight, DotsThree } from "@/lib/icons";
+import { useMemo, type ReactNode } from "react";
 
-const MARKER: Record<DiffLine["kind"], string> = {
+const MARKER: Record<DiffLine["kind"], ReactNode> = {
   context: " ",
   added: "+",
   removed: "-",
-  skipped: "⋯",
+  skipped: <DotsThree aria-hidden="true" className="mx-auto" />,
 };
 
 const ROW_CLASS: Record<DiffLine["kind"], string> = {
@@ -104,9 +105,7 @@ export function DiffHeading({
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
       <Badge tone="neutral">{beforeLabel}</Badge>
-      <span aria-hidden="true" className="text-muted-foreground">
-        →
-      </span>
+      <ArrowRight aria-hidden="true" className="text-muted-foreground" />
       <Badge tone="info">{afterLabel}</Badge>
     </div>
   );

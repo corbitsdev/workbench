@@ -4,7 +4,7 @@
 
 import { Button, toast } from "@corbits/react-ui";
 import { useDismissablePopover } from "@corbits/react-ui/hooks/use-dismissable-popover";
-import { PaperPlaneRight } from "@/lib/icons";
+import { Check, PaperPlaneRight, X } from "@/lib/icons";
 import { CHAT_STRINGS, WorkbenchLoadingState } from "@/chat";
 import { isMyraAgent, listChatAgents } from "@/chat/threads-api";
 import { useMemo, useRef, useState } from "react";
@@ -228,7 +228,7 @@ export function NewWorkbenchPickerRoute() {
                         aria-label={`Remove ${agent.name}`}
                         onClick={() => toggleAgent(agent.id)}
                       >
-                        ×
+                        <X aria-hidden="true" />
                       </button>
                     </span>
                   ))}
@@ -326,7 +326,7 @@ export function NewWorkbenchPickerRoute() {
                                     <span className="new-workbench-agent-option-name">
                                       {agent.name}
                                     </span>
-                                    {selected ? <span aria-hidden="true">✓</span> : null}
+                                    {selected ? <Check aria-hidden="true" /> : null}
                                   </button>
                                 );
                               })}
