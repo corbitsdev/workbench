@@ -26,7 +26,9 @@ import {
 import { BenchDrawer } from "../bench/bench-drawer";
 import { BenchPill } from "../bench/bench-pill";
 import { useWorkerStatus } from "../worker-status";
+import { GrantsTab } from "../bench/grants-tab";
 import { InformationTab } from "../bench/information-tab";
+import { ToolsTab } from "../bench/tools-tab";
 import { useBench } from "../bench-context";
 import { createFetchStockHub } from "../needs-converge";
 import { workbenchKeys } from "../chat-path";
@@ -314,6 +316,8 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                 participants={participants.data ?? []}
               />
             ),
+            Tools: <ToolsTab workbenchTenantId={workbenchTenantId} />,
+            Grants: <GrantsTab workbenchTenantId={workbenchTenantId} />,
           }}
         />
       </div>
