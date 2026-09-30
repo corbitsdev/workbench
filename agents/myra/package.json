@@ -37,17 +37,17 @@
     "@corbits/deferred-tools": "workspace:*",
     "@corbits/mcp": "github:corbitsdev/corbits-mcp#9df1ab81d2f50d798bca2d2f44eb4759c92fac0e",
     "@corbits/memory": "github:corbitsdev/corbits-memory#8be608becc749fa0795a899826277823dca6db3e",
-    "@intx/tools-mail": "0.3.0",
-    "@intx/tools-posix": "0.3.0"
+    "@intx/tools-mail": "0.4.0",
+    "@intx/tools-posix": "0.4.0"
   },
   "devDependencies": {
     "@types/bun": "catalog:",
     "typescript": "catalog:"
   },
   "peerDependencies": {
-    "@intx/agent": "0.3.0",
-    "@intx/types": "0.3.0",
-    "@intx/workflow": "0.3.0"
+    "@intx/agent": "0.4.0",
+    "@intx/types": "0.4.0",
+    "@intx/workflow": "0.4.0"
   },
   "corbits": {
     "workflow": {

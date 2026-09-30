@@ -23,7 +23,7 @@ never a convenience.
 ## Ledger
 
 Pinned to [faremeter/interchange](https://github.com/faremeter/interchange)
-@ `79adc433` (origin/main).
+@ `5453d0b0` (origin/main, v0.4.0).
 
 | Vendored path                 | What it is                                                              | Owner  | Kill date  |
 | ------------------------------ | ------------------------------------------------------------------------ | ------ | ---------- |
@@ -44,8 +44,9 @@ Pinned to [faremeter/interchange](https://github.com/faremeter/interchange)
 | `vendor/intx/workflow-deploy`   | `@intx/workflow-deploy` at a newer commit than npm has published          | maintainers | 2026-11-03 |
 | `vendor/intx/workflow-host`     | `@intx/workflow-host`, with a local step-grants-collapse delta and a temporary delta omitting an empty inbound `Subject` header instead of passing it through empty (kill condition: upstream tolerates an empty Subject, INTR-577) | maintainers | 2026-11-03 |
 
-npm's published `0.3.0` predates this pin for every row above, so each is
-re-vendored at the same commit rather than mixed pins; the root
+Every row above is re-vendored at the same commit rather than mixed pins
+(npm's `0.4.0` is this commit; rows with no local delta are un-vendoring
+candidates); the root
 `package.json` `overrides` point each vendored name at `workspace:*` so
 their own `@intx/*` dependencies resolve onto the vendored copies too.
 Local deltas are restated in each package's own `VENDORED-FROM` file.

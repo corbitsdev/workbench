@@ -16,11 +16,11 @@
         "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
-        "@intx/hub-common": "0.3.0",
+        "@intx/hub-common": "0.4.0",
         "@intx/hub-sessions": "workspace:*",
         "@intx/log": "workspace:*",
-        "@intx/mime": "0.3.0",
-        "@intx/types": "0.3.0",
+        "@intx/mime": "0.4.0",
+        "@intx/types": "0.4.0",
         "@types/bun": "1.3.14",
         "@typescript/native-preview": "7.0.0-dev.20260707.2",
         "drizzle-orm": "catalog:",
@@ -40,17 +40,17 @@
         "@corbits/deferred-tools": "workspace:*",
         "@corbits/mcp": "github:corbitsdev/corbits-mcp#9df1ab81d2f50d798bca2d2f44eb4759c92fac0e",
         "@corbits/memory": "github:corbitsdev/corbits-memory#8be608becc749fa0795a899826277823dca6db3e",
-        "@intx/tools-mail": "0.3.0",
-        "@intx/tools-posix": "0.3.0",
+        "@intx/tools-mail": "0.4.0",
+        "@intx/tools-posix": "0.4.0",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
       "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/types": "0.3.0",
-        "@intx/workflow": "0.3.0",
+        "@intx/agent": "0.4.0",
+        "@intx/types": "0.4.0",
+        "@intx/workflow": "0.4.0",
       },
     },
     "apps/hub": {
@@ -72,13 +72,13 @@
         "@corbits/webhooks": "github:corbitsdev/webhooks#3f4f83147fd826d3aec5bcac7ef4b0ae7f75c00d",
         "@corbits/workflows": "workspace:*",
         "@corbits/xai-provider": "github:corbitsdev/corbits-xai-provider#9f2d4bac40ea075df092fef807404a13c638cf14",
-        "@intx/authz": "0.3.0",
-        "@intx/crypto": "0.3.0",
+        "@intx/authz": "0.4.0",
+        "@intx/crypto": "0.4.0",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
-        "@intx/hub-common": "0.3.0",
+        "@intx/hub-common": "0.4.0",
         "@intx/hub-sessions": "workspace:*",
-        "@intx/log": "0.3.0",
+        "@intx/log": "0.4.0",
         "@intx/mime": "workspace:*",
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
@@ -98,7 +98,7 @@
     },
     "apps/sidecar": {
       "name": "@workbench/sidecar",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "bin": {
         "workflow-child": "./bin/workflow-child",
       },
@@ -106,20 +106,20 @@
         "@corbits/credential-header": "github:corbitsdev/corbits-credential-header#eee7b7eb79755fd1ddc3eb2b9a57c4e50982e293",
         "@corbits/credential-mcp": "github:corbitsdev/corbits-credential-mcp#fb9ec3a6754348cd33c388c70c0830b8844c83de",
         "@intx/agent": "workspace:*",
-        "@intx/authz": "0.3.0",
-        "@intx/crypto": "0.3.0",
+        "@intx/authz": "0.4.0",
+        "@intx/crypto": "0.4.0",
         "@intx/harness": "workspace:*",
         "@intx/hub-agent": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
         "@intx/inference": "workspace:*",
-        "@intx/log": "0.3.0",
+        "@intx/log": "0.4.0",
         "@intx/mail-memory": "workspace:*",
-        "@intx/pack-transport": "0.3.0",
-        "@intx/storage-isogit": "0.3.0",
-        "@intx/tool-packaging": "0.3.0",
-        "@intx/tools-lsp": "0.3.0",
-        "@intx/tools-mail": "0.3.0",
-        "@intx/tools-posix": "0.3.0",
+        "@intx/pack-transport": "0.4.0",
+        "@intx/storage-isogit": "0.4.0",
+        "@intx/tool-packaging": "0.4.0",
+        "@intx/tools-lsp": "0.4.0",
+        "@intx/tools-mail": "0.4.0",
+        "@intx/tools-posix": "0.4.0",
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
@@ -174,7 +174,7 @@
       "name": "@corbits/approvals",
       "version": "0.0.1",
       "dependencies": {
-        "@intx/authz": "0.3.0",
+        "@intx/authz": "0.4.0",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/types": "workspace:*",
@@ -183,7 +183,7 @@
         "hono": "catalog:",
       },
       "devDependencies": {
-        "@intx/hub-common": "0.3.0",
+        "@intx/hub-common": "0.4.0",
         "@types/bun": "catalog:",
         "postgres": "catalog:",
         "typescript": "catalog:",
@@ -201,10 +201,10 @@
         "typescript": "catalog:",
       },
       "peerDependencies": {
-        "@intx/agent": "0.3.0",
-        "@intx/inference": "0.3.0",
-        "@intx/log": "0.3.0",
-        "@intx/types": "0.3.0",
+        "@intx/agent": "0.4.0",
+        "@intx/inference": "0.4.0",
+        "@intx/log": "0.4.0",
+        "@intx/types": "0.4.0",
       },
     },
     "packages/error-sink": {
@@ -219,7 +219,7 @@
         "typescript": "catalog:",
       },
       "peerDependencies": {
-        "@intx/log": "0.3.0",
+        "@intx/log": "0.4.0",
       },
     },
     "packages/url-path": {
@@ -235,10 +235,10 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/error-sink": "workspace:*",
-        "@intx/authz": "0.3.0",
+        "@intx/authz": "0.4.0",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
-        "@intx/hub-common": "0.3.0",
+        "@intx/hub-common": "0.4.0",
         "@intx/hub-sessions": "workspace:*",
         "@intx/types": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
@@ -254,10 +254,10 @@
     },
     "vendor/intx/agent": {
       "name": "@intx/agent",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "@intx/inference": "workspace:*",
-        "@intx/log": "0.3.0",
+        "@intx/log": "0.4.0",
         "@intx/mime": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
@@ -269,12 +269,12 @@
     },
     "vendor/intx/db": {
       "name": "@intx/db",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@intx/authz": "0.3.0",
-        "@intx/crypto": "0.3.0",
-        "@intx/hub-common": "0.3.0",
-        "@intx/log": "0.3.0",
+        "@intx/authz": "0.4.0",
+        "@intx/crypto": "0.4.0",
+        "@intx/hub-common": "0.4.0",
+        "@intx/log": "0.4.0",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
         "drizzle-orm": "catalog:",
@@ -288,11 +288,11 @@
     },
     "vendor/intx/harness": {
       "name": "@intx/harness",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "@intx/agent": "workspace:*",
-        "@intx/authz": "0.3.0",
-        "@intx/log": "0.3.0",
+        "@intx/authz": "0.4.0",
+        "@intx/log": "0.4.0",
         "@intx/types": "workspace:*",
       },
       "devDependencies": {
@@ -304,14 +304,14 @@
     },
     "vendor/intx/hub-agent": {
       "name": "@intx/hub-agent",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "@intx/harness": "workspace:*",
-        "@intx/log": "0.3.0",
+        "@intx/log": "0.4.0",
         "@intx/mail-memory": "workspace:*",
         "@intx/mailbox": "workspace:*",
-        "@intx/pack-transport": "0.3.0",
-        "@intx/storage-isogit": "0.3.0",
+        "@intx/pack-transport": "0.4.0",
+        "@intx/storage-isogit": "0.4.0",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
         "isomorphic-git": "catalog:",
@@ -324,18 +324,18 @@
     },
     "vendor/intx/hub-api": {
       "name": "@intx/hub-api",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "@hono/standard-validator": "^0.2.2",
         "@intx/agent": "workspace:*",
-        "@intx/authz": "0.3.0",
-        "@intx/crypto": "0.3.0",
+        "@intx/authz": "0.4.0",
+        "@intx/crypto": "0.4.0",
         "@intx/db": "workspace:*",
-        "@intx/hub-common": "0.3.0",
+        "@intx/hub-common": "0.4.0",
         "@intx/hub-sessions": "workspace:*",
-        "@intx/log": "0.3.0",
+        "@intx/log": "0.4.0",
         "@intx/mime": "workspace:*",
-        "@intx/storage-isogit": "0.3.0",
+        "@intx/storage-isogit": "0.4.0",
         "@intx/types": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
         "arktype": "catalog:",
@@ -357,7 +357,7 @@
     },
     "vendor/intx/hub-common": {
       "name": "@intx/hub-common",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "@intx/types": "workspace:*",
       },
@@ -368,18 +368,18 @@
     },
     "vendor/intx/hub-sessions": {
       "name": "@intx/hub-sessions",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "@intx/agent": "workspace:*",
-        "@intx/crypto": "0.3.0",
+        "@intx/crypto": "0.4.0",
         "@intx/db": "workspace:*",
-        "@intx/hub-common": "0.3.0",
+        "@intx/hub-common": "0.4.0",
         "@intx/inference": "workspace:*",
-        "@intx/log": "0.3.0",
+        "@intx/log": "0.4.0",
         "@intx/mime": "workspace:*",
-        "@intx/pack-transport": "0.3.0",
-        "@intx/storage-isogit": "0.3.0",
-        "@intx/tool-packaging": "0.3.0",
+        "@intx/pack-transport": "0.4.0",
+        "@intx/storage-isogit": "0.4.0",
+        "@intx/tool-packaging": "0.4.0",
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
@@ -395,9 +395,9 @@
     },
     "vendor/intx/inference": {
       "name": "@intx/inference",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@intx/log": "0.3.0",
+        "@intx/log": "0.4.0",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
       },
@@ -408,10 +408,10 @@
     },
     "vendor/intx/mail-memory": {
       "name": "@intx/mail-memory",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@intx/crypto": "0.3.0",
-        "@intx/log": "0.3.0",
+        "@intx/crypto": "0.4.0",
+        "@intx/log": "0.4.0",
         "@intx/mailbox": "workspace:*",
         "@intx/mime": "workspace:*",
         "@intx/types": "workspace:*",
@@ -424,9 +424,9 @@
     },
     "vendor/intx/mailbox": {
       "name": "@intx/mailbox",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@intx/crypto": "0.3.0",
+        "@intx/crypto": "0.4.0",
         "@intx/mime": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
@@ -438,9 +438,9 @@
     },
     "vendor/intx/mime": {
       "name": "@intx/mime",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
-        "@intx/crypto": "0.3.0",
+        "@intx/crypto": "0.4.0",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
       },
@@ -451,7 +451,7 @@
     },
     "vendor/intx/types": {
       "name": "@intx/types",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "arktype": "catalog:",
         "semver": "catalog:",
@@ -464,7 +464,7 @@
     },
     "vendor/intx/workflow": {
       "name": "@intx/workflow",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/inference": "workspace:*",
@@ -478,10 +478,10 @@
     },
     "vendor/intx/workflow-deploy": {
       "name": "@intx/workflow-deploy",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "@intx/agent": "workspace:*",
-        "@intx/tool-packaging": "0.3.0",
+        "@intx/tool-packaging": "0.4.0",
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
       },
@@ -493,17 +493,17 @@
     },
     "vendor/intx/workflow-host": {
       "name": "@intx/workflow-host",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "dependencies": {
         "@intx/agent": "workspace:*",
-        "@intx/crypto": "0.3.0",
+        "@intx/crypto": "0.4.0",
         "@intx/hub-sessions": "workspace:*",
         "@intx/inference": "workspace:*",
-        "@intx/log": "0.3.0",
+        "@intx/log": "0.4.0",
         "@intx/mail-memory": "workspace:*",
         "@intx/mailbox": "workspace:*",
         "@intx/mime": "workspace:*",
-        "@intx/storage-isogit": "0.3.0",
+        "@intx/storage-isogit": "0.4.0",
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
@@ -519,24 +519,26 @@
     "@corbits/mailbox",
   ],
   "overrides": {
+    "@corbits/oauth-core": "github:corbitsdev/corbits-oauth-core#3028f8604155eee63f5a1711f0d4022d7984e3f7",
+    "@corbits/openai-responses": "github:corbitsdev/corbits-openai-responses#7efe0006da9d94ac9037c1389f23d3d6163df4a5",
     "@intx/agent": "workspace:*",
-    "@intx/authz": "0.3.0",
-    "@intx/crypto": "0.3.0",
+    "@intx/authz": "0.4.0",
+    "@intx/crypto": "0.4.0",
     "@intx/db": "workspace:*",
     "@intx/harness": "workspace:*",
     "@intx/hub-agent": "workspace:*",
     "@intx/hub-api": "workspace:*",
-    "@intx/hub-common": "0.3.0",
+    "@intx/hub-common": "0.4.0",
     "@intx/hub-sessions": "workspace:*",
     "@intx/inference": "workspace:*",
-    "@intx/inference-catalog": "0.3.0",
-    "@intx/log": "0.3.0",
+    "@intx/inference-catalog": "0.4.0",
+    "@intx/log": "0.4.0",
     "@intx/mail-memory": "workspace:*",
     "@intx/mailbox": "workspace:*",
     "@intx/mime": "workspace:*",
-    "@intx/pack-transport": "0.3.0",
-    "@intx/storage-isogit": "0.3.0",
-    "@intx/tool-packaging": "0.3.0",
+    "@intx/pack-transport": "0.4.0",
+    "@intx/storage-isogit": "0.4.0",
+    "@intx/tool-packaging": "0.4.0",
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
     "@intx/workflow-deploy": "workspace:*",
@@ -744,9 +746,9 @@
 
     "@intx/agent": ["@intx/agent@workspace:vendor/intx/agent"],
 
-    "@intx/authz": ["@intx/authz@0.3.0", "", { "dependencies": { "@intx/types": "0.3.0" } }, "sha512-kyIKQAVjfB8H84mES0QA4cNnYfpPoyLmQITVBxiuXv1VO/K74TQZnCDpoo0IL7oFk2q7bbDXSAEE4ubMBVTHzA=="],
+    "@intx/authz": ["@intx/authz@0.4.0", "", { "dependencies": { "@intx/types": "0.4.0" } }, "sha512-A9x4EzcECnFjhDoqj0XjaOb1GaxRyJucXOuIbY+fcPluUuMCGFvExD6DJZwjJmIYdeCvL8i96gPkncu/fAR9qA=="],
 
-    "@intx/crypto": ["@intx/crypto@0.3.0", "", { "dependencies": { "@intx/types": "0.3.0" } }, "sha512-NsRzvkFGb0Pcsm9uLFFSXNl6Cbu+ii6VkYAw81qs9IbZzbAFfsZSUVQaX6EZuPNyJ8KK4KmBtqmioq1mhXsJww=="],
+    "@intx/crypto": ["@intx/crypto@0.4.0", "", { "dependencies": { "@intx/types": "0.4.0" } }, "sha512-4/qWypC90GevbV9u1i/93tn46jsXhj8wE1Pn+awg8/ECpwhHnhPLT5Uy423Arr9eGmRmF6HiMyXcEgH1Z9/Rkw=="],
 
     "@intx/db": ["@intx/db@workspace:vendor/intx/db"],
 
@@ -762,7 +764,7 @@
 
     "@intx/inference": ["@intx/inference@workspace:vendor/intx/inference"],
 
-    "@intx/log": ["@intx/log@0.3.0", "", { "dependencies": { "@logtape/hono": "^2.0.2", "@logtape/logtape": "^2.0.2" }, "peerDependencies": { "hono": "^4.0.0" }, "optionalPeers": ["hono"] }, "sha512-iooPSZjiEUO1A91X5STRhOAk+2RprliB4nbriV/dOOz86kuxZ60y5T8ISQ5Jaj1US870gntN6QwnefY38aWi2Q=="],
+    "@intx/log": ["@intx/log@0.4.0", "", { "dependencies": { "@logtape/hono": "^2.0.2", "@logtape/logtape": "^2.0.2" }, "peerDependencies": { "hono": "^4.0.0" }, "optionalPeers": ["hono"] }, "sha512-f1IPZ/9YpEqlA0I2UZPOlRJOTDoOFEZRwZoUVuw8DpgR1WatOMm4hA0E8o6Mtz+pA0ux7gVdls4y/JZcgypsfQ=="],
 
     "@intx/mail-memory": ["@intx/mail-memory@workspace:vendor/intx/mail-memory"],
 
@@ -770,17 +772,17 @@
 
     "@intx/mime": ["@intx/mime@workspace:vendor/intx/mime"],
 
-    "@intx/pack-transport": ["@intx/pack-transport@0.3.0", "", { "dependencies": { "@intx/types": "0.3.0" } }, "sha512-EQ1wM16323aIFhw3Ak6HwB8YqzKSAfRmJUwjIfqyXk2t6TGv4grws6dIs7Yau1dc372s/SO+GhvFaKgvI6XTWA=="],
+    "@intx/pack-transport": ["@intx/pack-transport@0.4.0", "", { "dependencies": { "@intx/types": "0.4.0" } }, "sha512-I+axd067ZFXaTRtr2zmBXl6/yU253wLc/YWEdXiPiqz06mIspR2BFJMbSXPzV4pM26n+1tv/9E5VNBQtdiYmSA=="],
 
-    "@intx/storage-isogit": ["@intx/storage-isogit@0.3.0", "", { "dependencies": { "@intx/log": "0.3.0", "@intx/mime": "0.3.0", "@intx/types": "0.3.0", "@isomorphic-git/lightning-fs": "4.7.0", "arktype": "^2.1.29", "buffer": "^6.0.3", "isomorphic-git": "^1.27.2" } }, "sha512-nzhl9WvxV66J1jjBfuAOjvwgiuS1DScnYomCPQrBxZNG35M5CYR3xyqR0RN0GfTj/7JlKWk6rF6Lu44aZDfzuw=="],
+    "@intx/storage-isogit": ["@intx/storage-isogit@0.4.0", "", { "dependencies": { "@intx/log": "0.4.0", "@intx/mime": "0.4.0", "@intx/types": "0.4.0", "@isomorphic-git/lightning-fs": "4.7.0", "arktype": "^2.1.29", "buffer": "^6.0.3", "isomorphic-git": "^1.27.2" } }, "sha512-3H4dhUsWmAixLEBp79vq9NVUf6Z4++pKzaODWFEgNfhLX2WeV5J/t6soUamL6T/8eok/SDgQ/sZiZMiJ5kDKOw=="],
 
-    "@intx/tool-packaging": ["@intx/tool-packaging@0.3.0", "", { "dependencies": { "@intx/agent": "0.3.0", "@intx/log": "0.3.0", "@intx/storage-isogit": "0.3.0", "@intx/types": "0.3.0", "arktype": "^2.1.29", "isomorphic-git": "^1.27.2", "npm-package-arg": "^12.0.2", "npm-pick-manifest": "^10.0.0", "npm-registry-fetch": "^19.0.0", "semver": "^7.7.2", "ssri": "^12.0.0", "tar": "^7.5.1" } }, "sha512-Lr/xdEjXTindJRm+eITvfeqpW/yl71thYjr3HXl41GJ9wpuOZPCjm9vBoRVKhUSwmIUKBYbm2VplXCCXaS7f4g=="],
+    "@intx/tool-packaging": ["@intx/tool-packaging@0.4.0", "", { "dependencies": { "@intx/agent": "0.4.0", "@intx/log": "0.4.0", "@intx/storage-isogit": "0.4.0", "@intx/types": "0.4.0", "arktype": "^2.1.29", "isomorphic-git": "^1.27.2", "npm-package-arg": "^12.0.2", "npm-pick-manifest": "^10.0.0", "npm-registry-fetch": "^19.0.0", "semver": "^7.7.2", "ssri": "^12.0.0", "tar": "^7.5.1" } }, "sha512-eBZIbGUcEBp0ppMCceA1PPd75LvXpUyWitqTIu7AsLxRNlU9gbE1hymWPXnhUKnt3LgSlHUi959Ehd6jG6mR7g=="],
 
-    "@intx/tools-lsp": ["@intx/tools-lsp@0.3.0", "", { "dependencies": { "@intx/agent": "0.3.0", "@intx/log": "0.3.0", "@intx/tools-posix": "0.3.0", "@intx/types": "0.3.0", "vscode-jsonrpc": "^9.0.1", "vscode-languageserver-types": "^3.17.5", "which": "^4.0.0" } }, "sha512-Ywnm9NNfCLlkzXTL1UoHyVvee4eaQ9rqKkkHM8zmf4l8L+ZqEPIW4IG5nERJG9F9XxOaf4gboqbFgqMe+AF5Dg=="],
+    "@intx/tools-lsp": ["@intx/tools-lsp@0.4.0", "", { "dependencies": { "@intx/agent": "0.4.0", "@intx/log": "0.4.0", "@intx/tools-posix": "0.4.0", "@intx/types": "0.4.0", "vscode-jsonrpc": "^9.0.1", "vscode-languageserver-types": "^3.17.5", "which": "^4.0.0" } }, "sha512-qkrO3dpnPBtyLEEPBrtEzTRhXiKI1mfrQlbehmnq5D7ZcdJ99/FiTlLWzb8WHuzsh7J26xdWOYKzwTp3V/U2Mw=="],
 
-    "@intx/tools-mail": ["@intx/tools-mail@0.3.0", "", { "dependencies": { "@intx/agent": "0.3.0", "@intx/types": "0.3.0", "arktype": "^2.1.29" } }, "sha512-DLI3+5mVhqdiW1VtSt4/lVRI8UFDp1Li7z/0Dfxqe44rdP2HvPRiZ8LmoSoZ8DdnGuC7dXT1MwNIN5kr9cCQCw=="],
+    "@intx/tools-mail": ["@intx/tools-mail@0.4.0", "", { "dependencies": { "@intx/agent": "0.4.0", "@intx/types": "0.4.0", "arktype": "^2.1.29" } }, "sha512-z7AAXlGEi9Tivf3PPvw8h8Xr9lY4vYidXKX17qQG95iLV/OW8FCmaWXxuUVLBMtlxfXQKpFWKCicdSRbJsbvLQ=="],
 
-    "@intx/tools-posix": ["@intx/tools-posix@0.3.0", "", { "dependencies": { "@intx/agent": "0.3.0", "@intx/types": "0.3.0" } }, "sha512-0cQt5d7POpe/Wbee4pmnwTSux9JeyEy115X/96Ok0enNSIpAaPmHB61iRMuMHStS0hNF1e7DCpA7OH5Bi08Dbg=="],
+    "@intx/tools-posix": ["@intx/tools-posix@0.4.0", "", { "dependencies": { "@intx/agent": "0.4.0", "@intx/types": "0.4.0" } }, "sha512-ZqC3nEDBk5ix+lW9nWAyTynkXOGycsTfCXS24uSqwqLcivucSmGDk6kJ9zs+J0Ybz3tpq7rMmoQcvM3RuZprgQ=="],
 
     "@intx/types": ["@intx/types@workspace:vendor/intx/types"],
 
@@ -1840,8 +1842,6 @@
 
     "@corbits/mailbox/hono-openapi": ["hono-openapi@1.3.1", "", { "peerDependencies": { "@hono/standard-validator": "^0.2.0", "@standard-community/standard-json": "^0.3.5", "@standard-community/standard-openapi": "^0.2.9", "@types/json-schema": "^7.0.15", "hono": "^4.11.2", "openapi-types": "^12.1.3" }, "optionalPeers": ["@hono/standard-validator", "hono"] }, "sha512-NLVeVkhKZ3drmQNEIPac8HX8Y54uf1hJAgIM/7MfDsaeVVmB+QILWQxx5x3R3NvRHgedcbEbOCGY2uR7WQYyMw=="],
 
-    "@corbits/mcp/@corbits/credential-mcp": ["@corbits/credential-mcp@github:corbitsdev/corbits-credential-mcp#fb9ec3a", { "peerDependencies": { "@intx/harness": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-credential-mcp-fb9ec3a", "sha512-Co4jR+L3pfBbVYY7I6jRftoHeSb5+LCxzEEaAhVLYA3aY2PrPHZV37+DWxj3fcK/KdzboqbT3XSnqU8DyHRU9Q=="],
-
     "@corbits/myra/@corbits/artifacts": ["@corbits/artifacts@github:corbitsdev/corbits-artifacts#4a2a3c2", { "dependencies": { "@hono/standard-validator": "^0.2.3" }, "peerDependencies": { "@intx/agent": "^0.3.0", "@intx/hub-api": "^0.3.0", "@intx/types": "^0.3.0", "arktype": "^2.1.29", "drizzle-orm": "^0.45.2", "hono": "^4.12.32", "hono-openapi": "^1.2.0", "postgres": "^3.4.9" } }, "corbitsdev-corbits-artifacts-4a2a3c2", "sha512-UY5nkQ31kGmYgqgIOSlbigwvm7c/s2kpqEbF6Oqo0rzoS1RejpPp+w/Yim6h2MRpYCl5CXgAET1MhkDboHuWBA=="],
 
     "@esbuild-kit/core-utils/esbuild": ["esbuild@0.18.20", "", { "optionalDependencies": { "@esbuild/android-arm": "0.18.20", "@esbuild/android-arm64": "0.18.20", "@esbuild/android-x64": "0.18.20", "@esbuild/darwin-arm64": "0.18.20", "@esbuild/darwin-x64": "0.18.20", "@esbuild/freebsd-arm64": "0.18.20", "@esbuild/freebsd-x64": "0.18.20", "@esbuild/linux-arm": "0.18.20", "@esbuild/linux-arm64": "0.18.20", "@esbuild/linux-ia32": "0.18.20", "@esbuild/linux-loong64": "0.18.20", "@esbuild/linux-mips64el": "0.18.20", "@esbuild/linux-ppc64": "0.18.20", "@esbuild/linux-riscv64": "0.18.20", "@esbuild/linux-s390x": "0.18.20", "@esbuild/linux-x64": "0.18.20", "@esbuild/netbsd-x64": "0.18.20", "@esbuild/openbsd-x64": "0.18.20", "@esbuild/sunos-x64": "0.18.20", "@esbuild/win32-arm64": "0.18.20", "@esbuild/win32-ia32": "0.18.20", "@esbuild/win32-x64": "0.18.20" }, "bin": { "esbuild": "bin/esbuild" } }, "sha512-ceqxoedUrcayh7Y7ZX6NdbbDzGROiyVBgC4PriJThBKSVPWnnFHZAkfI1lJT8QFkOwH4qOS2SJkS4wvpGl8BpA=="],
@@ -1860,11 +1860,13 @@
 
     "@tailwindcss/oxide-wasm32-wasi/tslib": ["tslib@2.8.1", "", { "bundled": true }, "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w=="],
 
-    "@workbench/hub/@corbits/mcp": ["@corbits/mcp@github:corbitsdev/corbits-mcp#9df1ab8", { "dependencies": { "@corbits/credential-mcp": "github:corbitsdev/corbits-credential-mcp#fb9ec3a6754348cd33c388c70c0830b8844c83de", "@intx/db": "^0.3.0", "@intx/hub-api": "^0.3.0", "@intx/types": "^0.3.0", "arktype": "2.1.20", "drizzle-orm": "^0.45.2", "hono": "^4.11.9" }, "peerDependencies": { "@intx/agent": ">=0.3.0" } }, "corbitsdev-corbits-mcp-9df1ab8", "sha512-5ILvgNI4J/U2kWitFKZmIJO1qybCdIkKZ73ZELu6PWrbw6tARxO8/ffaGoK0nIMrT4EcBZaMd6YkR0vLdPOWnw=="],
+    "@workbench/hub/@corbits/artifacts": ["@corbits/artifacts@github:corbitsdev/corbits-artifacts#4a2a3c2", { "dependencies": { "@hono/standard-validator": "^0.2.3" }, "peerDependencies": { "@intx/agent": "^0.3.0", "@intx/hub-api": "^0.3.0", "@intx/types": "^0.3.0", "arktype": "^2.1.29", "drizzle-orm": "^0.45.2", "hono": "^4.12.32", "hono-openapi": "^1.2.0", "postgres": "^3.4.9" } }, "corbitsdev-corbits-artifacts-4a2a3c2", "sha512-UY5nkQ31kGmYgqgIOSlbigwvm7c/s2kpqEbF6Oqo0rzoS1RejpPp+w/Yim6h2MRpYCl5CXgAET1MhkDboHuWBA=="],
 
-    "@workbench/hub/@corbits/memory": ["@corbits/memory@github:corbitsdev/corbits-memory#8be608b", { "dependencies": { "@intx/agent": "0.2.2", "@intx/authz": "0.2.2", "@intx/hub-api": "0.2.2", "@intx/log": "0.2.2", "@intx/types": "^0.3.0", "@intx/workflow": "0.2.2", "arktype": "^2.1.29", "drizzle-orm": "^0.45.1", "hono": "^4.9.0", "hono-openapi": "^1.3.1", "postgres": "^3.4.7" } }, "corbitsdev-corbits-memory-8be608b", "sha512-7NcVcz3IHFTfx6ICQT+4gjX1PBNLqjlCqoEOPDFVW7wc4e2+Ueg9wOZQ+0MVttpQCaDg6MObl4kie410UQm/sQ=="],
+    "@workbench/hub/@corbits/codex-provider": ["@corbits/codex-provider@github:corbitsdev/corbits-codex-provider#a1f475f", { "dependencies": { "@corbits/oauth-core": "github:corbitsdev/corbits-oauth-core", "@corbits/openai-responses": "github:corbitsdev/corbits-openai-responses", "arktype": "2.2.3" }, "peerDependencies": { "@intx/inference": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-codex-provider-a1f475f", "sha512-D6d0lblWx/4KudfLwQoQGrLB8GKRLP/HVp1cx08L2/hOGZAgH6txLPpeEtBqjl+R520qXSSPfM0kDC+3XNaAfw=="],
 
-    "@workbench/web/@corbits/credential-mcp": ["@corbits/credential-mcp@github:corbitsdev/corbits-credential-mcp#fb9ec3a", { "peerDependencies": { "@intx/harness": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-credential-mcp-fb9ec3a", "sha512-Co4jR+L3pfBbVYY7I6jRftoHeSb5+LCxzEEaAhVLYA3aY2PrPHZV37+DWxj3fcK/KdzboqbT3XSnqU8DyHRU9Q=="],
+    "@workbench/hub/@corbits/mailbox": ["@corbits/mailbox@github:corbitsdev/corbits-mailbox#65590a8", { "dependencies": { "@hono/standard-validator": "0.2.3", "@intx/crypto": "0.3.0", "@standard-community/standard-json": "0.3.5", "@standard-community/standard-openapi": "0.2.9", "arktype": "2.1.29", "hono-openapi": "1.3.1" }, "peerDependencies": { "@intx/log": "^0.2.2", "drizzle-orm": "^0.45.2", "hono": "^4.12.0", "postgres": "^3.4.0" } }, "corbitsdev-corbits-mailbox-65590a8", "sha512-tK7xXcL780iX3I+5R68gmyqgEA0uwYO1qdTDNn/LF6tOiFIm0lt2szjspJ8JMKMTzKC6SSai03p723rEGM1jOg=="],
+
+    "@workbench/hub/@corbits/xai-provider": ["@corbits/xai-provider@github:corbitsdev/corbits-xai-provider#9f2d4ba", { "dependencies": { "@corbits/oauth-core": "github:corbitsdev/corbits-oauth-core", "@corbits/openai-responses": "github:corbitsdev/corbits-openai-responses", "arktype": "2.2.3" }, "peerDependencies": { "@intx/inference": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-xai-provider-9f2d4ba", "sha512-ZjvKxGcp+QzCh8zeXHg7kNbtkpR/itZkmQAcdG1aOAOjHaNwfGVpkPc/c/XtwPNsQyaDjF8W9CHb4rH1xI2uCA=="],
 
     "better-call/@better-auth/utils": ["@better-auth/utils@0.5.0", "", { "dependencies": { "@noble/hashes": "^2.0.1" } }, "sha512-BL8W4EfIZFwlu0r54m3v1ztjDhu6dDe/amLTm0xybmbZaNgYUqhD3SjpAsnq0q8YD6/ki4iwIgxJNLP/N3TxiA=="],
 
@@ -1959,6 +1961,9 @@
     "@esbuild-kit/core-utils/esbuild/@esbuild/win32-ia32": ["@esbuild/win32-ia32@0.18.20", "", { "os": "win32", "cpu": "ia32" }, "sha512-Wv7QBi3ID/rROT08SABTS7eV4hX26sVduqDOTe1MvGMjNd3EjOz4b7zeexIR62GTIEKrfJXKL9LFxTYgkyeu7g=="],
 
     "@esbuild-kit/core-utils/esbuild/@esbuild/win32-x64": ["@esbuild/win32-x64@0.18.20", "", { "os": "win32", "cpu": "x64" }, "sha512-kTdfRcSiDfQca/y9QIkng02avJ+NCaQvrMejlsB3RRv5sE9rRoeBPISaZpKxHELzRxZyLvNts1P27W3wV+8geQ=="],
+
+    "@workbench/hub/@corbits/mailbox/hono-openapi": ["hono-openapi@1.3.1", "", { "peerDependencies": { "@hono/standard-validator": "^0.2.0", "@standard-community/standard-json": "^0.3.5", "@standard-community/standard-openapi": "^0.2.9", "@types/json-schema": "^7.0.15", "hono": "^4.11.2", "openapi-types": "^12.1.3" }, "optionalPeers": ["@hono/standard-validator", "hono"] }, "sha512-NLVeVkhKZ3drmQNEIPac8HX8Y54uf1hJAgIM/7MfDsaeVVmB+QILWQxx5x3R3NvRHgedcbEbOCGY2uR7WQYyMw=="],
+
 
     "cross-spawn/which/isexe": ["isexe@2.0.0", "", {}, "sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw=="],
 

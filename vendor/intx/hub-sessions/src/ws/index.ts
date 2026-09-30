@@ -1,5 +1,6 @@
 export {
   createSidecarRouter,
+  SidecarIdentityValidationError,
   type SidecarRouter,
   type SidecarRouterConfig,
   type SenderDeploySettledOutcome,
@@ -7,6 +8,7 @@ export {
   type OAuthLoginGateOutcome,
   type OAuthLoginRequestOutcome,
   DEFAULT_OAUTH_LOGIN_TIMEOUT_MS,
+  type AllocatedSenderDeployAttempt,
   type SidecarConnection,
   type SidecarAuthIdentity,
   type SidecarAuthenticator,
