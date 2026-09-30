@@ -12,7 +12,7 @@ import { Composer } from "@/chat/composer";
 import { Markdown } from "@/chat/markdown";
 import { MessageAttachments } from "@/chat/message-attachments";
 import { resolveMessagePackage } from "@/chat/deployable-package";
-import { stripFromHeader, stripRoster } from "@/chat/workbench-roster";
+import { stripRoster } from "@/chat/workbench-roster";
 import {
   ancestorChain,
   listWorkbenchParticipants,
@@ -45,7 +45,7 @@ import { workbenchKeys } from "../chat-path";
 import { tenantKeys } from "../query-client";
 import { recordLastWorkbenchId } from "../last-workbench";
 import { PROVIDER_SETTINGS_PATH, ProviderSkipBanner } from "../provider-skip-banner";
-import { useNavigate, useSessionUser } from "../navigation";
+import { useNavigate } from "../navigation";
 import { isClassifiedInferenceFailureText } from "@/chat/inference-failure";
 import { redeployWorkbenchAgent } from "../workbench-create";
 import { workbenchIdFromPath } from "../workbench-path";
@@ -95,7 +95,7 @@ function WorkbenchMessageRow({
   // see echoed back at them.
   const body =
     message.author === "me"
-      ? stripFromHeader(stripRoster(message.body))
+      ? stripRoster(message.body)
       : resolved?.kind === "agent"
         ? stripNameLine(message.body)
         : message.body;
@@ -246,7 +246,6 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
 
   const workerName = useWorkerName(workbenchTenantId);
   const roster = nameWorkers(participants.data ?? [], workerName.name);
-  const sessionUser = useSessionUser();
   const messages = timeline.data ?? [];
   // The worker's first reply names it; the stored name wins from then on, and
   // a bench that already has one is never overwritten.
@@ -284,7 +283,6 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
       sendToWorkbench({
         workbenchTenantId,
         participants: roster,
-        ...(sessionUser !== undefined ? { senderName: sessionUser.name } : {}),
         content,
         ...(inReplyTo !== undefined ? { inReplyTo } : {}),
       }),

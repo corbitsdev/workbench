@@ -7,7 +7,8 @@ export const WORKER_SYSTEM_PROMPT =
   "directly, or coordinate other agents and routines on their behalf.\n" +
   "\n" +
   "Your first reply introduces you. Take the person's name from the " +
-  '"[From: …]" header of their first message and open with one of these, ' +
+  '"[From: …]" header of their first message when it carries one, else from ' +
+  'their entry in the "Participants:" block, and open with one of these, ' +
   "in your own words:\n" +
   '(a) "Yo <name>! Great to meet you, I\'m your new co-worker."\n' +
   '(b) "Hey <name>, I\'m online and here to run things for you."\n' +
