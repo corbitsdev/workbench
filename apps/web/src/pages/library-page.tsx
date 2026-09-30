@@ -57,6 +57,7 @@ import { Link } from "../navigation";
 import { ARTIFACTS_PATH_PREFIX } from "../path-ids";
 import { tenantKeys } from "../query-client";
 import { useBenchActivity } from "../shell/bench-activity";
+import { useFromBench } from "../shell/page-crumbs";
 import {
   artifactUploadToast,
   copyArtifactLinks,
@@ -595,7 +596,9 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   // recorded one — resolved via the same activity listing other
   // bench-scoped surfaces already fetch.
   const activity = useBenchActivity(selectedTenantId);
-  const lastWorkbenchId = selectedTenantId === null ? null : readLastWorkbenchId(selectedTenantId);
+  const fromBench = useFromBench();
+  const lastWorkbenchId =
+    fromBench ?? (selectedTenantId === null ? null : readLastWorkbenchId(selectedTenantId));
   const workbenchScope =
     activity.kind === "ready"
       ? resolveLibraryWorkbenchScope(activity.workbenches, lastWorkbenchId)

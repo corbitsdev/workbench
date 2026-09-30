@@ -53,6 +53,7 @@ import { useNavigate } from "../navigation";
 import { tenantKeys } from "../query-client";
 import { useAPIQuery } from "../api";
 import { INSIGHTS_PATH_PREFIX, INSIGHTS_RUNS_PATH } from "../path-ids";
+import { benchLink, useFromBench } from "../shell/page-crumbs";
 import { StageTopBar } from "../shell/stage-top-bar";
 import {
   listScheduledWorkflows,
@@ -745,7 +746,11 @@ function InsightsWorkbenchPage({
 }
 
 export function InsightsRoute({ path }: { readonly path?: string }) {
-  const { selectedTenantId } = useBench();
+  const { selectedTenantId: benchTenantId } = useBench();
+  // A run opened from a workbench's Insights carries `from=`, so it reads
+  // that workbench's tenant rather than the bench.
+  const fromBench = useFromBench();
+  const selectedTenantId = fromBench ?? benchTenantId;
   const navigate = useNavigate();
   const currentPath =
     path ?? (typeof window !== "undefined" ? window.location.pathname : INSIGHTS_PATH_PREFIX);
@@ -775,8 +780,10 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
     return (
       <InsightsWorkbenchPageRoute
         workbenchId={workbenchId}
-        benchTenantId={selectedTenantId}
-        onOpenRun={(id) => navigate(`${INSIGHTS_RUNS_PATH}/${encodeURIComponent(id)}`)}
+        benchTenantId={benchTenantId}
+        onOpenRun={(id) =>
+          navigate(benchLink(`${INSIGHTS_RUNS_PATH}/${encodeURIComponent(id)}`, workbenchId))
+        }
       />
     );
   }

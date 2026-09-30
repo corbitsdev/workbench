@@ -19,6 +19,7 @@ import { useGlobalRoutines, useRoutineActions } from "../global-routines";
 import type { GlobalRoutineRow } from "../global-routines";
 import { routineDetailPath } from "../global-routines";
 import { Link } from "../navigation";
+import { benchLink, useFromBench } from "../shell/page-crumbs";
 import { StageTopBar } from "../shell/stage-top-bar";
 
 export type { GlobalRoutineRow } from "../global-routines";
@@ -39,6 +40,7 @@ export function GlobalRoutinesList({
   readonly onToggleEnabled: (row: GlobalRoutineRow, enabled: boolean) => void;
   readonly onRunNow: (row: GlobalRoutineRow) => Promise<void>;
 }) {
+  const fromBench = useFromBench();
   if (rows.length === 0) {
     return (
       <RichEmptyState
@@ -70,12 +72,14 @@ export function GlobalRoutinesList({
               <TableCell>
                 <span className="flex flex-col">
                   <Link
-                    to={routineDetailPath(row.definition.definitionId)}
+                    to={benchLink(routineDetailPath(row.definition.definitionId), fromBench)}
                     className="text-sm font-medium"
                   >
                     {row.definition.name}
                   </Link>
-                  <span className="text-xs text-[var(--ui-fg-muted)]">{row.tenantName}</span>
+                  {row.tenantName === "" ? null : (
+                    <span className="text-xs text-[var(--ui-fg-muted)]">{row.tenantName}</span>
+                  )}
                 </span>
               </TableCell>
               <TableCell>
