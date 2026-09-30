@@ -16,8 +16,6 @@ export const WORKFLOW_SOURCE_DIRECTORS = `./${WORKFLOW_SOURCE_DIRECTORS_PATH}`;
 export const WORKFLOW_SOURCE_MANIFEST_PATH = "package.json";
 /** The JSON projection of the definition, for readers. */
 export const WORKFLOW_SOURCE_DEFINITION_PATH = "definition.json";
-/** The path a pre-retirement asset carried its definition at. */
-export const RETIRED_WORKFLOW_ENVELOPE_PATH = "workflow.json";
 
 export type WorkflowSourceTree = Readonly<Record<string, string>>;
 

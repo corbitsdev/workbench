@@ -8,7 +8,6 @@
 // workbench Worker binds it by walking up, so two workbenches share one Exa
 // row and a second workspace sees none of it.
 import { MCP_NO_TOKEN_SENTINEL, MCP_STREAMABLE_HTTP_PROVIDER_KEY } from "@corbits/credential-mcp";
-import { reportError } from "@corbits/error-sink";
 import {
   EXA_MCP_SERVER,
   MCP_SERVER_CATALOG,
@@ -344,52 +343,6 @@ export async function removeMcpServer(
   });
 }
 
-/** Legacy workbench-scoped MCP rows predate the workspace catalog: before it,
- * every workbench stored its own Exa. Moves the keyless (`auth === "none"`)
- * rows up to the workspace — their sentinel secret is reconstructible, so
- * re-adding rediscovers without touching a real credential — deduped by
- * handle, then drops the workbench rows they came from. A token row carries
- * a secret the client may never read, so it stays where it is: orphaned but
- * untouched (accepted — the next redeploy binds the workspace catalog and a
- * leftover row simply stops taking effect). */
-export async function migrateWorkbenchMcpCatalogToWorkspace(
-  workbenchTenantId: string,
-  workspaceTenantId: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<void> {
-  if (workbenchTenantId === workspaceTenantId) return;
-  const [workbenchServers, workspaceServers] = await Promise.all([
-    listMcpServers(workbenchTenantId, fetchImpl),
-    listMcpServers(workspaceTenantId, fetchImpl),
-  ]);
-  const workspaceHandles = new Set(workspaceServers.map((server) => server.handle));
-  for (const server of workbenchServers) {
-    // Only a keyless row can move without its secret; a token row stays
-    // orphaned on the workbench (see above).
-    if (server.auth !== "none") continue;
-    if (!workspaceHandles.has(server.handle)) {
-      const moved = await addMcpServer(
-        {
-          tenantId: workspaceTenantId,
-          handle: server.handle,
-          name: server.name,
-          url: server.url,
-        },
-        fetchImpl,
-      );
-      workspaceHandles.add(moved.handle);
-    }
-    await removeMcpServer(
-      {
-        tenantId: workbenchTenantId,
-        credentialId: server.credentialId,
-        providerId: server.providerId,
-      },
-      fetchImpl,
-    );
-  }
-}
-
 /** Ensures that land on one workspace (two workbench Workers deploying, a
  * StrictMode double-invoke) run one after another, so a later one sees the
  * Exa an earlier one added instead of adding its own. */
@@ -399,15 +352,13 @@ const ensureQueue = new Map<string, Promise<readonly McpServer[]>>();
  * the workspace (top-level) tenant, then left alone so a later removal is
  * not undone by the next start. Callers pass any tenant id — a workbench id
  * resolves up to its workspace — and each workbench Worker binds the shared
- * row by walking up. Also moves that caller's legacy workbench rows up,
- * best-effort: a failed cleanup must not block deploying Worker with the
- * workspace catalog that is already correct. */
+ * row by walking up. */
 export async function ensureBuiltInMcpServers(
   tenantId: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<readonly McpServer[]> {
   const workspaceTenantId = await resolveWorkspaceTenantId(tenantId, fetchImpl);
-  const run = () => runEnsureBuiltInMcpServers(tenantId, workspaceTenantId, fetchImpl);
+  const run = () => runEnsureBuiltInMcpServers(workspaceTenantId, fetchImpl);
   const previous = ensureQueue.get(workspaceTenantId);
   // A failed earlier ensure already rejected to its own caller; this one runs regardless.
   const flight = previous === undefined ? run() : previous.then(run, run);
@@ -420,15 +371,9 @@ export async function ensureBuiltInMcpServers(
 }
 
 async function runEnsureBuiltInMcpServers(
-  tenantId: string,
   workspaceTenantId: string,
   fetchImpl: typeof fetch,
 ): Promise<readonly McpServer[]> {
-  try {
-    await migrateWorkbenchMcpCatalogToWorkspace(tenantId, workspaceTenantId, fetchImpl);
-  } catch (cause) {
-    reportError(cause, { operation: "mcp_servers_catalog_migration" });
-  }
   const existing = await listMcpServers(workspaceTenantId, fetchImpl);
   if (existing.some((server) => server.handle === EXA_MCP_SERVER.handle)) return existing;
   const added = await addMcpServer(

@@ -11,5 +11,10 @@
     "rootDir": "../.."
   },
   "include": ["src"],
-  "exclude": []
+  "exclude": [],
+  "references": [
+    {
+      "path": "../error-sink/tsconfig.src.json"
+    }
+  ]
 }

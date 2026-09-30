@@ -8,5 +8,10 @@
     "emitDeclarationOnly": true,
     "outDir": "dist",
     "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
-  }
+  },
+  "references": [
+    {
+      "path": "../error-sink/tsconfig.src.json"
+    }
+  ]
 }

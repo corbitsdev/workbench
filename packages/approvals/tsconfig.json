@@ -11,16 +11,5 @@
     "rootDir": "../.."
   },
   "include": ["src"],
-  "exclude": [],
-  "references": [
-    {
-      "path": "../../vendor/intx/db/tsconfig.src.json"
-    },
-    {
-      "path": "../../vendor/intx/hub-api/tsconfig.src.json"
-    },
-    {
-      "path": "../../vendor/intx/types/tsconfig.src.json"
-    }
-  ]
+  "exclude": []
 }
