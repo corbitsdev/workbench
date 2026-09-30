@@ -22,6 +22,13 @@ import type { McpServer } from "./mcp-servers";
 import { resolveExistingOffering } from "./onboarding/provider-connect-step";
 import { isValidSlug, slugify } from "@/lib/slug";
 
+/** A non-default tool permission (`ask` is the stock default) to carry onto
+ * a redeployed run. */
+export type ToolEffect = {
+  readonly resource: string;
+  readonly effect: "allow" | "deny";
+};
+
 export class AgentDeployError extends Error {}
 
 const TenantDomainShape = type({ domain: "string" });
@@ -51,6 +58,9 @@ export function buildAgentDefinitionJson(args: {
    * requirements Worker carries, so remote tools stay ask-gated except the
    * read-only ones the server itself annotates. */
   mcpServers: readonly McpServerDeployment[];
+  /** Tool permissions the person set on the previous run, re-declared so the
+   * new run materializes them at its first trigger. */
+  toolEffects: readonly ToolEffect[];
 }): unknown {
   const stepId = "run";
   return {
@@ -70,6 +80,12 @@ export function buildAgentDefinitionJson(args: {
       artifactToolsCredentialUseRequirement(args.hubCredentialId),
       memoryToolsCredentialUseRequirement(args.hubCredentialId),
       ...args.mcpServers.map((server) => mcpServerCredentialUseRequirement(server.credentialId)),
+      ...args.toolEffects.map((tool) => ({
+        resource: tool.resource,
+        action: "invoke",
+        effect: tool.effect,
+        source: "creator",
+      })),
     ],
     steps: {
       [stepId]: {
@@ -106,6 +122,7 @@ async function renderAgentSourceTree(
     readonly declaredSources: readonly { readonly provider: string; readonly model: string }[];
     readonly hubCredentialId: string;
     readonly mcpServers: readonly McpServerDeployment[];
+    readonly toolEffects: readonly ToolEffect[];
   },
 ): Promise<Record<string, string>> {
   const { WORKER_BUNDLE_BUILD_EXPORT, WORKER_DIRECTORS_BUNDLE, WORKER_WORKFLOW_BUNDLE } =
@@ -134,6 +151,7 @@ async function renderAgentSourceTree(
         declaredSources: args.declaredSources,
         hubCredentialId: args.hubCredentialId,
         mcpServers: args.mcpServers,
+        toolEffects: args.toolEffects,
       }),
     ),
   });
@@ -177,6 +195,9 @@ export type NewAgentInput = {
    * row is created targeting this agent's definition, so the ticker mails
    * its live run on that cadence. */
   readonly schedule?: string;
+  /** Tool permissions to re-declare on a redeploy, as creator-sourced grant
+   * requirements. */
+  readonly toolEffects?: readonly ToolEffect[];
 };
 
 /** Maps requested workspace-catalog handles to deployments. Fails closed on
@@ -335,6 +356,7 @@ export async function deployAgentSource(
           fetchImpl,
         ),
         mcpServers,
+        toolEffects: args.input.toolEffects ?? [],
       }),
     entry: "./workflow.js",
     sourceOfferingIds: offering.sourceOfferingIds,
