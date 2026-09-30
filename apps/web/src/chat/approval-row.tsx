@@ -2,7 +2,8 @@
 // workbench workbench's info column and the chat transcript, so a person can
 // answer an agent's ask wherever they are looking when it lands.
 
-import { Button, formatRelativeTime, toast } from "@corbits/react-ui";
+import { Button, formatRelativeTime } from "@corbits/react-ui";
+import { toast } from "@corbits/react-ui/ui/toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { approveApproval, rejectApproval } from "../api";

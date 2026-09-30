@@ -1,5 +1,9 @@
-import { artifactKindLabel, CommandPalette, useCommandShortcut } from "@corbits/react-ui";
-import type { CommandPaletteGroup } from "@corbits/react-ui";
+import { artifactKindLabel } from "@corbits/react-ui";
+import {
+  CommandPalette,
+  useCommandShortcut,
+  type CommandPaletteGroup,
+} from "@corbits/react-ui/ui/command-palette";
 import { listWorkbenches } from "@/chat/workbench-tenants";
 import { libraryArtifactPath } from "@/library";
 import { reportError } from "@corbits/error-sink";

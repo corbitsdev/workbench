@@ -1,7 +1,7 @@
 // Connects one provider credential through the stock catalog routes and
 // derives the single offering it mints; a tenant that already resolves an
 // offering skips this step (see `resolveExistingOffering`).
-import { Button, Input, RadioGroup, RadioOption, Select } from "@corbits/react-ui";
+import { Button, Input, Select } from "@corbits/react-ui";
 import { Cpu, Key, LinkSimple } from "@/lib/icons";
 import {
   cancelProviderLogin,
@@ -456,12 +456,9 @@ export function ProviderConnectStep({
 
   return (
     <form className="onboarding-credential-form" onSubmit={(event) => void handleSubmit(event)}>
-      <RadioGroup
-        name="provider"
-        label="Inference provider"
-        value={selected ?? ""}
-        onValueChange={selectOption}
-      >
+      {/* Native radios until react-ui ships its RadioGroup again. */}
+      <fieldset role="radiogroup" className="onboarding-provider-group">
+        <legend>Inference provider</legend>
         {PROVIDER_OPTIONS.map((candidate) => {
           const rowId = `provider-${candidate.id}`;
           const RowIcon = candidate.local
@@ -471,7 +468,15 @@ export function ProviderConnectStep({
               : Key;
           return (
             <div key={candidate.id} className="onboarding-provider-row">
-              <RadioOption value={candidate.id} id={rowId} describedBy={`${rowId}-desc`} />
+              <input
+                type="radio"
+                name="provider"
+                id={rowId}
+                value={candidate.id}
+                checked={selected === candidate.id}
+                onChange={() => selectOption(candidate.id)}
+                aria-describedby={`${rowId}-desc`}
+              />
               <span className="onboarding-provider-icon" aria-hidden="true">
                 <RowIcon size={16} />
               </span>
@@ -484,7 +489,7 @@ export function ProviderConnectStep({
             </div>
           );
         })}
-      </RadioGroup>
+      </fieldset>
       {option === undefined ? null : oauthProvider !== undefined ? (
         <>
           {modelPicker}

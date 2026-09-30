@@ -1,4 +1,11 @@
-import { Avatar, AvatarStack, type AvatarStackItem, type AvatarTone } from "@corbits/react-ui";
+import {
+  Avatar,
+  AvatarStack,
+  type AvatarSize,
+  type AvatarStackItem,
+  type AvatarStatus,
+  type AvatarTone,
+} from "@corbits/react-ui";
 
 import { agentInitials } from "@/chat/threads-api";
 
@@ -61,18 +68,8 @@ export function resolveAvatarFill(
   return { kind: "generated", className: avatarClassForPrincipal(principalId) };
 }
 
-export type CorbitAvatarSize = "xs" | "sm" | "md" | "lg" | "xl" | number;
-export type AvatarStatus = "working" | "ready" | "idle";
-
-// react-ui ships sm/md/lg only; the wrapper sizes xs/xl/numeric and the
-// mark fills it.
-const SIZE_PX = { xs: 16, sm: 24, md: 32, lg: 40, xl: 80 } as const;
-
-function baseSize(px: number): "sm" | "md" | "lg" {
-  if (px <= 24) return "sm";
-  if (px <= 32) return "md";
-  return "lg";
-}
+export type CorbitAvatarSize = AvatarSize;
+export type { AvatarStatus };
 
 export interface WorkbenchAvatarProps {
   /** Workers are rounded squares, people circles. */
@@ -92,28 +89,17 @@ export function WorkbenchAvatar({
   status,
   className,
 }: WorkbenchAvatarProps) {
-  const px = typeof size === "number" ? size : SIZE_PX[size];
-  const radius = kind === "person" ? "50%" : `${Math.round(px * 0.28)}px`;
-  const working = kind === "worker" && status === "working";
   return (
-    <span
-      className={["wb-av", className].filter(Boolean).join(" ")}
-      data-kind={kind}
-      {...(status === undefined ? {} : { "data-status": status })}
-      style={{ width: px, height: px, ["--av-r" as string]: radius }}
-    >
-      <Avatar
-        initials={agentInitials(name)}
-        label={name}
-        tone={tone}
-        size={baseSize(px)}
-        className="size-full! rounded-(--av-r)"
-      />
-      {working ? <span className="wb-av-orbit" aria-hidden="true" /> : null}
-      {status === undefined || working ? null : (
-        <span className={`wb-av-st wb-av-st--${status}`} aria-hidden="true" />
-      )}
-    </span>
+    <Avatar
+      initials={agentInitials(name)}
+      label={name}
+      tone={tone}
+      size={size}
+      shape={kind === "person" ? "circle" : "square"}
+      orbit={kind === "worker" && status === "working"}
+      {...(status === undefined ? {} : { status })}
+      {...(className === undefined ? {} : { className })}
+    />
   );
 }
 

@@ -92,7 +92,7 @@ export function VoiceOverlay({
       >
         <CorbitAvatar
           ariaLabel={name}
-          size={56}
+          size="xl"
           color={avatarColorForPrincipal(worker?.id ?? name)}
         />
       </div>

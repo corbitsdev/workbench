@@ -2,7 +2,8 @@
 // The Agent card was removed — nothing there could change until a hub
 // preference store exists to write it to.
 
-import { Badge, Button, toast } from "@corbits/react-ui";
+import { Badge, Button } from "@corbits/react-ui";
+import { toast } from "@corbits/react-ui/ui/toast";
 import { ChatCircleDots, Copy, SignOut } from "@/lib/icons";
 import { useQuery } from "@tanstack/react-query";
 

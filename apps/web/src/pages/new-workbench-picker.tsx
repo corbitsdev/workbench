@@ -1,7 +1,8 @@
 // A new workbench starts from one message: creating it deploys its agent and
 // posts the message so the worker starts.
 
-import { Button, toast } from "@corbits/react-ui";
+import { Button } from "@corbits/react-ui";
+import { toast } from "@corbits/react-ui/ui/toast";
 import { WorkbenchLoadingState } from "@/chat";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";

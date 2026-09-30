@@ -1,8 +1,8 @@
 // No drafting assist or per-agent model/skills pin: the routes that backed
 // those were removed from the hub.
 
+import { Button, IntakeForm, SelectionCheckbox, Textarea } from "@corbits/react-ui";
 import {
-  Button,
   Dialog,
   DialogBody,
   DialogContent,
@@ -10,10 +10,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  IntakeForm,
-  SelectionCheckbox,
-  Textarea,
-} from "@corbits/react-ui";
+} from "@corbits/react-ui/ui/dialog";
 import type { IntakeField } from "@corbits/react-ui";
 import { useState } from "react";
 

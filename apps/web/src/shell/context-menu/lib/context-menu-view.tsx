@@ -5,7 +5,7 @@ import {
   MenuLabel,
   MenuSeparator,
   MenuTrigger,
-} from "@corbits/react-ui";
+} from "@corbits/react-ui/ui/menu";
 
 import { restoreFocus } from "./focus-restore";
 import type { ContextMenu } from "./menu";

@@ -1,4 +1,5 @@
-import { ConfirmButton, toast } from "@corbits/react-ui";
+import { ConfirmButton } from "@corbits/react-ui";
+import { toast } from "@corbits/react-ui/ui/toast";
 import type { GrantEffect } from "@intx/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 

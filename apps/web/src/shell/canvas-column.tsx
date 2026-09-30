@@ -8,12 +8,10 @@ import {
   Button,
   EmptyState,
   ProfileCard,
-  toast,
-  type ProfileCardAction,
-  // vendor noun: channel — @corbits/react-ui's own `ProfileCardChannel`,
-  // published from a separate repo, not part of this rename.
+  type ProfileCardAction, // vendor noun: channel — @corbits/react-ui's own `ProfileCardChannel`, // published from a separate repo, not part of this rename.
   type ProfileCardChannel,
 } from "@corbits/react-ui";
+import { toast } from "@corbits/react-ui/ui/toast";
 import { ArtifactRenderer, ArtifactTextEditor, type ArtifactSaveState } from "@/library";
 import type { ProfileSubject } from "@/chat";
 import { ArrowsIn, ArrowsOut, ArrowSquareOut, CaretLeft, UserCircle, X } from "@/lib/icons";

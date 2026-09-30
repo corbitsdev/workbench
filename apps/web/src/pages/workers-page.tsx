@@ -2,7 +2,8 @@
 // the sidebar's "+" menu.
 
 import { useState } from "react";
-import { Button, RichEmptyState, toast } from "@corbits/react-ui";
+import { Button, RichEmptyState } from "@corbits/react-ui";
+import { toast } from "@corbits/react-ui/ui/toast";
 import { Plus, Robot } from "@/lib/icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { reportError } from "@corbits/error-sink";
@@ -173,7 +174,7 @@ export function WorkersRosterList({
                 className="absolute inset-0"
               />
               <span className="flex min-w-0 items-center gap-3">
-                <WorkbenchAvatar kind="worker" name={agent.name} size={40} status={status.tone} />
+                <WorkbenchAvatar kind="worker" name={agent.name} size="lg" status={status.tone} />
                 <span className="min-w-0">
                   <span className="block text-[14.5px] font-extrabold">{agent.name}</span>
                   <WorkerRole

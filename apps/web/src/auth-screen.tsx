@@ -2,8 +2,7 @@
 // seeds a default dev account, and hosted deployments already have accounts —
 // with creating an account one click away in the form's footer.
 
-import { Button } from "@corbits/react-ui";
-import { LoginForm } from "@corbits/react-ui/blocks/login/login-form";
+import { Button, LoginForm } from "@corbits/react-ui";
 import { useState } from "react";
 
 import { AuthLayout } from "./auth/auth-layout";

@@ -800,74 +800,7 @@ select:disabled,
   font-weight: 650;
 }
 
-.wb-av {
-  position: relative;
-  display: inline-flex;
-  flex: 0 0 auto;
-}
-
-.wb-av-st {
-  position: absolute;
-  right: -3px;
-  bottom: -3px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  border: 2px solid var(--background);
-  background: var(--muted-foreground);
-}
-
-.wb-av-st--ready {
-  background: var(--success);
-}
-
-.wb-av-st--idle {
-  background: color-mix(in srgb, var(--muted-foreground) 50%, transparent);
-}
-
-/* The arc travels a ring concentric with the mark. The conic angle is what
-   animates, so the masked shape itself never rotates. */
-@property --orbit-a {
-  syntax: "<angle>";
-  inherits: false;
-  initial-value: 0deg;
-}
-
-.wb-av-orbit {
-  position: absolute;
-  inset: -3.5px;
-  padding: 1.5px;
-  pointer-events: none;
-  border-radius: calc(var(--av-r) + 3.5px);
-  background: conic-gradient(
-    from var(--orbit-a),
-    transparent 0deg,
-    color-mix(in srgb, var(--primary) 20%, transparent) 20deg,
-    var(--primary) 130deg,
-    transparent 131deg 360deg
-  );
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  animation: wb-av-orbit 1.4s linear infinite;
-}
-
-.wb-av[data-kind="person"] .wb-av-orbit {
-  border-radius: 50%;
-}
-
-@keyframes wb-av-orbit {
-  to {
-    --orbit-a: 360deg;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .wb-av-orbit {
-    animation: none;
-  }
   .shell-ch-row {
     transition: none;
   }

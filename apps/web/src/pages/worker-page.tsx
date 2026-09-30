@@ -2,7 +2,8 @@
 // and the workbench it lives on.
 
 import { useState } from "react";
-import { Button, Card, CardDescription, CardTitle, PageShell, toast } from "@corbits/react-ui";
+import { Button, Card, CardDescription, CardTitle, PageShell } from "@corbits/react-ui";
+import { toast } from "@corbits/react-ui/ui/toast";
 import { reportError } from "@corbits/error-sink";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { GrantEffect } from "@intx/types";
@@ -326,7 +327,7 @@ export function WorkerRoute({ agentId }: { readonly agentId: string }) {
                       <WorkbenchAvatar
                         kind="worker"
                         name={agent.name}
-                        size={56}
+                        size="xl"
                         status={status.tone}
                       />
                       <div className="min-w-0 flex-1">

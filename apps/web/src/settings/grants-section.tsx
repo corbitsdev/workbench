@@ -4,13 +4,6 @@
 import {
   Badge,
   Button,
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
   EmptyState,
   FilterBar,
   SettingsPanel,
@@ -20,8 +13,17 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  toast,
 } from "@corbits/react-ui";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@corbits/react-ui/ui/dialog";
+import { toast } from "@corbits/react-ui/ui/toast";
 import { grantEffects, grantOrigins } from "@intx/types";
 import type { GrantEffect, GrantOrigin } from "@intx/types";
 import { useQuery, useQueryClient } from "@tanstack/react-query";

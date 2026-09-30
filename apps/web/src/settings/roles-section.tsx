@@ -1,13 +1,6 @@
 import {
   Badge,
   Button,
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
   EmptyState,
   Input,
   SettingsPanel,
@@ -18,6 +11,15 @@ import {
   TableHeader,
   TableRow,
 } from "@corbits/react-ui";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@corbits/react-ui/ui/dialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
