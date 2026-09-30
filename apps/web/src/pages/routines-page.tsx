@@ -2,7 +2,7 @@
 // paused (`stopped`) ones. Run-now is the only write.
 import { EmptyState, RichEmptyState, RunNowButton } from "@corbits/react-ui";
 import { cronSentence } from "@corbits/workflows/client";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Clock } from "@/lib/icons";
 
 import { useGlobalRoutines, useRoutineActions } from "../global-routines";
@@ -57,6 +57,17 @@ function RoutineListRow({
   );
 }
 
+function WorkflowsLayout({ children }: { readonly children: ReactNode }) {
+  return (
+    <PageLayout
+      title="Workflows"
+      subtitle="Deployed workflows, when they run, and how the last run went."
+    >
+      {children}
+    </PageLayout>
+  );
+}
+
 export function GlobalRoutinesList({
   rows,
   onRunNow,
@@ -68,11 +79,13 @@ export function GlobalRoutinesList({
   const fromId = useFromBench();
   if (rows.length === 0) {
     return (
-      <RichEmptyState
-        icon={<Clock />}
-        title="No workflows yet"
-        description="A deployed workflow shows up here. Run it now from its row."
-      />
+      <WorkflowsLayout>
+        <RichEmptyState
+          icon={<Clock />}
+          title="No workflows yet"
+          description="A deployed workflow shows up here. Run it now from its row."
+        />
+      </WorkflowsLayout>
     );
   }
   const needle = query.trim().toLowerCase();
@@ -82,10 +95,7 @@ export function GlobalRoutinesList({
       .includes(needle),
   );
   return (
-    <PageLayout
-      title="Workflows"
-      subtitle="Deployed workflows, when they run, and how the last run went."
-    >
+    <WorkflowsLayout>
       <input
         className="routines-filter"
         placeholder="Filter workflows"
@@ -103,7 +113,7 @@ export function GlobalRoutinesList({
           />
         ))}
       </ul>
-    </PageLayout>
+    </WorkflowsLayout>
   );
 }
 
@@ -117,17 +127,17 @@ export function RoutinesRoute() {
       <StageTopBar crumbs={[{ label: "Workflows" }]} />
       <div className="stage-content flex min-h-0 flex-1 flex-col overflow-y-auto">
         {routinesQuery.kind === "loading" ? (
-          <div className="flex flex-1 items-center justify-center p-6">
+          <WorkflowsLayout>
             <EmptyState icon={<Clock />} title="Loading workflows…" />
-          </div>
+          </WorkflowsLayout>
         ) : routinesQuery.kind === "error" ? (
-          <div className="flex flex-1 items-center justify-center p-6">
+          <WorkflowsLayout>
             <RichEmptyState
               icon={<Clock />}
               title="Couldn't load workflows"
               description={routinesQuery.message}
             />
-          </div>
+          </WorkflowsLayout>
         ) : (
           <GlobalRoutinesList rows={rows} onRunNow={(row) => actions.runNow(row)} />
         )}

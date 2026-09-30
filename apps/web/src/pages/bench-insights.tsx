@@ -1,7 +1,7 @@
 // The bench-scoped Insights dashboard: every number is computed from the
 // stock `GET /workflows/runs` listing of the bench's own tenant.
 
-import { Badge, PageShell, RichEmptyState, Skeleton, RUN_STATUS_TONE } from "@corbits/react-ui";
+import { Badge, RichEmptyState, Skeleton, RUN_STATUS_TONE } from "@corbits/react-ui";
 import { useState, type ReactNode } from "react";
 
 import { useAPIQuery } from "../api";
@@ -17,6 +17,7 @@ import {
 } from "../insights-stats";
 import { formatWhen } from "./insights-page";
 import { useFromBench } from "../shell/page-crumbs";
+import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { workbenchPath } from "../workbench-path";
 
@@ -207,13 +208,9 @@ export function BenchInsights({
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar crumbs={crumbs} actions={rangeSeg} />
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <PageShell width="full" className="page-fill">
-          <div className="bi-head">
-            <h1>Insights</h1>
-            <p>What happened in {title}.</p>
-          </div>
+        <PageLayout title="Insights" subtitle={`What happened in ${title}.`}>
           {body}
-        </PageShell>
+        </PageLayout>
       </div>
     </div>
   );

@@ -4,13 +4,31 @@
   display: none;
 }
 
+/* Desktop: the toggle sits in the page's top bar, centred with the title. */
+.stage-sidebar-toggle {
+  flex: none;
+  align-self: center;
+  margin-left: -6px;
+}
+
+.shell-frame[data-sidebar-collapsed="true"] .shell-sidebar {
+  display: none;
+}
+
+.shell-frame[data-sidebar-collapsed="true"] .shell-main {
+  margin-left: 8px;
+}
+
 @media (max-width: 860px) {
   .shell-sidebar-toggle {
     display: inline-flex;
     position: fixed;
-    top: 0.5rem;
+    top: 10px;
     left: 0.5rem;
     z-index: 30;
+  }
+  .stage-sidebar-toggle {
+    display: none;
   }
   .shell-frame .stage-top-bar {
     padding-left: 3rem;
