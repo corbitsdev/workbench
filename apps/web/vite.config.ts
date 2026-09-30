@@ -1,6 +1,5 @@
-// The build lands in apps/web/dist with root-relative asset URLs; point the
-// hub's HUB_STATIC_DIR at that directory and the interface is served from the
-// hub's own origin, so every /api call is same-origin with no CORS setup.
+// The build lands in apps/web/dist with root-relative asset URLs. The hub
+// serves no static files; e2e/lib/browser.ts serves dist itself.
 //
 // `vite dev` proxies /api to a locally running hub so the interface can be
 // developed against real data without a build step.

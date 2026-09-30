@@ -21,9 +21,9 @@ native tenant middleware.
 - There are no local `src/*-mount.ts` wiring helpers: each extension's
   routes mount directly in `src/index.ts` with the shared DB
   handle/config passed inline at the `app.route(...)` call site.
-- Serves the built `apps/web` SPA from its own origin
-  (`HUB_STATIC_DIR` points at `apps/web/dist`), so every `/api` call the
-  interface makes is same-origin.
+- Serves no static files. In dev, `vite dev` (apps/web) serves the SPA and
+  proxies `/api` to the hub; in e2e, `e2e/lib/browser.ts` serves the built
+  `apps/web/dist` itself, in front of the hub, on one origin.
 - `credential-expiry-sweep.ts`, `workflow-scheduler.ts`, and
   `inbox-unsnooze-sweep.ts` are host-level periodic sweeps wired at boot,
   alongside the route mounts; `cron-due.ts` is a re-export seam onto

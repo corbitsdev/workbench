@@ -2,7 +2,7 @@
   "name": "@workbench/web",
   "version": "0.0.1",
   "private": true,
-  "description": "Single-page interface for the workbench: every page and route lives here, composed from the published component library, and builds to a static bundle the hub serves from its own origin (point HUB_STATIC_DIR at apps/web/dist)",
+  "description": "Single-page interface for the workbench: every page and route lives here, composed from the published component library, and builds to a static bundle in dist/",
   "license": "SEE LICENSE IN ../../LICENSE.md",
   "repository": {
     "type": "git",
