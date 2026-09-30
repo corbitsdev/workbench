@@ -5,14 +5,30 @@
 /** Placeholder title for an untitled / blank mint — never a prefab name. */
 export const NEW_WORKBENCH_TITLE = "New Workbench";
 
-/** Sidebar-friendly cap — long enough for a goal phrase, short enough to scan. */
-export const AUTO_WORKBENCH_TITLE_MAX = 40;
+/** Sidebar-friendly caps — a goal phrase that never truncates in the pill or sidebar. */
+export const AUTO_WORKBENCH_TITLE_MAX = 24;
+const AUTO_WORKBENCH_TITLE_MAX_WORDS = 4;
+
+const ARTICLES = new Set(["the", "a", "an"]);
+const TRAILING_STOPWORDS = new Set([
+  ...ARTICLES,
+  "for",
+  "and",
+  "or",
+  "of",
+  "to",
+  "in",
+  "on",
+  "with",
+  "my",
+  "our",
+]);
 
 const LEADING_FILLER =
   /^(?:(?:hey|hi|hello|so|ok|okay)[,\s]+)?(?:(?:can|could|would|will)\s+you\s+|please\s+|pls\s+|i(?:'d| would)? (?:like|want|need) (?:you )?to\s+)+(?:please\s+)?/iu;
 
-// First sentence or clause, filler stripped, first letter capitalised, cut at
-// a word boundary with an ellipsis when it still exceeds the cap.
+// First sentence or clause, filler and articles stripped, first letter
+// capitalised, cut to a few whole words — never an ellipsis.
 export function titleFromFirstMessage(
   message: string,
   maxLength: number = AUTO_WORKBENCH_TITLE_MAX,
@@ -22,15 +38,22 @@ export function titleFromFirstMessage(
     LEADING_FILLER,
     "",
   );
-  const cleaned = clause.replace(/[\s.,;:!?]+$/u, "");
-  if (cleaned.length === 0) return undefined;
-  const title = cleaned.charAt(0).toLocaleUpperCase() + cleaned.slice(1);
-  if (title.length <= maxLength) return title;
+  const words = clause
+    .replace(/[\s.,;:!?]+$/u, "")
+    .split(" ")
+    .filter((word) => word.length > 0 && !ARTICLES.has(word.toLowerCase()));
 
-  const sliced = title.slice(0, maxLength);
-  const lastSpace = sliced.lastIndexOf(" ");
-  const cut = lastSpace > Math.floor(maxLength / 2) ? sliced.slice(0, lastSpace) : sliced;
-  return `${cut.replace(/[\s.,;:!?]+$/u, "")}…`;
+  const kept: string[] = [];
+  for (const word of words.slice(0, AUTO_WORKBENCH_TITLE_MAX_WORDS)) {
+    if ([...kept, word].join(" ").length > maxLength) break;
+    kept.push(word);
+  }
+  if (kept.length === 0 && words[0] !== undefined) kept.push(words[0].slice(0, maxLength));
+  while (kept.length > 1 && TRAILING_STOPWORDS.has((kept.at(-1) ?? "").toLowerCase())) kept.pop();
+
+  const title = kept.join(" ").replace(/[\s.,;:!?]+$/u, "");
+  if (title.length === 0) return undefined;
+  return title.charAt(0).toLocaleUpperCase() + title.slice(1);
 }
 
 // `undefined` unless the workbench is still the generic placeholder, so

@@ -41,9 +41,17 @@ import { createFetchStockHub } from "../needs-converge";
 import { workbenchKeys } from "../chat-path";
 import { tenantKeys } from "../query-client";
 import { recordLastWorkbenchId } from "../last-workbench";
-import { ProviderSkipBanner } from "../provider-skip-banner";
+import { PROVIDER_SETTINGS_PATH, ProviderSkipBanner } from "../provider-skip-banner";
+import { useNavigate } from "../navigation";
+import { isClassifiedInferenceFailureText } from "@/chat/inference-failure";
 import { redeployWorkbenchAgent } from "../workbench-create";
 import { workbenchIdFromPath } from "../workbench-path";
+
+// A textarea placeholder can't ellipsize, so a long bench name is dropped.
+const PLACEHOLDER_NAME_MAX = 18;
+function messagePlaceholder(name: string | undefined): string {
+  return name !== undefined && name.length <= PLACEHOLDER_NAME_MAX ? `Message ${name}` : "Message";
+}
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
@@ -86,9 +94,17 @@ function WorkbenchMessageRow({
   const { pkg, renderedBody } = resolveMessagePackage(message.attachments, body);
   const own = message.author === "me";
   const time = new Date(message.at);
+  const navigate = useNavigate();
+  // The wire carries no error kind, so the existing preamble classifier decides.
+  const providerFailure = !own && isClassifiedInferenceFailureText(renderedBody);
   const content = (
     <>
       <Markdown text={renderedBody} />
+      {providerFailure ? (
+        <Button variant="link" size="sm" onClick={() => navigate(PROVIDER_SETTINGS_PATH)}>
+          Fix provider
+        </Button>
+      ) : null}
       <MessageAttachments
         tenantId={workbenchTenantId}
         attachments={message.attachments}
@@ -320,7 +336,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                 <Composer
                   placeholder={
                     startingAgent === undefined
-                      ? `Message ${tenant.data?.name ?? "this workbench"}`
+                      ? messagePlaceholder(tenant.data?.name)
                       : `${startingAgent.name} is starting…`
                   }
                   busy={send.isPending}
