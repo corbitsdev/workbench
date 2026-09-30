@@ -94,7 +94,12 @@ export function bootBrowserApp(): () => BrowserApp {
       },
     });
 
-    browser = await puppeteer.launch({ executablePath, headless: true });
+    // Ubuntu runners block Chrome's user-namespace sandbox via AppArmor.
+    browser = await puppeteer.launch({
+      executablePath,
+      headless: true,
+      args: process.env.CI === "true" ? ["--no-sandbox"] : [],
+    });
     const launched = browser;
     app = {
       origin,
