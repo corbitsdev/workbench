@@ -1,8 +1,14 @@
-// Thin mount: this file only adapts the app's bench-selection state and
-// the URL into the shape `@/settings`'s shell expects.
+// Thin mount: adapts the bench-selection state and the URL into the shape
+// `@/settings`'s shell expects, and presents it over whatever page is behind.
 
 import { flattenSettingsSections, resolveActiveSection, SettingsShell } from "@/settings";
-import { PageShell } from "@corbits/react-ui";
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@corbits/react-ui/ui/dialog";
 
 import { useBench } from "../bench-context";
 import { useSignOut } from "../navigation";
@@ -14,15 +20,17 @@ import {
 } from "../path-ids";
 import { resolveAppSettingsSectionGroups } from "../settings-groups";
 import { SettingsNav } from "./settings-nav";
-import { StageTopBar } from "../shell/stage-top-bar";
+import "./settings-dialog.css";
 import { useSettingsAccess } from "../settings-access";
 
-export function SettingsRoute({
+export function SettingsDialog({
   path,
   navigate,
+  onClose,
 }: {
   readonly path: string;
   readonly navigate: (to: string) => void;
+  readonly onClose: () => void;
 }) {
   const { selectedTenantId, selectedPrincipalId } = useBench();
   const onSignOut = useSignOut();
@@ -58,16 +66,19 @@ export function SettingsRoute({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <StageTopBar crumbs={[{ label: "Settings" }]} />
-      <div className="settings-page-head">
-        <h1>Settings</h1>
-        <p>Personal and shared, side by side.</p>
-      </div>
-      <div className="settings-layout min-h-0 flex-1">
-        <SettingsNav path={path} onNavigate={navigate} />
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <PageShell width="full" className="page-fill">
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogContent className="settings-dialog" aria-describedby={undefined}>
+        <DialogHeader className="settings-dialog-head">
+          <DialogTitle className="settings-dialog-title">Settings</DialogTitle>
+        </DialogHeader>
+        <div className="settings-layout settings-dialog-layout">
+          <SettingsNav path={path} onNavigate={navigate} />
+          <DialogBody className="settings-dialog-body">
             <SettingsShell
               sections={sections}
               activeId={activeSection?.id ?? null}
@@ -79,9 +90,9 @@ export function SettingsRoute({
                 ...(onSignOut !== undefined ? { onSignOut } : {}),
               }}
             />
-          </PageShell>
+          </DialogBody>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

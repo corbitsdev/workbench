@@ -6,7 +6,7 @@ import { Button, EmptyState } from "@corbits/react-ui";
 import { WorkbenchLoadingState } from "@/chat";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { BoldIconProvider, WarningCircle } from "@/lib/icons";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { AuthScreen } from "./auth-screen";
 import { BenchProvider } from "./bench-context";
@@ -18,7 +18,8 @@ import { OnboardingPage } from "./pages/onboarding-page";
 import { ProvisioningErrorPage } from "./pages/provisioning-error-page";
 import { createAppQueryClient } from "./query-client";
 import { Redirect } from "./redirect";
-import { APP_ROUTES, LOGIN_PATH, matchesRoute, ONBOARDING_PATH } from "./routes";
+import { SettingsDialog } from "./pages/settings-dialog";
+import { APP_ROUTES, LOGIN_PATH, matchesRoute, ONBOARDING_PATH, SETTINGS_PATH } from "./routes";
 import type { SessionState, SessionUser } from "./session";
 import { AppShell } from "./shell/app-shell";
 import { ComposerInsertionProvider } from "./shell/composer-insertion";
@@ -62,7 +63,13 @@ function Shell({
   // cache; wired to `onSignOut` so a session going invalid anywhere routes
   // the whole shell back to login, not just one stuck panel.
   const queryClient = useMemo(() => createAppQueryClient(onSignOut), [onSignOut]);
-  const route = APP_ROUTES.find((candidate) => matchesRoute(candidate.path, path));
+  // Settings is a dialog over the last page, so that page stays mounted
+  // behind it; a cold load of /settings falls back to /new.
+  const settingsOpen = matchesRoute(SETTINGS_PATH, path);
+  const [backdropPath, setBackdropPath] = useState(settingsOpen ? "/new" : path);
+  if (!settingsOpen && backdropPath !== path) setBackdropPath(path);
+  const pagePath = settingsOpen ? backdropPath : path;
+  const route = APP_ROUTES.find((candidate) => matchesRoute(candidate.path, pagePath));
   return (
     <QueryClientProvider client={queryClient}>
       <NavigationProvider navigate={navigate} onSignOut={onSignOut} user={user}>
@@ -70,9 +77,16 @@ function Shell({
           <ComposerInsertionProvider>
             <ShellChromeProvider path={path} navigate={navigate}>
               <CommandPaletteProvider path={path} navigate={navigate}>
-                <AppShell path={path} user={user} onSignOut={onSignOut}>
-                  {route === undefined ? <NotFoundPage /> : route.render(path, navigate)}
+                <AppShell path={pagePath} user={user} onSignOut={onSignOut}>
+                  {route === undefined ? <NotFoundPage /> : route.render(pagePath, navigate)}
                 </AppShell>
+                {settingsOpen ? (
+                  <SettingsDialog
+                    path={path}
+                    navigate={navigate}
+                    onClose={() => navigate(backdropPath)}
+                  />
+                ) : null}
               </CommandPaletteProvider>
             </ShellChromeProvider>
           </ComposerInsertionProvider>
