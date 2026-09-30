@@ -17,9 +17,11 @@ import { lazy, type ReactElement, type ReactNode } from "react";
 
 import {
   SKILLS_PATH_PREFIX,
+  WORKERS_PATH_PREFIX,
   WORKFLOWS_PATH_PREFIX,
   detailSlugFromPath,
   routineSegmentFromPath,
+  workerIdFromPath,
 } from "./path-ids";
 import { WORKBENCH_PATH_PREFIX, isWorkbenchPath } from "./workbench-path";
 
@@ -42,8 +44,11 @@ const WorkflowsRoute = lazy(async () => ({
 const ArtifactsRoute = lazy(async () => ({
   default: (await import("./pages/library-page")).LibraryRoute,
 }));
-const AgentsRoute = lazy(async () => ({
-  default: (await import("./pages/agents-page")).AgentsRoute,
+const WorkersRoute = lazy(async () => ({
+  default: (await import("./pages/workers-page")).WorkersRoute,
+}));
+const WorkerRoute = lazy(async () => ({
+  default: (await import("./pages/worker-page")).WorkerRoute,
 }));
 const SkillsRoute = lazy(async () => ({
   default: (await import("./pages/skills-page")).SkillsRoute,
@@ -79,9 +84,10 @@ export const SETTINGS_PATH = "/settings";
 // Not in `NAV_ROUTES`: only the "+" control and the palette reach it.
 export const NEW_WORKBENCH_PATH = "/new";
 
-// A path matches only when its last segment is a real slug, so
-// `/agents/wfd_1` resolves to the roster, not a detail screen.
 const SLUG_SEGMENT = "/:slug";
+
+// Addressed by the definition asset id, which is not slug-shaped.
+export const WORKER_DETAIL_PATH = `${WORKERS_PATH_PREFIX}/:worker`;
 
 export const SKILL_DETAIL_PATH = `${SKILLS_PATH_PREFIX}${SLUG_SEGMENT}`;
 
@@ -125,6 +131,7 @@ export function matchesRoute(routePath: string, path: string): boolean {
     const segment = routineSegmentFromPath(path);
     return segment !== null && !segment.includes("/");
   }
+  if (routePath === WORKER_DETAIL_PATH) return workerIdFromPath(path) !== null;
   if (routePath.endsWith(SLUG_SEGMENT)) {
     return slugForDetailRoute(routePath, path) !== null;
   }
@@ -132,7 +139,7 @@ export function matchesRoute(routePath: string, path: string): boolean {
     routePath === "/workflows" ||
     routePath === "/artifacts" ||
     routePath === "/insights" ||
-    routePath === "/agents" ||
+    routePath === WORKERS_PATH_PREFIX ||
     routePath === "/skills" ||
     routePath === SETTINGS_PATH
   ) {
@@ -150,7 +157,7 @@ const RETIRED_PREFIXES: readonly (readonly [string, string])[] = [
   ["/routines", "/workflows"],
   ["/files", "/artifacts"],
   ["/library", "/artifacts"],
-  ["/settings/agents", "/agents"],
+  ["/settings/agents", WORKERS_PATH_PREFIX],
   ["/settings/skills", "/skills"],
 ];
 
@@ -212,10 +219,20 @@ export const APP_ROUTES: readonly AppRoute[] = [
     render: (path: string) => <ArtifactsRoute path={path} />,
   },
   {
-    path: "/agents",
-    label: "Agents",
+    path: WORKER_DETAIL_PATH,
+    label: "Worker",
     icon: <Robot />,
-    render: () => <AgentsRoute />,
+    render: (path: string) => {
+      const id = workerIdFromPath(path);
+      if (id === null) throw new Error(`${WORKER_DETAIL_PATH} rendered for a path with no worker`);
+      return <WorkerRoute agentId={id} />;
+    },
+  },
+  {
+    path: WORKERS_PATH_PREFIX,
+    label: "Workers",
+    icon: <Robot />,
+    render: () => <WorkersRoute />,
   },
   {
     path: SKILL_DETAIL_PATH,
@@ -259,14 +276,14 @@ function routesInOrder(paths: readonly string[]): readonly AppRoute[] {
   });
 }
 
-// Agents, Insights and Settings stay palette- and deep-link-reachable
+// Workers, Insights and Settings stay palette- and deep-link-reachable
 // even though they're off the primary sidebar rail.
 export const NAV_ROUTES: readonly AppRoute[] = routesInOrder([
   "/artifacts",
   "/skills",
   "/tools",
   "/workflows",
-  "/agents",
+  WORKERS_PATH_PREFIX,
   "/insights",
   SETTINGS_PATH,
 ]);
