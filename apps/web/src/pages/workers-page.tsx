@@ -180,8 +180,12 @@ export function WorkersRosterList({
                   </Button>
                 ) : null}
               </span>
-              <span className="truncate text-[12.5px] font-semibold text-(--ink-2)">
-                {(byWorker.get(agent.id) ?? []).map((bench) => bench.name).join(", ")}
+              <span className="flex min-w-0 flex-wrap gap-x-2 text-[12.5px] font-semibold text-(--ink-2)">
+                {(byWorker.get(agent.id) ?? []).map((bench) => (
+                  <span key={bench.id} className="max-w-full truncate">
+                    {bench.name}
+                  </span>
+                ))}
               </span>
               <span className="text-right text-[12.5px] text-(--ink-3)">
                 {agent.liveAddress === null ? "" : "Now"}

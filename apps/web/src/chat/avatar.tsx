@@ -154,8 +154,10 @@ export function WorkbenchAvatarStack({
   return <AvatarStack items={items} {...(max === undefined ? {} : { max })} />;
 }
 
-// Color hashes off principal id, never name — DESIGN.md's avatar identity
-// rule.
+// A person's color hashes off principal id, never name — DESIGN.md's avatar
+// identity rule. A worker keeps the agent fill: each bench deploys its own
+// copy with a new principal id, so hashing it would recolor one worker per
+// bench.
 export function IdentityAvatar({
   kind,
   name,
@@ -171,7 +173,7 @@ export function IdentityAvatar({
     <WorkbenchAvatar
       kind={kind === "agent" ? "worker" : "person"}
       name={name}
-      tone={TONE_BY_COLOR[avatarColorForPrincipal(principalId)]}
+      tone={kind === "agent" ? "agent" : TONE_BY_COLOR[avatarColorForPrincipal(principalId)]}
       size="sm"
       {...(status === undefined ? {} : { status })}
     />
