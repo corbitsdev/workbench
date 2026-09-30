@@ -70,12 +70,13 @@ jobs:
     env:
       CI: "true"
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/workbench
-      HUB_DATA_DIR: ${{ runner.temp }}/hub-data
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-workbench
       - id: chrome
         uses: browser-actions/setup-chrome@v1
       - run: echo "CHROME_PATH=${{ steps.chrome.outputs.chrome-path }}" >> "$GITHUB_ENV"
-      - run: mkdir -p "$HUB_DATA_DIR"
+      - run: |
+          mkdir -p "$RUNNER_TEMP/hub-data"
+          echo "HUB_DATA_DIR=$RUNNER_TEMP/hub-data" >> "$GITHUB_ENV"
       - run: bun run test:e2e
