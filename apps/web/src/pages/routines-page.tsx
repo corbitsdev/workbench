@@ -1,25 +1,17 @@
 // Workflows: an ops table of deployed workflow definitions, including
 // paused (`stopped`) ones. Pause/resume and run-now are the only writes.
-import {
-  EmptyState,
-  RichEmptyState,
-  RunNowButton,
-  Switch,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@corbits/react-ui";
+import { EmptyState, RichEmptyState, RunNowButton } from "@corbits/react-ui";
 import { cronSentence } from "@corbits/workflows/client";
+import { useState } from "react";
 import { Clock } from "@/lib/icons";
 
 import { useGlobalRoutines, useRoutineActions } from "../global-routines";
 import type { GlobalRoutineRow } from "../global-routines";
 import { routineDetailPath } from "../global-routines";
 import { Link } from "../navigation";
+import { benchLink, useFromBenchId } from "../shell/page-crumbs";
 import { StageTopBar } from "../shell/stage-top-bar";
+import { RoutinePill, formatWhen, routineState, useRoutineRuns } from "./routine-ui";
 
 export type { GlobalRoutineRow } from "../global-routines";
 
@@ -30,72 +22,86 @@ export function scheduleSentence(schedule: string | null): string {
   return cronSentence(schedule) ?? schedule;
 }
 
+function RoutineListRow({
+  row,
+  fromId,
+  onRunNow,
+}: {
+  readonly row: GlobalRoutineRow;
+  readonly fromId: string | null;
+  readonly onRunNow: (row: GlobalRoutineRow) => Promise<void>;
+}) {
+  const runs = useRoutineRuns(row.tenantId, row.definition.definitionId, 1);
+  const lastRun = runs.kind === "ready" ? runs.data.data[0] : undefined;
+  const state = routineState(row, lastRun);
+  return (
+    <li
+      className="routine-row"
+      data-ctx-routine={row.definition.definitionId}
+      data-ctx-routine-name={row.definition.name}
+    >
+      <Link
+        to={benchLink(routineDetailPath(row.definition.definitionId), fromId)}
+        className="routine-name"
+      >
+        {row.definition.name}
+      </Link>
+      <span className="routine-meta">{scheduleSentence(row.definition.schedule)}</span>
+      <span className="routine-meta">
+        {runs.kind === "ready" ? formatWhen(lastRun?.createdAt) : "…"}
+      </span>
+      <RoutinePill tone={state.tone}>{state.label}</RoutinePill>
+      <RunNowButton variant="outline" size="sm" onRun={() => onRunNow(row)} />
+    </li>
+  );
+}
+
 export function GlobalRoutinesList({
   rows,
-  onToggleEnabled,
   onRunNow,
 }: {
   readonly rows: readonly GlobalRoutineRow[];
-  readonly onToggleEnabled: (row: GlobalRoutineRow, enabled: boolean) => void;
   readonly onRunNow: (row: GlobalRoutineRow) => Promise<void>;
 }) {
+  const [query, setQuery] = useState("");
+  const fromId = useFromBenchId();
   if (rows.length === 0) {
     return (
       <RichEmptyState
         icon={<Clock />}
         title="No workflows yet"
-        description="A deployed workflow shows up here. Pause, resume, or run it now."
+        description="A deployed workflow shows up here. Run it now from its row."
       />
     );
   }
+  const needle = query.trim().toLowerCase();
+  const shown = rows.filter((row) =>
+    `${row.definition.name} ${scheduleSentence(row.definition.schedule)}`
+      .toLowerCase()
+      .includes(needle),
+  );
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Routine</TableHead>
-          <TableHead>Schedule</TableHead>
-          <TableHead>On</TableHead>
-          <TableHead>Actions</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((row) => {
-          const enabled = row.definition.status === "deployed";
-          return (
-            <TableRow
-              key={row.definition.definitionId}
-              data-ctx-routine={row.definition.definitionId}
-              data-ctx-routine-name={row.definition.name}
-            >
-              <TableCell>
-                <span className="flex flex-col">
-                  <Link
-                    to={routineDetailPath(row.definition.definitionId)}
-                    className="text-sm font-medium"
-                  >
-                    {row.definition.name}
-                  </Link>
-                  <span className="text-xs text-[var(--ui-fg-muted)]">{row.tenantName}</span>
-                </span>
-              </TableCell>
-              <TableCell>
-                <span className="text-sm">{scheduleSentence(row.definition.schedule)}</span>
-              </TableCell>
-              <TableCell>
-                <Switch
-                  checked={enabled}
-                  label={`${enabled ? "On" : "Off"} ${row.definition.name}`}
-                  onCheckedChange={(next) => onToggleEnabled(row, next)}
-                />
-              </TableCell>
-              <TableCell>
-                <RunNowButton variant="outline" size="sm" onRun={() => onRunNow(row)} />
-              </TableCell>
-            </TableRow>
-          );
-        })}
-      </TableBody>
-    </Table>
+    <div className="routines-page">
+      <h1>Workflows</h1>
+      <p className="routines-lede">Deployed workflows, when they run, and how the last run went.</p>
+      <input
+        className="routines-filter"
+        placeholder="Filter workflows"
+        aria-label="Filter workflows"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      <ul className="routine-rows">
+        {shown.map((row) => (
+          <RoutineListRow
+            key={row.definition.definitionId}
+            row={row}
+            fromId={fromId}
+            onRunNow={onRunNow}
+          />
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -106,10 +112,7 @@ export function RoutinesRoute() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <StageTopBar
-        crumbs={[{ label: "Workflows" }]}
-        subtitle="Deployed workflows. Pause, resume, or run now."
-      />
+      <StageTopBar crumbs={[{ label: "Workflows" }]} />
       <div className="stage-content flex min-h-0 flex-1 flex-col overflow-y-auto">
         {routinesQuery.kind === "loading" ? (
           <div className="flex flex-1 items-center justify-center p-6">
@@ -124,13 +127,7 @@ export function RoutinesRoute() {
             />
           </div>
         ) : (
-          <GlobalRoutinesList
-            rows={rows}
-            onToggleEnabled={(row, enabled) => {
-              void actions.setEnabled(row, enabled);
-            }}
-            onRunNow={(row) => actions.runNow(row)}
-          />
+          <GlobalRoutinesList rows={rows} onRunNow={(row) => actions.runNow(row)} />
         )}
       </div>
     </div>

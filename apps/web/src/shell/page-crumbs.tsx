@@ -26,6 +26,12 @@ export function benchLink(path: string, benchId: string | null): string {
 
 export type PageCrumb = { readonly label: string; readonly href?: string };
 
+/** The originating workbench id from `?from=`, for links that should carry it on. */
+export function useFromBenchId(): string | null {
+  useSyncExternalStore(subscribeToPath, getPath);
+  return new URLSearchParams(window.location.search).get(FROM_PARAM);
+}
+
 function useFromWorkbench(): { readonly id: string; readonly name: string | null } | null {
   // The path store re-renders this on navigation; it keeps the pathname
   // only, so the query string is read fresh.
