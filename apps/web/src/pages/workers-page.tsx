@@ -4,13 +4,14 @@
 import { useState } from "react";
 import { Button, RichEmptyState, toast } from "@corbits/react-ui";
 import { Plus, Robot } from "@/lib/icons";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { reportError } from "@corbits/error-sink";
 
 import { QueryView } from "@/lib/api-query";
 import { tenantKeys } from "../query-client";
 import { isAgentNotRunning, listChatAgents, type ChatAgent } from "@/chat/threads-api";
 import { WorkbenchAvatar } from "@/chat/avatar";
+import { listWorkbenches } from "@/chat/workbench-tenants";
 import { describeRestartFailure, redeployWorkbenchAgent } from "../workbench-create";
 import { useBench } from "../bench-context";
 import { Link } from "../navigation";
@@ -33,6 +34,16 @@ export function workerStatus(agent: Pick<ChatAgent, "liveAddress" | "latestStatu
   return isAgentNotRunning(agent)
     ? { tone: "ready", text: "Stopped. Restart it to put it back to work." }
     : { tone: "working", text: "Starting up" };
+}
+
+/** The workspace is not a bench; a worker's workbench is one of its child
+ * tenants, the same rows the sidebar lists. */
+export function useWorkbenchList(tenantId: string | null) {
+  return useQuery({
+    queryKey: tenantKeys.workbenches(tenantId ?? "none"),
+    enabled: tenantId !== null,
+    queryFn: () => listWorkbenches(tenantId as string),
+  });
 }
 
 export function workerPath(agentId: string): string {
@@ -69,13 +80,12 @@ const ROW_GRID =
 
 export function WorkersRosterList({
   tenantId,
-  benchName,
   agents,
 }: {
   readonly tenantId: string;
-  readonly benchName: string;
   readonly agents: readonly ChatAgent[];
 }) {
+  const benchName = useWorkbenchList(tenantId).data?.[0]?.title ?? "";
   const [filter, setFilter] = useState<WorkerTone | "all">("all");
   const [query, setQuery] = useState("");
   const queryClient = useQueryClient();
@@ -191,7 +201,7 @@ export function WorkersRosterList({
 }
 
 export function WorkersRoute() {
-  const { selectedTenantId, benchMemberships } = useBench();
+  const { selectedTenantId } = useBench();
   const agentsQuery = useTenantQuery(
     tenantKeys.agents(selectedTenantId ?? "none"),
     selectedTenantId !== null,
@@ -200,10 +210,6 @@ export function WorkersRoute() {
     // seen without a reload.
     (agents) => ((agents?.some((agent) => agent.liveAddress === null) ?? false) ? 3000 : false),
   );
-  const benchName =
-    benchMemberships.find((member) => member.tenantId === selectedTenantId)?.tenantName ??
-    "This workbench";
-
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -231,13 +237,7 @@ export function WorkersRoute() {
           ) : (
             <>
               <QueryView query={agentsQuery} label="your workers" skeleton="rows">
-                {(agents) => (
-                  <WorkersRosterList
-                    tenantId={selectedTenantId}
-                    benchName={benchName}
-                    agents={agents}
-                  />
-                )}
+                {(agents) => <WorkersRosterList tenantId={selectedTenantId} agents={agents} />}
               </QueryView>
               <CreateAgentPanel
                 open={createOpen}

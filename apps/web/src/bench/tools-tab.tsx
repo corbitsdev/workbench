@@ -1,9 +1,10 @@
-import { Badge, Button } from "@corbits/react-ui";
+import { Button } from "@corbits/react-ui";
 
 import { QueryView } from "@/lib/api-query";
 import { Plugs } from "@/lib/icons";
 import { Link } from "../navigation";
 import { useMcpServers } from "../tools/mcp-servers-query";
+import "../tools/tools-page.css";
 
 /** Tools the workspace catalog makes available here; "Connected" once an
  * agent in this workbench binds the server. */
@@ -36,9 +37,9 @@ export function ToolsTab({ workbenchTenantId }: { readonly workbenchTenantId: st
                     <span className="workbench-info-cell-primary">{server.name}</span>
                     <span className="workbench-info-cell-context">{server.url}</span>
                   </span>
-                  <Badge tone={server.agentNames.length > 0 ? "success" : "neutral"}>
+                  <span className={server.agentNames.length > 0 ? "tool-live" : "tool-kind"}>
                     {server.agentNames.length > 0 ? "Connected" : "Available"}
-                  </Badge>
+                  </span>
                   <Link to={manage} className="bench-tab-link">
                     Manage
                   </Link>

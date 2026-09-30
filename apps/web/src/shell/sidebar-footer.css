@@ -1,0 +1,4 @@
+/* Canvas surface is near-white; the Tools button sits on the sunk token. */
+[data-theme="canvas"] .sb-tools {
+  background: var(--surface-sunk);
+}

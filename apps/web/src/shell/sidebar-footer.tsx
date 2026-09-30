@@ -3,6 +3,7 @@
 import { Moon, Palette, Plugs, SignOut, SlidersHorizontal, Sun, type Icon } from "@/lib/icons";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
+import "./sidebar-footer.css";
 import { IdentityAvatar } from "../chat/avatar";
 import { useSessionUser, useSignOut } from "../navigation";
 import { matchesRoute, SETTINGS_PATH } from "../routes";
