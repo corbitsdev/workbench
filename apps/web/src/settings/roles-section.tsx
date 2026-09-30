@@ -1,7 +1,6 @@
 import {
   Badge,
   Button,
-  ConfirmButton,
   Dialog,
   DialogBody,
   DialogContent,
@@ -37,6 +36,7 @@ import {
   type Principal,
   type Role,
 } from "./tenancy-api";
+import { ConfirmButton } from "../components/confirm-button";
 
 type RolesData = {
   readonly roles: readonly Role[];
@@ -69,7 +69,9 @@ export function RolesSection({ tenantId }: { readonly tenantId: string | null })
 
   function reload() {
     if (tenantId === null) return;
-    void queryClient.invalidateQueries({ queryKey: tenantKeys.roles(tenantId) });
+    void queryClient.invalidateQueries({
+      queryKey: tenantKeys.roles(tenantId),
+    });
   }
 
   if (tenantId === null) {
@@ -247,7 +249,6 @@ export function RolesTable({
                     {SETTINGS_STRINGS.rolesRenameAction}
                   </Button>
                   <ConfirmButton
-                    variant="destructive"
                     size="sm"
                     confirmLabel={SETTINGS_STRINGS.rolesDeleteConfirm}
                     onConfirm={() => onDelete(role)}

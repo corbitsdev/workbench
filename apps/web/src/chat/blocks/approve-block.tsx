@@ -83,7 +83,13 @@ function ApproveButtons({
         <Button type="button" variant="primary" disabled={busy} onClick={onApprove}>
           {deciding === "approve" ? CHAT_STRINGS.blockApproveApproving : actionLabel}
         </Button>
-        <Button type="button" variant="outline" disabled={busy} onClick={onDeny}>
+        <Button
+          type="button"
+          variant="ghost"
+          className="btn-danger-ghost"
+          disabled={busy}
+          onClick={onDeny}
+        >
           {deciding === "reject"
             ? CHAT_STRINGS.blockApproveRejecting
             : CHAT_STRINGS.blockDenyAction}
@@ -227,7 +233,7 @@ export function ApproveBlockView({
           <Button type="button" variant="primary" disabled>
             {CHAT_STRINGS.blockApproveAction}
           </Button>
-          <Button type="button" variant="outline" disabled>
+          <Button type="button" variant="ghost" className="btn-danger-ghost" disabled>
             {CHAT_STRINGS.blockDenyAction}
           </Button>
         </div>
