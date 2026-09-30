@@ -25,6 +25,7 @@ import {
 } from "@/chat/threads-api";
 import { BenchDrawer } from "../bench/bench-drawer";
 import { BenchPill } from "../bench/bench-pill";
+import { useWorkerStatus } from "../worker-status";
 import { GrantsTab } from "../bench/grants-tab";
 import { InformationTab } from "../bench/information-tab";
 import { InsightsTab } from "../bench/insights-tab";
@@ -176,6 +177,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
       agent.address === "" && agent.assetName !== undefined,
   );
   const startingAgent = releasedAgents[0];
+  const workerStatus = useWorkerStatus(workbenchTenantId, agents[0]?.id);
   // Only a live agent can be addressed, so only one can be mentioned.
   const mentionables = agents
     .filter((agent) => agent.address.includes("@"))
@@ -232,7 +234,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
           <BenchPill
             benchName={tenant.data?.name ?? "Workbench"}
             worker={agents[0]}
-            status={startingAgent === undefined ? "Live" : "Starting"}
+            status={workerStatus}
             open={drawerOpen}
             onToggle={() => setDrawerOpen((open) => !open)}
           />
@@ -306,7 +308,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
         <BenchDrawer
           open={drawerOpen}
           title={tenant.data?.name ?? "Workbench"}
-          subtitle={startingAgent === undefined ? "Live" : "Starting"}
+          subtitle={workerStatus.text}
           onClose={closeDrawer}
           tabs={{
             Information: (
