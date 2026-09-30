@@ -1,7 +1,7 @@
 // No Stop action: neither `threads-api.ts` nor the hub API expose a way to
 // cancel a running turn yet.
 import { useCommandPaletteNavigation } from "@corbits/react-ui";
-import { ArrowUp, CircleNotch } from "@/lib/icons";
+import { ArrowUp, CircleNotch, Microphone } from "@/lib/icons";
 import { useRef, useState } from "react";
 
 import { activeMention, applyMention, matchMentionQuery, type ActiveMention } from "./mentions";
@@ -19,6 +19,7 @@ export function Composer({
   disabled,
   mentionables = [],
   onSend,
+  onVoice,
 }: {
   readonly placeholder: string;
   readonly busy: boolean;
@@ -26,6 +27,8 @@ export function Composer({
   /** Agents an `@` token can address; empty disables the popover. */
   readonly mentionables?: readonly ComposerMention[];
   readonly onSend: (text: string) => void;
+  /** Opens voice mode; the button is absent without it. */
+  readonly onVoice?: () => void;
 }) {
   const [text, setText] = useState("");
   const [mention, setMention] = useState<ActiveMention | null>(null);
@@ -137,6 +140,17 @@ export function Composer({
         }}
       />
       <div className="chat-composer-rail">
+        {onVoice === undefined ? null : (
+          <button
+            type="button"
+            className="chat-composer-voice"
+            onClick={onVoice}
+            aria-label="Talk to the worker"
+            title="Voice"
+          >
+            <Microphone aria-hidden="true" />
+          </button>
+        )}
         <button
           type="button"
           className="chat-composer-send"
