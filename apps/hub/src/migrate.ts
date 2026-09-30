@@ -7,6 +7,7 @@
 // service, no ledger table, just the hub doing the work itself.
 import { runMigrations } from "@intx/db";
 import { sql } from "drizzle-orm";
+import postgres from "postgres";
 import { applyAgentTokenMigrations } from "@corbits/agent-token/migrations";
 import { applyCronMigrations } from "@corbits/cron";
 import { createMailboxDb, runMailboxMigrations } from "@corbits/mailbox";
@@ -52,13 +53,20 @@ export async function migrateHub(
   config: HubMigrateConfig,
   db: Parameters<typeof runArtifactMigrations>[0],
 ): Promise<void> {
-  // Concurrent boots against one database (parallel e2e suites, rolling
-  // deploys) would race on the one-shot platform SQL's CREATE TYPE. The
-  // transaction-scoped advisory lock serializes whole migrations.
-  await db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(${MIGRATE_LOCK_KEY})`);
-    await applyMigrations(config, db);
-  });
+  // Concurrent boots serialize on a session-level advisory lock held by a
+  // dedicated connection. No transaction stays open, so a single-backend
+  // database like PGlite still serves the migrations' other connections.
+  const lockClient = postgres(databaseUrlFrom(config), { max: 1 });
+  try {
+    await lockClient`select pg_advisory_lock(${MIGRATE_LOCK_KEY})`;
+    try {
+      await applyMigrations(config, db);
+    } finally {
+      await lockClient`select pg_advisory_unlock(${MIGRATE_LOCK_KEY})`;
+    }
+  } finally {
+    await lockClient.end();
+  }
 }
 
 const MIGRATE_LOCK_KEY = 7_460_391_205;
