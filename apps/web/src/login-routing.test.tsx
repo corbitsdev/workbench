@@ -1,7 +1,6 @@
 // `TestRoot` mirrors `main.tsx`'s `Root` history wiring so these tests
 // drive real `pushState`/`popstate` traffic, not a bare `navigate` prop.
 
-import { ThemeProvider } from "@corbits/react-ui";
 import { afterEach, describe, expect, test } from "bun:test";
 import { act, useCallback, useEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -63,16 +62,14 @@ function TestRoot({ initialSession }: { readonly initialSession: SessionState })
     };
   }, [handleSignedIn]);
   return (
-    <ThemeProvider>
-      <App
-        path={path}
-        navigate={navigate}
-        session={session}
-        onSignedIn={handleSignedIn}
-        onSignOut={() => setSession({ kind: "signed-out" })}
-        onRetry={() => undefined}
-      />
-    </ThemeProvider>
+    <App
+      path={path}
+      navigate={navigate}
+      session={session}
+      onSignedIn={handleSignedIn}
+      onSignOut={() => setSession({ kind: "signed-out" })}
+      onRetry={() => undefined}
+    />
   );
 }
 

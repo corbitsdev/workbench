@@ -1,4 +1,4 @@
-import { artifactKindLabel, CommandPalette, useCommandShortcut, useTheme } from "@corbits/react-ui";
+import { artifactKindLabel, CommandPalette, useCommandShortcut } from "@corbits/react-ui";
 import type { CommandPaletteGroup } from "@corbits/react-ui";
 import { listWorkbenches } from "@/chat/workbench-tenants";
 import { libraryArtifactPath } from "@/library";
@@ -28,6 +28,7 @@ import {
 import { WORKBENCH_NOT_FOUND_EVENT } from "./workbench-not-found-event";
 import { recentsStoreForBench } from "./command-palette-recents";
 import { NAV_ROUTES } from "./routes";
+import { cycleTheme } from "./theme-store";
 import { ArtifactListPageSchema, useAPIQuery } from "./api";
 import { useBench } from "./bench-context";
 import { useCloseCanvas } from "./shell/canvas-availability";
@@ -81,7 +82,6 @@ export function CommandPaletteProvider({
   const open = useCommandPaletteOpen();
   const query = useCommandPaletteQuery();
   const [recents, setRecents] = useState<readonly RecentEntry[]>([]);
-  const { cycleMode } = useTheme();
   const closeCanvas = useCloseCanvas();
 
   const recentsStore = useMemo(
@@ -373,7 +373,7 @@ export function CommandPaletteProvider({
           path,
           navigate,
           tenantId: selectedTenantId,
-          cycleTheme: cycleMode,
+          cycleTheme,
           closeCanvas,
         });
       } else if (id.startsWith("route:")) {
@@ -409,7 +409,6 @@ export function CommandPaletteProvider({
       navigate,
       path,
       selectedTenantId,
-      cycleMode,
       closeCanvas,
       pushRecent,
       workbenchItems,

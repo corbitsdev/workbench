@@ -42,9 +42,9 @@ export const SETTINGS_STRINGS = {
 
   appearanceSectionTitle: "Appearance",
   appearanceThemeLabel: "Theme",
-  themeFollowSystem: "Follow System",
   themeLight: "Light",
   themeDark: "Dark",
+  themeCanvas: "Canvas",
 
   peopleSectionTitle: "People",
   peopleSectionDescription: "Everyone with a seat on this workbench.",
