@@ -1,4 +1,3 @@
-import { ConfirmButton } from "@corbits/react-ui";
 import { toast } from "@corbits/react-ui/ui/toast";
 import type { GrantEffect } from "@intx/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -8,31 +7,23 @@ import { QueryView, describeApiError, toAPIQuery } from "@/lib/api-query";
 import { tenantKeys } from "@/query-client";
 import { GRANT_RESOURCE_LABEL, type GrantResource } from "../settings/resource-vocabulary";
 import { principalLabel } from "../settings/identity";
-import { listGrants, revokeGrant, type Grant } from "../settings/tenancy-api";
+import { listGrants, updateGrant, type Grant } from "../settings/tenancy-api";
 import { useGrantNames } from "./grant-names";
+import "./drawer.css";
 
-const MODE: Record<GrantEffect, string> = {
-  allow: "Always allow",
-  ask: "Ask first",
-  deny: "Deny",
-};
+const EFFECTS: readonly { readonly effect: GrantEffect; readonly label: string }[] = [
+  { effect: "allow", label: "Allow" },
+  { effect: "ask", label: "Ask" },
+  { effect: "deny", label: "Deny" },
+];
 
 const TOOL_PREFIX = "tool:";
 
-/** "tool:artifact_link_file" reads "Artifact link file"; other resources keep
- * their vocabulary label. */
+/** A tool grant shows the tool's native name; other resources keep their
+ * vocabulary label. */
 function resourceName(resource: string): string {
-  if (!resource.startsWith(TOOL_PREFIX)) {
-    return GRANT_RESOURCE_LABEL[resource as GrantResource] ?? resource;
-  }
-  const text = resource
-    .slice(TOOL_PREFIX.length)
-    .split(/[_.\-\s]+/)
-    .filter(
-      (word, index, all) => word !== "" && word.toLowerCase() !== all[index - 1]?.toLowerCase(),
-    )
-    .join(" ");
-  return text.charAt(0).toUpperCase() + text.slice(1);
+  if (resource.startsWith(TOOL_PREFIX)) return resource.slice(TOOL_PREFIX.length);
+  return GRANT_RESOURCE_LABEL[resource as GrantResource] ?? resource;
 }
 
 /** This workbench's own grants; they never inherit from the workspace. */
@@ -50,8 +41,7 @@ export function GrantsTab({
     if (known !== undefined) return known.name;
     if (grant.principalName === undefined || grant.principalName === null) return "Everyone here";
     const named = names.replaceTenantIds(grant.principalName);
-    // A raw run id is never shown, and never turned into words; with no
-    // resolvable name the row has no subtitle.
+    // A raw run id is never shown; with no resolvable name the row has no hint.
     return principalLabel(named).raw === null ? named : undefined;
   };
   const queryClient = useQueryClient();
@@ -61,14 +51,14 @@ export function GrantsTab({
       queryFn: () => listGrants(workbenchTenantId, {}),
     }),
   );
-  const revoke = useMutation({
-    mutationFn: (grant: Grant) => revokeGrant(workbenchTenantId, grant.id),
-    onSuccess: () => {
+  const setEffect = useMutation({
+    mutationFn: (input: { readonly grant: Grant; readonly effect: GrantEffect }) =>
+      updateGrant(workbenchTenantId, input.grant.id, { effect: input.effect }),
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: tenantKeys.grants(workbenchTenantId) });
-      toast("Grant revoked.");
     },
     onError: (cause: unknown) => {
-      toast(describeApiError(cause, "revoking this grant"));
+      toast(describeApiError(cause, "changing this grant"));
     },
   });
 
@@ -85,40 +75,33 @@ export function GrantsTab({
           grants.length === 0 ? (
             <p className="workbench-info-empty-note">No grants here yet.</p>
           ) : (
-            <ul className="bench-tab-list">
+            <div>
               {grants.map((grant) => {
-                const title = names.resource(grant.resource) ?? resourceName(grant.resource);
-                const name = who(grant);
-                const subtitle =
-                  name !== undefined && title.toLowerCase().split(" ").includes(name.toLowerCase())
-                    ? undefined
-                    : name;
+                const label = names.resource(grant.resource) ?? resourceName(grant.resource);
                 return (
-                  <li key={grant.id} className="bench-tab-row">
-                    <span className="bench-tab-text">
-                      <span className="workbench-info-cell-primary">{title}</span>
-                      {subtitle === undefined ? null : (
-                        <span className="workbench-info-cell-context">{subtitle}</span>
-                      )}
-                    </span>
-                    <span className="drawer-grant-mode" data-effect={grant.effect}>
-                      {MODE[grant.effect]}
-                    </span>
-                    <ConfirmButton
-                      variant="ghost"
-                      size="sm"
-                      disabled={revoke.isPending}
-                      confirmLabel="Revoke?"
-                      onConfirm={() => {
-                        revoke.mutate(grant);
-                      }}
-                    >
-                      Revoke
-                    </ConfirmButton>
-                  </li>
+                  <div key={grant.id} className="drawer-perm" title={who(grant)}>
+                    <b className="drawer-perm-name">{label}</b>
+                    <div className="drawer-seg" role="radiogroup" aria-label={label}>
+                      {EFFECTS.map(({ effect, label: text }) => (
+                        <button
+                          key={effect}
+                          type="button"
+                          role="radio"
+                          aria-checked={effect === grant.effect}
+                          className={effect === grant.effect ? "active" : undefined}
+                          disabled={setEffect.isPending}
+                          onClick={() => {
+                            if (effect !== grant.effect) setEffect.mutate({ grant, effect });
+                          }}
+                        >
+                          {text}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 );
               })}
-            </ul>
+            </div>
           )
         }
       </QueryView>

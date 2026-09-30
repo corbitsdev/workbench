@@ -80,3 +80,61 @@
   border-radius: 0;
   background: none;
 }
+
+.drawer-perm,
+.drawer-tool {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.drawer-tool {
+  padding: 8px 0;
+}
+.drawer-perm-name {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-mono, "Space Mono", monospace);
+  font-size: 12.5px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.drawer-seg {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--surface-sunk);
+}
+.drawer-seg button {
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.drawer-seg button.active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--raised, 0 1px 2px rgb(0 0 0 / 12%));
+}
+.drawer-seg button:disabled {
+  cursor: default;
+}
+.drawer-list-link {
+  justify-content: space-between;
+}
+.drawer-list-link > .drawer-list-text {
+  flex: 1;
+}
+.drawer-list-text > b {
+  font-weight: 800;
+}
