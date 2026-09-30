@@ -39,7 +39,6 @@
     "react-joyride": "^2.9.3"
   },
   "devDependencies": {
-    "@happy-dom/global-registrator": "^20.11.2",
     "@intx/inference": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
     "@types/bun": "catalog:",
