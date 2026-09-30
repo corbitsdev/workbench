@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { Avatar, AvatarStack, type AvatarStackItem, type AvatarTone } from "@corbits/react-ui";
 
 import { agentInitials } from "@/chat/threads-api";
 
@@ -8,6 +8,15 @@ export const AVATAR_COLORS = ["--avatar-1", "--avatar-2", "--avatar-3", "--avata
 export type AvatarColor = (typeof AVATAR_COLORS)[number];
 
 export const CORBIT_DEFAULT_COLOR: AvatarColor = "--avatar-1";
+
+// react-ui owns the fill; the token only picks which of its tones a
+// principal lands on.
+const TONE_BY_COLOR: Record<AvatarColor, AvatarTone> = {
+  "--avatar-1": "agent",
+  "--avatar-2": "agent2",
+  "--avatar-3": "agent3",
+  "--avatar-4": "neutral",
+};
 
 export const avatarColorClass: Record<AvatarColor, string> = {
   "--avatar-1": "bg-(--avatar-1) text-black",
@@ -52,98 +61,119 @@ export function resolveAvatarFill(
   return { kind: "generated", className: avatarClassForPrincipal(principalId) };
 }
 
-export const CORBIT_VISOR_COLOR = "#22252A";
-export const CORBIT_GLINT_COLOR = "#F7EAD5";
-
 export type CorbitAvatarSize = "xs" | "sm" | "md" | "lg" | "xl" | number;
+export type AvatarStatus = "working" | "ready" | "idle";
+
+// react-ui ships sm/md/lg only; the wrapper sizes xs/xl/numeric and the
+// mark fills it.
+const SIZE_PX = { xs: 16, sm: 24, md: 32, lg: 40, xl: 80 } as const;
+
+function baseSize(px: number): "sm" | "md" | "lg" {
+  if (px <= 24) return "sm";
+  if (px <= 32) return "md";
+  return "lg";
+}
+
+export interface WorkbenchAvatarProps {
+  /** Workers are rounded squares, people circles. */
+  readonly kind: "worker" | "person";
+  readonly name: string;
+  readonly tone?: AvatarTone;
+  readonly size?: CorbitAvatarSize;
+  readonly status?: AvatarStatus;
+  readonly className?: string;
+}
+
+export function WorkbenchAvatar({
+  kind,
+  name,
+  tone = "agent",
+  size = "md",
+  status,
+  className,
+}: WorkbenchAvatarProps) {
+  const px = typeof size === "number" ? size : SIZE_PX[size];
+  const radius = kind === "person" ? "50%" : `${Math.round(px * 0.28)}px`;
+  const working = kind === "worker" && status === "working";
+  return (
+    <span
+      className={["wb-av", className].filter(Boolean).join(" ")}
+      data-kind={kind}
+      {...(status === undefined ? {} : { "data-status": status })}
+      style={{ width: px, height: px, ["--av-r" as string]: radius }}
+    >
+      <Avatar
+        initials={agentInitials(name)}
+        label={name}
+        tone={tone}
+        size={baseSize(px)}
+        className="size-full! rounded-(--av-r)"
+      />
+      {working ? <span className="wb-av-orbit" aria-hidden="true" /> : null}
+      {status === undefined || working ? null : (
+        <span className={`wb-av-st wb-av-st--${status}`} aria-hidden="true" />
+      )}
+    </span>
+  );
+}
 
 export interface CorbitAvatarProps {
   readonly ariaLabel?: string;
   readonly size?: CorbitAvatarSize;
   readonly color?: AvatarColor;
+  readonly status?: AvatarStatus;
   readonly className?: string;
-  readonly style?: CSSProperties;
 }
-
-const CORBIT_SIZE_CLASS = {
-  xs: "size-4",
-  sm: "size-6",
-  md: "size-8",
-  lg: "size-10",
-  xl: "size-20",
-} as const;
 
 export function CorbitAvatar({
   ariaLabel = "Agent",
   size = "md",
   color = CORBIT_DEFAULT_COLOR,
+  status,
   className,
-  style,
 }: CorbitAvatarProps) {
-  const sizeClass = typeof size === "number" ? undefined : CORBIT_SIZE_CLASS[size];
-  const sizeStyle: CSSProperties =
-    typeof size === "number" ? { width: `${size}px`, height: `${size}px` } : {};
-
   return (
-    <span
-      role="img"
-      aria-label={ariaLabel}
-      data-corbit="true"
-      className={[
-        "relative inline-flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full",
-        sizeClass,
-        className,
-      ]
-        .filter(Boolean)
-        .join(" ")}
-      style={{ ...sizeStyle, ...style }}
-    >
-      <svg
-        viewBox="0 0 100 100"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-        className="block size-full"
-        aria-hidden="true"
-      >
-        <circle
-          cx="50"
-          cy="50"
-          r="50"
-          /* A presentation attribute cannot read var(), so the token
-             reference rides the CSS fill property instead. */
-          style={{ fill: `var(${color})` }}
-        />
-        <path
-          d="M 11.47 59.04 C 16.17 47.15, 33.73 66.85, 45.03 65.78 C 57.11 71.28, 75.14 64.43, 83.53 71.00 C 78.24 85.08, 58.92 92.65, 44.56 89.83 C 28.55 87.40, 15.10 75.30, 11.47 59.49 Z"
-          fill={CORBIT_VISOR_COLOR}
-        />
-        <circle cx="70.63" cy="76.00" r="4.43" fill={CORBIT_GLINT_COLOR} />
-      </svg>
-    </span>
+    <WorkbenchAvatar
+      kind="worker"
+      name={ariaLabel}
+      tone={TONE_BY_COLOR[color]}
+      size={size}
+      {...(status === undefined ? {} : { status })}
+      {...(className === undefined ? {} : { className })}
+    />
   );
 }
 
-// Person chip color hashes off principal id, never name — DESIGN.md's
-// avatar identity rule.
+export function WorkbenchAvatarStack({
+  items,
+  max,
+}: {
+  readonly items: readonly AvatarStackItem[];
+  readonly max?: number;
+}) {
+  return <AvatarStack items={items} {...(max === undefined ? {} : { max })} />;
+}
+
+// Color hashes off principal id, never name — DESIGN.md's avatar identity
+// rule.
 export function IdentityAvatar({
   kind,
   name,
   principalId,
+  status,
 }: {
   readonly kind: "agent" | "person";
   readonly name: string;
   readonly principalId: string;
+  readonly status?: AvatarStatus;
 }) {
-  if (kind === "agent") {
-    return (
-      <span aria-hidden="true">
-        <CorbitAvatar size="sm" ariaLabel={name} />
-      </span>
-    );
-  }
   return (
-    <span className={`shell-ch-initial ${avatarClassForPrincipal(principalId)}`} aria-hidden="true">
-      {agentInitials(name)}
-    </span>
+    <WorkbenchAvatar
+      kind={kind === "agent" ? "worker" : "person"}
+      name={name}
+      tone={TONE_BY_COLOR[avatarColorForPrincipal(principalId)]}
+      size="sm"
+      {...(status === undefined ? {} : { status })}
+    />
   );
 }
