@@ -2,13 +2,14 @@
 
 The workbench's single-page interface: every screen and route lives here,
 composed from the published `@corbits/react-ui` component library, and
-builds to a static bundle the hub serves from its own origin (`vite
-build`, then point `HUB_STATIC_DIR` at `apps/web/dist`). It is a Vite SPA
-over the hub's `/api` — every product rule (what a screen may show, how
-data is shaped) lives in a package; this app stays a generic composition
-of package UI and routing, per [AGENTS.md](../../AGENTS.md). In dev,
-`vite dev` proxies `/api` to a locally running hub so the interface is
-developed against real data without a build step.
+builds to a static bundle in `dist/` (`vite build`). The hub serves no
+static files. It is a Vite SPA over the hub's `/api` — every product rule
+(what a screen may show, how data is shaped) lives in a package; this app
+stays a generic composition of package UI and routing, per
+[AGENTS.md](../../AGENTS.md). In dev, `vite dev` serves the SPA and proxies
+`/api` to a locally running hub, so the interface is developed against real
+data without a build step. In e2e, `e2e/lib/browser.ts` builds and serves
+`dist/` itself on the same origin as the hub.
 
 ## Layout
 
