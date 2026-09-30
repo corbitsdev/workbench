@@ -7,7 +7,7 @@ import { Fragment, useSyncExternalStore } from "react";
 
 import { listWorkbenches } from "@/chat/workbench-tenants";
 import { useBench } from "../bench-context";
-import { ArrowLeft } from "../lib/icons";
+import { ArrowLeft, Hash } from "../lib/icons";
 import { Link } from "../navigation";
 import { tenantKeys } from "../query-client";
 import { getPath, subscribeToPath } from "../router-store";
@@ -24,7 +24,14 @@ export function benchLink(path: string, benchId: string | null): string {
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
-export type PageCrumb = { readonly label: string; readonly href?: string };
+export type PageCrumb = {
+  readonly label: string;
+  readonly href?: string;
+  /** A workbench crumb carries the `#` mark. */
+  readonly hash?: true;
+};
+
+const ROOT_CRUMB: PageCrumb = { label: "Workbench" };
 
 /** The workbench tenant id named by `?from=`, or null. Full-page views scope
  * their data to it instead of the last-opened workbench. */
@@ -58,19 +65,15 @@ export function usePageCrumbs(crumbs: readonly PageCrumb[]): {
 } {
   const from = useFromWorkbench();
   const fromId = useFromBench();
-  // A bare one-level page reads "Workbench / <Page>"; `?from=` swaps the
-  // root for the bench itself.
-  if (fromId === null) {
-    return {
-      crumbs: crumbs.length === 1 ? [{ label: "Workbench" }, ...crumbs] : crumbs,
-      back: null,
-    };
+  // The root crumb is always "Workbench"; `?from=` adds the bench itself.
+  if (fromId === null || from === null || from.name === null) {
+    return { crumbs: [ROOT_CRUMB, ...crumbs], back: null };
   }
-  if (from === null || from.name === null) return { crumbs, back: null };
   const href = workbenchPath(from.id);
   return {
     crumbs: [
-      { label: from.name, href },
+      ROOT_CRUMB,
+      { label: from.name, href, hash: true },
       ...crumbs.map((crumb) =>
         crumb.href === undefined ? crumb : { ...crumb, href: benchLink(crumb.href, from.id) },
       ),
@@ -105,6 +108,7 @@ export function PageCrumbs({ crumbs: pageCrumbs }: { readonly crumbs: readonly P
         <span className="stage-crumb-label">{crumb.label}</span>
       ) : (
         <Link to={crumb.href} className="stage-crumb-link">
+          {crumb.hash === true ? <Hash size={13} aria-hidden="true" /> : null}
           {crumb.label}
         </Link>
       )}

@@ -143,7 +143,7 @@ select:disabled,
   --ui-border: var(--border);
   --ui-accent: var(--primary);
   --ui-danger: var(--destructive);
-  --shell-sidebar-width: 17.5rem;
+  --shell-sidebar-width: 256px;
   --shell-sidebar-width-tight: 15rem;
   --shell-canvas-width: min(36rem, 42vw);
   /* Mock --accent / --faint: same idea across themes, but each still
@@ -521,8 +521,18 @@ select:disabled,
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--muted-foreground);
-  font-size: 0.95rem;
+  font-size: 13.5px;
   font-weight: 640;
+}
+
+.stage-crumbs {
+  font-size: 13.5px;
+}
+
+.stage-crumb-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .stage-crumb-link:hover {
