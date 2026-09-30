@@ -97,6 +97,7 @@ export type BenchDay = {
 export type BenchWorkflowRow = {
   readonly key: string;
   readonly name: string;
+  readonly definitionName: string;
   readonly runs: number;
   readonly ok: number;
   readonly fail: number;
@@ -190,6 +191,7 @@ export function computeBenchInsights(
       return {
         key,
         name: newest[0] !== undefined ? runDisplayName(newest[0]) : key,
+        definitionName: newest[0]?.definitionName ?? key,
         runs: rs.length,
         ok: rs.filter((r) => bucketOf(r, now) === "ok").length,
         fail: rs.filter((r) => bucketOf(r, now) === "fail").length,
