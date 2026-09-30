@@ -8,6 +8,7 @@ import {
 } from "@corbits/react-ui";
 
 import { agentInitials } from "@/chat/threads-api";
+import "./avatar.css";
 
 // Token references, not hex, so no product code hardcodes a color value.
 export const AVATAR_COLORS = ["--avatar-1", "--avatar-2", "--avatar-3", "--avatar-4"] as const;
@@ -31,6 +32,14 @@ export const avatarColorClass: Record<AvatarColor, string> = {
   "--avatar-3": "bg-(--avatar-3) text-black",
   "--avatar-4": "bg-(--avatar-4) text-black",
 };
+
+const WORKER_HUES = ["orange", "blue", "green"] as const;
+
+// Hashed off the name: each bench deploys its own copy of a worker with a new
+// principal id, so the id would recolor one worker per bench.
+function workerHueClass(name: string): string {
+  return `wb-av--${WORKER_HUES[hashPrincipal(name) % WORKER_HUES.length]}`;
+}
 
 export function hashPrincipal(principalId: string): number {
   let hash = 0;
@@ -98,7 +107,12 @@ export function WorkbenchAvatar({
       shape={kind === "person" ? "circle" : "square"}
       orbit={kind === "worker" && status === "working"}
       {...(status === undefined ? {} : { status })}
-      {...(className === undefined ? {} : { className })}
+      className={[
+        kind === "person" ? "wb-av wb-av--person" : `wb-av ${workerHueClass(name)}`,
+        className,
+      ]
+        .filter((c) => c !== undefined)
+        .join(" ")}
     />
   );
 }

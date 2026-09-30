@@ -1,0 +1,31 @@
+/* Workers are hue-tinted rounded squares, people are ink circles. Unlayered,
+   so it wins over react-ui's utility-layer tone fill. */
+.wb-av--orange {
+  background: var(--hue-orange-bg);
+  color: var(--hue-ink);
+}
+.wb-av--blue {
+  background: var(--hue-blue-bg);
+  color: var(--hue-ink);
+}
+.wb-av--green {
+  background: var(--hue-green-bg);
+  color: var(--hue-ink);
+}
+.wb-av--person {
+  background: var(--ink);
+  color: var(--canvas);
+}
+
+/* The status dot is the only round non-initials child. */
+.wb-av > span.rounded-full {
+  width: 8px;
+  height: 8px;
+  right: -2px;
+  bottom: -2px;
+  background: var(--success);
+  --tw-ring-color: var(--surface);
+}
+.wb-av > span.rounded-full.bg-primary-emphasis {
+  background: var(--action);
+}

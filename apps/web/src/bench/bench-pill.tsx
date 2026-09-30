@@ -42,12 +42,7 @@ export function BenchPill({
           <Skeleton className="size-6 rounded-full" />
         )
       ) : (
-        <IdentityAvatar
-          kind="agent"
-          name={worker.name}
-          principalId={worker.id}
-          status={status.tone}
-        />
+        <IdentityAvatar kind="agent" name={worker.name} principalId={worker.id} />
       )}
       <b>{benchName}</b>
       <span className="bench-pill-status">{statusLine(status, worker?.name)}</span>
