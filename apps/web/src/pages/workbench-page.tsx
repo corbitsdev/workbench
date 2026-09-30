@@ -1,7 +1,7 @@
 // See docs/chat-mail-threading.md. The bench pill opens a drawer that pushes
 // the thread left; the drawer's Information tab carries the bench overview.
 
-import { Button, EmptyState, PageShell, toast } from "@corbits/react-ui";
+import { Button, EmptyState, PageShell, Skeleton, toast } from "@corbits/react-ui";
 import { WarningCircle } from "@/lib/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -52,22 +52,32 @@ function WorkbenchMessageRow({
   message,
   participants,
   workbenchTenantId,
+  rosterReady,
   onReply,
 }: {
   readonly message: WorkbenchMessage;
   readonly participants: readonly WorkbenchParticipant[];
   readonly workbenchTenantId: string;
+  /** False until the roster resolves, so a raw run id never shows as sender. */
+  readonly rosterReady: boolean;
   /** Undefined in the sub-thread panel, where a row is read-only context. */
   readonly onReply?: (message: WorkbenchMessage) => void;
 }) {
   // Avatars read off the participant's real name — the person's own
   // included, never the "You" transcript label — falling back to the
   // address local part a mail turn otherwise carries.
-  const avatarName = resolveAvatarName(message, participants);
   const matched = participants.find((participant) =>
     sameAddress(participant.address, message.address),
   );
-  const kind = message.author !== "me" && matched?.kind === "agent" ? "agent" : "person";
+  const agents = participants.filter((p) => p.kind === "agent");
+  // A released or restarted run's address no longer matches the roster; with
+  // one agent in the bench the sender is unambiguous.
+  const resolved = matched ?? (agents.length === 1 ? agents[0] : undefined);
+  const avatarName =
+    message.author !== "me" && matched === undefined && resolved !== undefined
+      ? resolved.name
+      : resolveAvatarName(message, participants);
+  const kind = message.author !== "me" && resolved?.kind === "agent" ? "agent" : "person";
   // The person's own send carries a trailing roster block so agents in the
   // workbench can hand off to each other; it's never something a person should
   // see echoed back at them.
@@ -104,15 +114,19 @@ function WorkbenchMessageRow({
   return (
     <div className="chat-thread-message" data-author={message.author}>
       <span className="shell-ch-avatar">
-        <IdentityAvatar
-          kind={kind}
-          name={avatarName}
-          principalId={matched?.id ?? message.address}
-        />
+        {rosterReady ? (
+          <IdentityAvatar
+            kind={kind}
+            name={avatarName}
+            principalId={resolved?.id ?? message.address}
+          />
+        ) : (
+          <Skeleton className="size-8 rounded-full" />
+        )}
       </span>
       <div className="chat-thread-body">
         <div className="chat-thread-head">
-          <b>{avatarName}</b>
+          {rosterReady ? <b>{avatarName}</b> : <Skeleton className="h-4 w-20" />}
           {Number.isNaN(time.getTime()) ? null : (
             <time dateTime={message.at}>
               {time.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
@@ -271,6 +285,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
             benchName={tenant.data?.name ?? "Workbench"}
             worker={agents[0]}
             status={workerStatus}
+            rosterReady={participants.data !== undefined}
             open={drawerOpen}
             onToggle={() => setDrawerOpen((open) => !open)}
           />
@@ -284,6 +299,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                       message={message}
                       participants={participants.data ?? []}
                       workbenchTenantId={workbenchTenantId}
+                      rosterReady={participants.data !== undefined}
                       onReply={(target) => setOpenThread(target.messageId)}
                     />
                   ))}
@@ -298,12 +314,12 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
               </PageShell>
             </div>
             <div className="workbench-main-composer">
-              <PageShell width="prose" className="page-fill">
+              <PageShell width="full" className="page-fill">
                 <ProviderSkipBanner />
                 <Composer
                   placeholder={
                     startingAgent === undefined
-                      ? "Message this workbench"
+                      ? `Message ${tenant.data?.name ?? "this workbench"}`
                       : `${startingAgent.name} is starting…`
                   }
                   busy={send.isPending}
@@ -333,6 +349,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                     message={message}
                     participants={participants.data ?? []}
                     workbenchTenantId={workbenchTenantId}
+                    rosterReady={participants.data !== undefined}
                   />
                 ))}
               </div>

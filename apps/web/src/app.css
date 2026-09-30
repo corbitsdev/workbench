@@ -4228,11 +4228,11 @@ a.drawer-li:hover,
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  padding-top: 72px;
 }
 .workbench-main-composer {
   flex-shrink: 0;
-  border-top: 1px solid var(--border);
-  padding: 0.75rem 0;
+  padding: 0.75rem 1rem;
 }
 .workbench-participants {
   display: flex;
@@ -4258,6 +4258,12 @@ a.drawer-li:hover,
   font-size: 0.78rem;
   color: var(--muted-foreground);
   cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+.chat-thread-message:hover .workbench-replies-link,
+.workbench-replies-link:focus-visible {
+  opacity: 1;
 }
 .workbench-replies-link:hover {
   color: var(--foreground);

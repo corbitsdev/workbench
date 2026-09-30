@@ -51,6 +51,7 @@ export {
   Maximize2 as ArrowsOut,
   MessageCircle as ChatCircle,
   MessageCircleMore as ChatCircleDots,
+  AudioLines,
   Mic as Microphone,
   MicOff as MicrophoneSlash,
   Minimize2 as ArrowsIn,
