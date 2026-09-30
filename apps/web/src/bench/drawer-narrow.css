@@ -18,3 +18,9 @@
       visibility 0s 300ms;
   }
 }
+
+.drawer-head p {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

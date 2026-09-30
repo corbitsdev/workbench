@@ -1,4 +1,5 @@
-import { Skeleton, formatRelativeTime } from "@corbits/react-ui";
+import { Button, Skeleton, formatRelativeTime, toast } from "@corbits/react-ui";
+import { useState } from "react";
 
 import { ApprovalRow } from "@/chat/approval-row";
 import { IdentityAvatar } from "@/chat/avatar";
@@ -9,6 +10,48 @@ import {
 } from "@/chat/threads-api";
 import { WorkbenchSchedulesPanel } from "../pages/workbench-schedules-panel";
 import { usePendingApprovals } from "../pending-approvals";
+import "./description.css";
+import { DESCRIPTION_MAX, useBenchDescription } from "./description";
+
+function AboutSection({ workbenchTenantId }: { readonly workbenchTenantId: string }) {
+  const { description, save } = useBenchDescription(workbenchTenantId);
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? description;
+  const dirty = draft !== null && draft.trim() !== description;
+  return (
+    <section className="workbench-info-panel">
+      <div className="workbench-info-panel-header">
+        <h2>About</h2>
+      </div>
+      <form
+        className="bench-description-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          save.mutate(value.trim(), {
+            onSuccess: () => setDraft(null),
+            onError: (cause) => toast(cause instanceof Error ? cause.message : String(cause)),
+          });
+        }}
+      >
+        <textarea
+          aria-label="Description"
+          placeholder="Add a description"
+          maxLength={DESCRIPTION_MAX}
+          value={value}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <div className="bench-description-actions">
+          <Button type="submit" size="sm" disabled={!dirty || save.isPending}>
+            Save
+          </Button>
+          <span className="bench-description-count">
+            {value.length}/{DESCRIPTION_MAX}
+          </span>
+        </div>
+      </form>
+    </section>
+  );
+}
 
 /** Overview of the bench: latest activity, what's waiting on the person,
  * running schedules, and who is in it. */
@@ -29,6 +72,8 @@ export function InformationTab({
 
   return (
     <>
+      <AboutSection workbenchTenantId={workbenchTenantId} />
+
       <section className="workbench-info-panel">
         <div className="workbench-info-panel-header">
           <h2>Latest activity</h2>

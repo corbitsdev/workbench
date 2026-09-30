@@ -30,6 +30,7 @@ import { PendingOpeningMessage } from "../bench/pending-opening-message";
 import { ArtifactsTab } from "../bench/artifacts-tab";
 import { markTurnPending, useWorkerStatus } from "../worker-status";
 import { GrantsTab } from "../bench/grants-tab";
+import { useBenchDescription } from "../bench/description";
 import { InformationTab } from "../bench/information-tab";
 import { InsightsTab } from "../bench/insights-tab";
 import { MembersTab } from "../bench/members-tab";
@@ -182,6 +183,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
     queryKey: workbenchKeys.tenant(workbenchTenantId),
     queryFn: () => createFetchStockHub().getTenant(workbenchTenantId),
   });
+  const { description: benchDescription } = useBenchDescription(workbenchTenantId);
   const participants = useQuery({
     queryKey: workbenchKeys.participants(workbenchTenantId),
     queryFn: () => listWorkbenchParticipants(workbenchTenantId, tenant.data?.domain ?? ""),
@@ -378,7 +380,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
         <BenchDrawer
           open={drawerOpen}
           title={tenant.data?.name ?? "Workbench"}
-          subtitle={workerStatus.text}
+          subtitle={benchDescription === "" ? workerStatus.text : benchDescription}
           onClose={closeDrawer}
           tabs={{
             Information: (
