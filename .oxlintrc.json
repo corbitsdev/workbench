@@ -61,17 +61,7 @@
             "paths": [
               {
                 "name": "lucide-react",
-                "message": "lucide-react is retired — import from @/lib/icons instead."
-              },
-              {
-                "name": "@phosphor-icons/react",
-                "message": "Import icons from @/lib/icons, not @phosphor-icons/react directly."
-              }
-            ],
-            "patterns": [
-              {
-                "group": ["@phosphor-icons/react/*"],
-                "message": "Import icons from @/lib/icons, not @phosphor-icons/react directly."
+                "message": "Import icons from @/lib/icons, not lucide-react directly."
               }
             ]
           }

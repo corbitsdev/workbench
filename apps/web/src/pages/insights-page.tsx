@@ -20,7 +20,7 @@ import {
   type BadgeTone,
   type RunStatus,
 } from "@corbits/react-ui";
-import { ChartBar } from "@/lib/icons";
+import { ArrowRight, ChartBar } from "@/lib/icons";
 import { runOutcomeStatus, runStatusLabel, withListingAbandoned } from "@corbits/workflows/client";
 import type * as React from "react";
 import { useEffect, useState } from "react";
@@ -275,7 +275,10 @@ function RecentRunRows({
         ))}
         <TableRow {...onRowActivate(onOpenRuns)}>
           <TableCell colSpan={2} className="font-semibold text-primary-emphasis">
-            All runs →
+            <span className="inline-flex items-center gap-1">
+              All runs
+              <ArrowRight aria-hidden="true" />
+            </span>
           </TableCell>
         </TableRow>
       </TableBody>
