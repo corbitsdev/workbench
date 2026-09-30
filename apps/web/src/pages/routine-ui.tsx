@@ -1,6 +1,13 @@
 import "./routines.css";
 
+import { Button } from "@corbits/react-ui";
+import { toast } from "@corbits/react-ui/ui/toast";
+import { reportError } from "@corbits/error-sink";
 import { WorkflowRunResponse, paginatedSchema } from "@intx/types";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { describeApiError } from "@/lib/api-query";
+import { tenantKeys } from "../query-client";
+import { pauseSchedule, resumeSchedule } from "../routines-api";
 import { useAPIQuery } from "../api";
 import type { APIQuery } from "@/lib/api-query";
 import type { GlobalRoutineRow } from "../global-routines";
@@ -40,7 +47,8 @@ export function routineState(
   lastRun: RunRow | undefined,
 ): { readonly tone: Tone; readonly label: string } {
   if (lastRun?.status === "error") return { tone: "failed", label: "failed" };
-  if (row.definition.status === "stopped") return { tone: "idle", label: "paused" };
+  if (row.definition.status === "stopped" || !row.definition.scheduleEnabled)
+    return { tone: "idle", label: "paused" };
   if (lastRun?.status === "running" || lastRun?.status === "updating") {
     return { tone: "info", label: "running" };
   }
@@ -58,5 +66,27 @@ export function RoutinePill({
     <span className="routine-pill" data-tone={tone}>
       {children}
     </span>
+  );
+}
+
+/** Pauses or resumes the routine's cron schedule; absent when none exists. */
+export function PauseResumeButton({ row }: { readonly row: GlobalRoutineRow }) {
+  const queryClient = useQueryClient();
+  const { scheduleId, scheduleEnabled, name } = row.definition;
+  const toggle = useMutation({
+    mutationFn: () =>
+      (scheduleEnabled ? pauseSchedule : resumeSchedule)(row.tenantId, scheduleId ?? ""),
+    onSuccess: () => toast(`${name} ${scheduleEnabled ? "paused" : "resumed"}`),
+    onError: (cause) => {
+      reportError(cause, { operation: "scheduled_workflow_toggle_pause", tenantId: row.tenantId });
+      toast(`Couldn't update ${name}: ${describeApiError(cause, "updating this routine")}`);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: tenantKeys.routines(row.tenantId) }),
+  });
+  if (scheduleId === null || row.definition.status === "stopped") return null;
+  return (
+    <Button variant="outline" size="sm" disabled={toggle.isPending} onClick={() => toggle.mutate()}>
+      {scheduleEnabled ? "Pause" : "Resume"}
+    </Button>
   );
 }

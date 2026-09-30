@@ -12,7 +12,13 @@ import { Link } from "../navigation";
 import { benchLink, useFromBench } from "../shell/page-crumbs";
 import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
-import { RoutinePill, formatWhen, routineState, useRoutineRuns } from "./routine-ui";
+import {
+  PauseResumeButton,
+  RoutinePill,
+  formatWhen,
+  routineState,
+  useRoutineRuns,
+} from "./routine-ui";
 
 export type { GlobalRoutineRow } from "../global-routines";
 
@@ -52,7 +58,10 @@ function RoutineListRow({
         {runs.kind === "ready" ? formatWhen(lastRun?.createdAt) : "…"}
       </span>
       <RoutinePill tone={state.tone}>{state.label}</RoutinePill>
-      <RunNowButton variant="outline" size="sm" onRun={() => onRunNow(row)} />
+      <div className="flex items-center gap-2">
+        <PauseResumeButton row={row} />
+        <RunNowButton variant="outline" size="sm" onRun={() => onRunNow(row)} />
+      </div>
     </li>
   );
 }

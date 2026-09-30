@@ -10,7 +10,13 @@ import { useNavigate } from "../navigation";
 import { WORKFLOWS_PATH_PREFIX } from "../path-ids";
 import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
-import { RoutinePill, formatWhen, routineState, useRoutineRuns } from "./routine-ui";
+import {
+  PauseResumeButton,
+  RoutinePill,
+  formatWhen,
+  routineState,
+  useRoutineRuns,
+} from "./routine-ui";
 import type { RunRow } from "./routine-ui";
 import { scheduleSentence } from "./routines-page";
 
@@ -187,6 +193,7 @@ export function RoutineDetailPage({
         ]}
         actions={
           <div className="flex items-center gap-2">
+            <PauseResumeButton row={row} />
             <RunNowButton variant="outline" size="sm" onRun={onRunNow} />
           </div>
         }
