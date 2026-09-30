@@ -18,6 +18,7 @@ import {
   type CronSchedule,
 } from "../routines-api";
 import { tenantKeys } from "../query-client";
+import { ConfirmButton } from "../components/confirm-button";
 
 type FormState = {
   readonly definitionName: string;
@@ -64,7 +65,9 @@ export function WorkbenchSchedulesPanel({
   });
 
   const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: tenantKeys.schedules(workbenchTenantId) });
+    queryClient.invalidateQueries({
+      queryKey: tenantKeys.schedules(workbenchTenantId),
+    });
 
   const create = useMutation({
     mutationFn: (input: FormState) =>
@@ -164,14 +167,14 @@ export function WorkbenchSchedulesPanel({
                     Schedule again
                   </Button>
                 )}
-                <Button
-                  variant="ghost"
+                <ConfirmButton
                   size="sm"
-                  onClick={() => remove.mutate(schedule.id)}
+                  confirmLabel="Delete permanently"
+                  onConfirm={() => remove.mutate(schedule.id)}
                   disabled={remove.isPending}
                 >
                   Delete
-                </Button>
+                </ConfirmButton>
               </div>
             </li>
           ))}

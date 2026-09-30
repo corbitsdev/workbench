@@ -8,6 +8,7 @@
 @import "./chat/styles.css";
 @import "./bench/styles.css";
 @import "./settings/styles.css";
+@import "./button-roles.css";
 
 /* react-ui's `.corbits-toast` ships a hardcoded horizontal-center transform
    (`left: 50%; transform: translateX(-50%) !important`) regardless of the

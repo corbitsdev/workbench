@@ -8,7 +8,6 @@ import {
   Card,
   CardDescription,
   CardTitle,
-  ConfirmButton,
   Input,
   PageShell,
   RichEmptyState,
@@ -36,6 +35,7 @@ import {
 import { useDeployedToolPackages } from "../tools/deployed-tool-packages";
 import { useBench } from "../bench-context";
 import { StageTopBar } from "../shell/stage-top-bar";
+import { ConfirmButton } from "../components/confirm-button";
 
 const AUTH_LABEL: Record<McpServer["auth"], string> = {
   none: "No sign-in",
@@ -84,7 +84,6 @@ function McpServersTable({
             </TableCell>
             <TableCell className="text-right">
               <ConfirmButton
-                variant="ghost"
                 size="sm"
                 disabled={removing}
                 confirmLabel="Remove?"
@@ -288,7 +287,11 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
                 serversQuery.data.some((server) => server.handle === entry.handle)
               }
               onAdd={() => {
-                addServer({ url: entry.url, name: entry.name, handle: entry.handle });
+                addServer({
+                  url: entry.url,
+                  name: entry.name,
+                  handle: entry.handle,
+                });
               }}
             />
           ))}
