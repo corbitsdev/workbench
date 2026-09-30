@@ -2,6 +2,8 @@
 // asset, a short-lived git push token, the package's source pushed to
 // `main`, then a deployment pinned to that commit. Identical files change
 // nothing: `main` keeps its commit and the existing deployment is returned.
+// The deploy input rides in the tree, so a changed entry or offering chain is
+// a changed tree; the stock deployment listing exposes neither.
 import { type } from "arktype";
 
 import { pushSourceTree } from "./git-push";
@@ -11,7 +13,11 @@ export class InstallPackageError extends Error {}
 const IdShape = type({ id: "string" });
 const AssetListShape = type({ id: "string", name: "string" }).array();
 const GitTokenShape = type({ id: "string", secret: "string" });
-const DeploymentListShape = type({ id: "string", definitionAssetId: "string" }).array();
+const DeploymentListShape = type({
+  id: "string",
+  definitionAssetId: "string",
+  status: "string",
+}).array();
 const ErrorEnvelope = type({ error: { "userMessage?": "string", "message?": "string" } });
 
 const PUSH_TOKEN_LIFETIME_MS = 10 * 60 * 1000;
@@ -29,7 +35,11 @@ export type InstallPackageArgs = {
   entry: string;
   sourceOfferingIds: readonly string[];
   defaultSourceOfferingId: string;
+  /** Always deploy anew, even for an identical tree: a restart mints a fresh run. */
+  redeploy?: boolean;
 };
+
+const INSTALL_INPUT_PATH = ".workbench-install.json";
 
 async function readError(response: Response): Promise<string> {
   const body: unknown = await response.json().catch(() => undefined);
@@ -90,8 +100,9 @@ async function latestDeploymentId(
       `the deployment list came back an unexpected shape: ${parsed.summary}`,
     );
   }
-  // The route lists most recent first.
-  return parsed.find((deployment) => deployment.definitionAssetId === assetId)?.id ?? null;
+  // The route lists most recent first; a released or failed one is not reusable.
+  const latest = parsed.find((deployment) => deployment.definitionAssetId === assetId);
+  return latest?.status === "deployed" ? latest.id : null;
 }
 
 export async function installPackage(
@@ -101,7 +112,15 @@ export async function installPackage(
   const args = { ...input, fetch: input.fetch.bind(globalThis) };
   const base = `${args.origin}/api/tenants/${encodeURIComponent(args.tenantId)}`;
   const assetId = await ensureWorkflowAsset(args, base);
-  const files = typeof args.files === "function" ? await args.files(assetId) : args.files;
+  const source = typeof args.files === "function" ? await args.files(assetId) : args.files;
+  const files = {
+    ...source,
+    [INSTALL_INPUT_PATH]: JSON.stringify({
+      entry: args.entry,
+      sourceOfferingIds: args.sourceOfferingIds,
+      defaultSourceOfferingId: args.defaultSourceOfferingId,
+    }),
+  };
 
   const minted = await args.fetch(
     `${base}/git-tokens`,
@@ -133,7 +152,7 @@ export async function installPackage(
     await args.fetch(`${base}/git-tokens/${encodeURIComponent(token.id)}`, { method: "DELETE" });
   }
 
-  if (!pushed.changed) {
+  if (!pushed.changed && args.redeploy !== true) {
     const existing = await latestDeploymentId(args, base, assetId);
     if (existing !== null) {
       return { assetId, commitSha: pushed.commitSha, deploymentId: existing };

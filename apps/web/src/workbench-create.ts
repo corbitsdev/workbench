@@ -154,6 +154,7 @@ export async function redeployWorkbenchAgent(
       sourceOfferingIds: offering.sourceOfferingIds,
       defaultSourceOfferingId: offering.defaultSourceOfferingId,
       declaredSources: offering.declaredSources,
+      redeploy: true,
     });
     return;
   }
@@ -167,6 +168,6 @@ export async function redeployWorkbenchAgent(
   const source = await readAgentSource(workbenchTenantId, agent.id, agent.assetName);
   await deployAgentSource({
     tenantId: workbenchTenantId,
-    input: { name: agent.name, systemPrompt: source.systemPrompt, slug },
+    input: { name: agent.name, systemPrompt: source.systemPrompt, slug, redeploy: true },
   });
 }

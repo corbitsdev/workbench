@@ -74,6 +74,8 @@ export type NewAgentInput = {
   /** Tool permissions to re-declare on a redeploy, as creator-sourced grant
    * requirements. */
   readonly toolEffects?: readonly ToolEffect[];
+  /** Deploy anew even when nothing changed (a restart mints a fresh run). */
+  readonly redeploy?: boolean;
 };
 
 /** Maps requested workspace-catalog handles to deployments. Fails closed on
@@ -240,6 +242,7 @@ export async function deployAgentSource(
     entry: "./workflow.js",
     sourceOfferingIds: offering.sourceOfferingIds,
     defaultSourceOfferingId: offering.defaultSourceOfferingId,
+    ...(args.input.redeploy === true ? { redeploy: true } : {}),
   });
   if (args.input.schedule !== undefined) {
     await scheduleAgentRun(args.tenantId, args.input.schedule, assetName, tenant.domain, fetchImpl);

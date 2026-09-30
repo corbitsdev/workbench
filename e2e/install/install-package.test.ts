@@ -1,6 +1,7 @@
 // Proves the client-driven install over stock routes: a package's source goes
 // into a fresh tenant as a workflow asset, deploys, and answers mail. A second
-// install of identical files deploys nothing new. Skips without DATABASE_URL.
+// install of identical input deploys nothing new; a changed offering chain or
+// `redeploy: true` does. Skips without DATABASE_URL.
 // LightningFS, the browser fs the installer uses, needs IndexedDB.
 import "fake-indexeddb/auto";
 import { afterAll, beforeAll, expect, test } from "bun:test";
@@ -135,7 +136,7 @@ describeIfDb("installPackage", () => {
       },
       workflowJson: "{}",
     });
-    const install = () =>
+    const install = (over: { offering?: string; redeploy?: boolean } = {}) =>
       installPackage({
         fetch: call as typeof fetch,
         origin,
@@ -144,8 +145,9 @@ describeIfDb("installPackage", () => {
         displayName: "Echo",
         files,
         entry: "./workflow.js",
-        sourceOfferingIds: [offering],
-        defaultSourceOfferingId: offering,
+        sourceOfferingIds: [over.offering ?? offering],
+        defaultSourceOfferingId: over.offering ?? offering,
+        ...(over.redeploy === true ? { redeploy: true } : {}),
       });
 
     const first = await install();
@@ -172,5 +174,33 @@ describeIfDb("installPackage", () => {
       await (await call(`${origin}${t}/workflows/deployments`)).json(),
     );
     expect(after).toHaveLength(1);
+
+    const deploymentCount = async () =>
+      Deployments.assert(await (await call(`${origin}${t}/workflows/deployments`)).json()).length;
+
+    // The same tree under a different offering chain is a different deploy.
+    const modelProvider2 = await created(
+      await post(`${t}/catalog/providers`, {
+        name: "anthropic-2",
+        plugin: "anthropic",
+        baseURL: "https://api.anthropic.com",
+        credentialId: credential,
+      }),
+    );
+    const offering2 = await created(
+      await post(`${t}/catalog/offerings`, {
+        modelId: model,
+        providerId: modelProvider2,
+        priority: 1,
+      }),
+    );
+    const swapped = await install({ offering: offering2 });
+    expect(swapped.deploymentId).not.toBe(first.deploymentId);
+    expect(await deploymentCount()).toBe(2);
+
+    // An explicit redeploy always deploys anew, even for identical input.
+    const again = await install({ offering: offering2, redeploy: true });
+    expect(again.deploymentId).not.toBe(swapped.deploymentId);
+    expect(await deploymentCount()).toBe(3);
   }, 120_000);
 });

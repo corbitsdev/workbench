@@ -2,7 +2,11 @@
 // over stock routes only.
 import { WORKER_SYSTEM_PROMPT } from "@corbits/worker/prompt";
 import { buildWorkerDefinitionJson } from "@corbits/worker/definition-json";
-import type { ToolEffect, WorkerToolNames, WorkerWorkflowInput } from "@corbits/worker/definition-json";
+import type {
+  ToolEffect,
+  WorkerToolNames,
+  WorkerWorkflowInput,
+} from "@corbits/worker/definition-json";
 import { WORKER_WORKFLOW_ID } from "@corbits/worker/workflow-ids";
 import { renderBundledWorkflowSourceTree } from "@corbits/workflows/client";
 import { type } from "arktype";
@@ -55,6 +59,8 @@ export async function deployWorkerSource(
     sourceOfferingIds: readonly string[];
     defaultSourceOfferingId: string;
     declaredSources: readonly DeclaredSource[];
+    /** Deploy anew even when nothing changed (a restart mints a fresh run). */
+    redeploy?: boolean;
   },
   fetchImpl: typeof fetch = fetch,
 ): Promise<DeployedWorker> {
@@ -86,5 +92,6 @@ export async function deployWorkerSource(
     entry: WORKER_SOURCE_CONFIG.entryPath,
     sourceOfferingIds: args.sourceOfferingIds,
     defaultSourceOfferingId: args.defaultSourceOfferingId,
+    ...(args.redeploy === true ? { redeploy: true } : {}),
   });
 }

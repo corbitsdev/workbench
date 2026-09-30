@@ -114,6 +114,9 @@ export async function redeployWorkerForModelChange(
   if (swapped === null) return false;
 
   const tenantDomain = await resolveTenantDomain(input.tenantId, fetchImpl);
-  await deployWorkerSource({ tenantId: input.tenantId, tenantDomain, ...swapped }, fetchImpl);
+  await deployWorkerSource(
+    { tenantId: input.tenantId, tenantDomain, ...swapped, redeploy: true },
+    fetchImpl,
+  );
   return true;
 }
