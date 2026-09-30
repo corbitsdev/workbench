@@ -44,8 +44,8 @@ export type BrowserApp = {
   newPage: () => Promise<{ page: Page; errors: string[] }>;
 };
 
+// Always rebuild: a leftover dist from an older checkout serves stale UI.
 async function ensureWebBuild(): Promise<void> {
-  if (existsSync(path.join(DIST_DIR, "index.html"))) return;
   const proc = Bun.spawn(["bun", "run", "build"], {
     cwd: WEB_DIR,
     stdout: "inherit",

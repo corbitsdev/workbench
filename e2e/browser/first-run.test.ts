@@ -33,15 +33,15 @@ async function runFlow(page: Page, origin: string): Promise<void> {
 
   // Provider connect is the only onboarding step; a placeholder key is
   // enough because connecting stores a credential without calling the provider.
-  await waitForText(page, "Connect a model provider");
+  await waitForText(page, "Connect a brain");
   await clickText(page, "label", "Anthropic");
   await page.waitForSelector("input[type=password]");
   await page.type("input[type=password]", "sk-ant-placeholder");
   await clickText(page, "button", "Connect");
 
   // A workspace with no workbenches lands on the new-workbench prompt.
-  await waitForText(page, "What do you want your Workbench to do?");
-  await page.type("textarea[placeholder^='What do you want']", FIRST_WORKBENCH);
+  await waitForText(page, "What should this workbench do?");
+  await page.type("textarea[aria-label='What should this workbench do?']", FIRST_WORKBENCH);
   await page.click("button[aria-label='Start this workbench']");
 
   await page.waitForFunction(
