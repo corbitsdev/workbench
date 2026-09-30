@@ -8,7 +8,7 @@
 // directly, so the factories must be real functions here rather than
 // `toolPackagePins` the source lineage never resolves.
 
-import type { AgentDefinition, AnnotatedToolFactory, InferencePreference } from "@intx/agent";
+import type { AgentDefinition, AnnotatedToolFactory } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
 import type { WorkflowDefinition } from "@intx/workflow";
 import { mail } from "@intx/tools-mail/sidecar-bundle";
@@ -19,25 +19,24 @@ import { mcpServers } from "@corbits/mcp/sidecar-bundle";
 import { toolSearch } from "@corbits/deferred-tools";
 
 import {
+  WORKER_DESCRIPTION,
+  workerDirectorRef,
+  type WorkerToolNames,
+  type WorkerWorkflowInput,
+} from "./definition-json";
+import {
   WORKER_STEP_ID,
   artifactToolsCredentialBinding,
   artifactToolsCredentialUseRequirement,
   mcpServerCredentialBinding,
   mcpServerCredentialUseRequirement,
-  mcpToolNamePattern,
   memoryToolsCredentialBinding,
   memoryToolsCredentialUseRequirement,
-  type McpServerDeployment,
 } from "./workflow-ids";
 
 export { WORKER_SYSTEM_PROMPT } from "./system-prompt";
 export { WORKER_STEP_ID, WORKER_WORKFLOW_ID } from "./workflow-ids";
-
-/** The description the agent step carries; mirrored by the JSON projection
- * the deploy writes beside the entry, so both must stay identical. */
-export const WORKER_DESCRIPTION =
-  "A co-worker that lives in one workbench: answers questions, " +
-  "drafts text, and gets things done for the team";
+export { WORKER_DESCRIPTION, type WorkerWorkflowInput } from "./definition-json";
 
 // Tool packages in the shape Interchange has: mail over the agent's
 // transport, posix over its working tree, and artifacts and memory through
@@ -51,49 +50,17 @@ export const WORKER_TOOL_FACTORIES = [
   toolSearch,
 ] as unknown as readonly AnnotatedToolFactory[];
 
-/** The director's tool split, derived from the factories' own declarations so
- * a renamed tool can never fall out of both lists: mail and posix are what
- * every turn carries, artifacts and memory are what the model has to search
- * for. */
 function toolNames(factories: readonly AnnotatedToolFactory[]): string[] {
   return factories.flatMap((factory) => factory.definitions.map((definition) => definition.name));
 }
 
-export function workerDirector(mcpHandles: readonly string[]) {
-  return {
-    id: "@corbits/deferred-tools/director",
-    config: {
-      visible: toolNames([mail, posix] as unknown as readonly AnnotatedToolFactory[]),
-      deferred: [
-        ...toolNames([artifacts, memory] as unknown as readonly AnnotatedToolFactory[]),
-        // A remote catalog can run to dozens of tools, so a whole server's
-        // namespace stays behind one pattern until the model searches for it.
-        ...mcpHandles.map(mcpToolNamePattern),
-      ],
-    },
-  };
-}
-
-/** Everything the definition needs that is per-deployment data. */
-export interface WorkerWorkflowInput {
-  /** The definition id: The default `WORKER_WORKFLOW_ID`, or a created
-   * agent's slug — the bundle is generic over which agent it builds. */
-  readonly workflowId: string;
-  /** The deployment's mail address; each inbound mail is one run. */
-  readonly triggerAddress: string;
-  /** Provider/model preferences, in order; resolved at deploy time. */
-  readonly inferencePreferences: readonly InferencePreference[];
-  /** The prompt this deployment runs with. */
-  readonly systemPrompt: string;
-  /** The tenant credential holding this agent's hub token, minted by the
-   * deployer before the source is pushed. The definition binds it to the
-   * artifact and memory tools and requires its use on the deployer's
-   * authority. */
-  readonly hubCredentialId: string;
-  /** The MCP servers this deployment carries, catalogs already discovered.
-   * Each one gets its own credential handle, binding and use requirement. */
-  readonly mcpServers: readonly McpServerDeployment[];
-}
+/** Read from the factories' own declarations: mail and posix are what every
+ * turn carries, artifacts and memory are what the model has to search for.
+ * The bundle build writes this beside the bundle for the browser-safe JSON. */
+export const WORKER_TOOL_NAMES: WorkerToolNames = {
+  visible: toolNames([mail, posix] as unknown as readonly AnnotatedToolFactory[]),
+  deferred: toolNames([artifacts, memory] as unknown as readonly AnnotatedToolFactory[]),
+};
 
 /**
  * Builds the worker's definition. Exactly one step, on purpose: the single-step
@@ -154,7 +121,10 @@ export function buildWorkerWorkflow(input: WorkerWorkflowInput): WorkflowDefinit
               })),
             }) as unknown as AnnotatedToolFactory,
           ],
-          director: workerDirector(input.mcpServers.map((server) => server.handle)),
+          director: workerDirectorRef(
+            WORKER_TOOL_NAMES,
+            input.mcpServers.map((server) => server.handle),
+          ),
           capabilities: [],
           inference: { sources: input.inferencePreferences },
           toolPackagePins: [],

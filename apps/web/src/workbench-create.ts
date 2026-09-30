@@ -86,14 +86,13 @@ export async function createWorkbench(input: CreateWorkbenchInput): Promise<stri
     if (offering === null) {
       throw new Error("Connect a model provider in Settings before starting a workbench.");
     }
-    const deployInput = await deployWorkerSource({
+    await deployWorkerSource({
       tenantId,
       tenantDomain: domain,
       sourceOfferingIds: offering.sourceOfferingIds,
       defaultSourceOfferingId: offering.defaultSourceOfferingId,
       declaredSources: offering.declaredSources,
     });
-    await hub.deployWorkflow(tenantId, deployInput);
 
     // Each picked bench agent joins the workbench the same way Worker does: its
     // source is read back out of the bench and re-pushed into the child,
@@ -149,14 +148,14 @@ export async function redeployWorkbenchAgent(
         "deploy",
       );
     }
-    const deployInput = await deployWorkerSource({
+    await deployWorkerSource({
       tenantId: workbenchTenantId,
       tenantDomain: tenant.domain,
       sourceOfferingIds: offering.sourceOfferingIds,
       defaultSourceOfferingId: offering.defaultSourceOfferingId,
       declaredSources: offering.declaredSources,
+      redeploy: true,
     });
-    await hub.deployWorkflow(workbenchTenantId, deployInput);
     return;
   }
   const slug = agentSlugFromSourceAssetName(agent.assetName);
@@ -169,6 +168,6 @@ export async function redeployWorkbenchAgent(
   const source = await readAgentSource(workbenchTenantId, agent.id, agent.assetName);
   await deployAgentSource({
     tenantId: workbenchTenantId,
-    input: { name: agent.name, systemPrompt: source.systemPrompt, slug },
+    input: { name: agent.name, systemPrompt: source.systemPrompt, slug, redeploy: true },
   });
 }

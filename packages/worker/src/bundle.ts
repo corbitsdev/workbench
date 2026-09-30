@@ -4,6 +4,7 @@
 // produces it before Vite resolves these imports.
 import bundleText from "../bundle/workflow-bundle.js?raw";
 import directorsText from "../bundle/directors-bundle.js?raw";
+import toolNamesText from "../bundle/tool-names.json?raw";
 
 /** One self-contained ESM module exporting `WORKER_BUNDLE_BUILD_EXPORT`. */
 export const WORKER_WORKFLOW_BUNDLE: string = bundleText;
@@ -13,3 +14,6 @@ export const WORKER_DIRECTORS_BUNDLE: string = directorsText;
 
 /** The bundle export the rendered entry calls with per-deploy values. */
 export const WORKER_BUNDLE_BUILD_EXPORT = "buildWorkerWorkflow";
+
+/** The director's tool split, JSON, as the bundle build wrote it. */
+export const WORKER_TOOL_NAMES_JSON: string = toolNamesText;
