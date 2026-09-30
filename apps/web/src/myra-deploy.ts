@@ -220,8 +220,20 @@ export async function pushMyraSource(
   // Loaded on demand: the git client only runs during setup, so it stays
   // out of the main bundle.
   const { pushSourceTree } = await import("./git-push");
-  return withPushToken(tenantId, assetId, fetchImpl, (token) =>
-    pushSourceTree({ url, token, tree, message: "Publish Myra's definition" }),
+  return withPushToken(
+    tenantId,
+    assetId,
+    fetchImpl,
+    async (token) =>
+      (
+        await pushSourceTree({
+          fetch: fetchImpl,
+          url,
+          token,
+          tree,
+          message: "Publish Myra's definition",
+        })
+      ).commitSha,
   );
 }
 

@@ -35,6 +35,7 @@
     "buffer": "^6.0.3",
     "isomorphic-git": "catalog:",
     "lucide-react": "^1.49.0",
+    "memfs": "^4.80.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-joyride": "^2.9.3"
