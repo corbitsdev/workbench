@@ -46,9 +46,28 @@ export function BenchDrawer({
       active.offsetLeft < strip.scrollLeft ||
       active.offsetLeft + active.offsetWidth > strip.scrollLeft + strip.clientWidth
     ) {
-      strip.scrollLeft = active.offsetLeft - 16;
+      strip.scrollLeft = Math.max(0, active.offsetLeft - 32);
     }
   }, [tab, open]);
+
+  // Edge fades show only on the side that still has tabs to scroll to.
+  useEffect(() => {
+    const strip = stripRef.current;
+    if (strip === null) return;
+    const update = () => {
+      const max = strip.scrollWidth - strip.clientWidth;
+      strip.dataset["fadeStart"] = String(strip.scrollLeft > 1);
+      strip.dataset["fadeEnd"] = String(strip.scrollLeft < max - 1);
+    };
+    update();
+    strip.addEventListener("scroll", update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(strip);
+    return () => {
+      strip.removeEventListener("scroll", update);
+      observer.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return;
