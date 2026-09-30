@@ -239,7 +239,6 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
   });
 
   const messages = timeline.data ?? [];
-  const latestMessage = [...messages].sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0];
   const openedChain = openThread === null ? [] : ancestorChain(messages, openThread);
   const opened = openedChain.at(-1);
   const failure: unknown = timeline.error ?? participants.error;
@@ -361,24 +360,30 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
         <BenchDrawer
           open={drawerOpen}
           title={tenant.data?.name ?? "Workbench"}
-          subtitle={workerStatus.text}
           onClose={closeDrawer}
           tabs={{
             Information: (
               <InformationTab
                 workbenchTenantId={workbenchTenantId}
-                latestMessage={latestMessage}
+                worker={agents[0]}
+                status={workerStatus}
                 participants={participants.data ?? []}
               />
             ),
             Artifacts: <ArtifactsTab workbenchTenantId={workbenchTenantId} />,
             Tools: <ToolsTab workbenchTenantId={workbenchTenantId} />,
-            Grants: <GrantsTab workbenchTenantId={workbenchTenantId} />,
+            Grants: (
+              <GrantsTab
+                workbenchTenantId={workbenchTenantId}
+                participants={participants.data ?? []}
+              />
+            ),
             Insights: <InsightsTab workbenchTenantId={workbenchTenantId} />,
             Members: (
               <MembersTab
                 workbenchTenantId={workbenchTenantId}
                 participants={participants.data ?? []}
+                loading={participants.isPending}
               />
             ),
             Workflows: <WorkflowsTab workbenchTenantId={workbenchTenantId} />,

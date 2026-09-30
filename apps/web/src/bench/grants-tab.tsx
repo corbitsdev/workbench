@@ -1,22 +1,51 @@
-import { Badge, ConfirmButton, toast } from "@corbits/react-ui";
+import { ConfirmButton, toast } from "@corbits/react-ui";
 import type { GrantEffect } from "@intx/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import type { WorkbenchParticipant } from "@/chat/threads-api";
 import { QueryView, describeApiError, toAPIQuery } from "@/lib/api-query";
 import { tenantKeys } from "@/query-client";
+import { GRANT_RESOURCE_LABEL, type GrantResource } from "../settings/resource-vocabulary";
+import { principalLabel } from "../settings/identity";
 import { listGrants, revokeGrant, type Grant } from "../settings/tenancy-api";
 
-const MODE: Record<
-  GrantEffect,
-  { readonly label: string; readonly tone: "success" | "danger" | "info" }
-> = {
-  allow: { label: "Always allow", tone: "success" },
-  ask: { label: "Ask", tone: "info" },
-  deny: { label: "Deny", tone: "danger" },
+const MODE: Record<GrantEffect, string> = {
+  allow: "Always allow",
+  ask: "Ask first",
+  deny: "Deny",
 };
 
+const TOOL_PREFIX = "tool:";
+
+/** "tool:artifact_link_file" reads "Artifact link file"; other resources keep
+ * their vocabulary label. */
+function resourceName(resource: string): string {
+  if (!resource.startsWith(TOOL_PREFIX)) {
+    return GRANT_RESOURCE_LABEL[resource as GrantResource] ?? resource;
+  }
+  const words = resource
+    .slice(TOOL_PREFIX.length)
+    .replace(/[_.-]+/g, " ")
+    .trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 /** This workbench's own grants; they never inherit from the workspace. */
-export function GrantsTab({ workbenchTenantId }: { readonly workbenchTenantId: string }) {
+export function GrantsTab({
+  workbenchTenantId,
+  participants,
+}: {
+  readonly workbenchTenantId: string;
+  readonly participants: readonly WorkbenchParticipant[];
+}) {
+  const who = (grant: Grant): string => {
+    if (grant.roleName !== undefined && grant.roleName !== null) return grant.roleName;
+    const known = participants.find((p) => p.id === grant.principalId);
+    if (known !== undefined) return known.name;
+    return grant.principalName === undefined || grant.principalName === null
+      ? "Everyone here"
+      : principalLabel(grant.principalName).label;
+  };
   const queryClient = useQueryClient();
   const query = toAPIQuery<readonly Grant[]>(
     useQuery({
@@ -52,12 +81,14 @@ export function GrantsTab({ workbenchTenantId }: { readonly workbenchTenantId: s
               {grants.map((grant) => (
                 <li key={grant.id} className="bench-tab-row">
                   <span className="bench-tab-text">
-                    <span className="bench-tab-mono">{grant.action}</span>
-                    <span className="workbench-info-cell-context">
-                      {grant.resource} · {grant.roleName ?? grant.principalName ?? "—"}
+                    <span className="workbench-info-cell-primary" title={grant.resource}>
+                      {resourceName(grant.resource)}
                     </span>
+                    <span className="workbench-info-cell-context">{who(grant)}</span>
                   </span>
-                  <Badge tone={MODE[grant.effect].tone}>{MODE[grant.effect].label}</Badge>
+                  <span className="drawer-grant-mode" data-effect={grant.effect}>
+                    {MODE[grant.effect]}
+                  </span>
                   <ConfirmButton
                     variant="ghost"
                     size="sm"
