@@ -5,6 +5,7 @@
 import { runOutcomeStatus, withListingAbandoned } from "@corbits/workflows/client";
 
 import { isAgentDeploySourceAssetName } from "./agent-deploy";
+import type { Approval } from "./api";
 import type { InsightsRun } from "./insights-api";
 import { MYRA_SOURCE_CONFIG } from "./myra-source";
 
@@ -210,4 +211,55 @@ export function computeBenchInsights(
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, 5),
   };
+}
+
+/** Most recent in-range runs whose approvals the Insights cards fetch. */
+export const APPROVAL_RUN_CAP = 50;
+
+export type ApprovalRuns = {
+  readonly runs: readonly InsightsRun[];
+  /** True when more runs fell in range than the cap allows. */
+  readonly capped: boolean;
+};
+
+export function approvalRunsInRange(
+  runs: readonly InsightsRun[],
+  range: BenchRange,
+  now: number = Date.now(),
+): ApprovalRuns {
+  const first = new Date(now);
+  first.setHours(0, 0, 0, 0);
+  first.setDate(first.getDate() - (range - 1));
+  const start = first.getTime();
+  const inRange = purposeRunsForInsights(runs)
+    .filter((run) => {
+      const t = Date.parse(run.createdAt);
+      return !Number.isNaN(t) && t >= start && t <= now;
+    })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return { runs: inRange.slice(0, APPROVAL_RUN_CAP), capped: inRange.length > APPROVAL_RUN_CAP };
+}
+
+export type ApprovalCounts = {
+  readonly once: number;
+  readonly always: number;
+  readonly denied: number;
+  readonly waiting: number;
+};
+
+/** Timed-out and expired approvals were never answered, so they join no bucket. */
+export function countApprovals(approvals: readonly Approval[]): ApprovalCounts {
+  let once = 0;
+  let always = 0;
+  let denied = 0;
+  let waiting = 0;
+  for (const a of approvals) {
+    if (a.status === "pending") waiting += 1;
+    else if (a.status === "rejected") denied += 1;
+    else if (a.status === "approved") {
+      if (a.scope === "always") always += 1;
+      else once += 1;
+    }
+  }
+  return { once, always, denied, waiting };
 }
