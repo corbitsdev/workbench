@@ -26,11 +26,9 @@ const GENERIC_CREATE_FAILURE = "Something went wrong creating this workbench. Tr
 export function describeWorkbenchCreateFailure(cause: unknown, refId?: string): string {
   if (!(cause instanceof WorkbenchCreateError)) return GENERIC_CREATE_FAILURE;
   const message =
-    cause.stage === "opening-message"
-      ? "Workbench created, but we couldn't send the opening message. Try again from the workbench."
-      : cause.stage === "deploy"
-        ? "Workbench created, but its agent couldn't be deployed into it. Try again from the workbench."
-        : GENERIC_CREATE_FAILURE;
+    cause.stage === "deploy"
+      ? "Workbench created, but its agent couldn't be deployed into it. Try again from the workbench."
+      : GENERIC_CREATE_FAILURE;
   return refId === undefined ? message : `${message} Reference: ${refId}`;
 }
 

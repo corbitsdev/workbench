@@ -1,17 +1,18 @@
 // An agent joins a workbench by being deployed into the child tenant
 // itself — its deploy route rejects the parent's inherited asset.
 
-import { isMyraAgent, listWorkbenchParticipants, sendToWorkbench } from "@/chat/threads-api";
+import { isMyraAgent } from "@/chat/threads-api";
 import { agentSlugFromSourceAssetName, deployAgentSource } from "./agent-deploy";
 import { readAgentSource } from "./agent-source-read";
 import { deployMyraSource } from "./myra-deploy";
+import { parkOpeningMessage } from "./opening-message";
 import { createFetchStockHub } from "./needs-converge";
 import { resolveExistingOffering } from "./onboarding/provider-connect-step";
 
 export class WorkbenchCreateError extends Error {
   constructor(
     message: string,
-    readonly stage: "create" | "deploy" | "opening-message",
+    readonly stage: "create" | "deploy",
     /** Set once the workbench tenant exists, so a later-stage failure can
      * still land the person in the workbench it created. */
     readonly tenantId?: string,
@@ -71,6 +72,11 @@ export async function createWorkbench(input: CreateWorkbenchInput): Promise<stri
     });
     tenantId = created.id;
     domain = created.domain;
+    // The agent surfaces only after the deploy settles, so the workbench page
+    // sends this once it is live rather than /new waiting on it.
+    if (input.openingMessage !== undefined && input.openingMessage !== "") {
+      parkOpeningMessage(tenantId, input.openingMessage);
+    }
   } catch (cause) {
     throw failure(cause, "create");
   }
@@ -105,25 +111,6 @@ export async function createWorkbench(input: CreateWorkbenchInput): Promise<stri
     }
   } catch (cause) {
     throw failure(cause, "deploy", tenantId);
-  }
-
-  if (input.openingMessage !== undefined && input.openingMessage !== "") {
-    try {
-      const participants = await listWorkbenchParticipants(tenantId, domain);
-      const agents = participants.filter((participant) => participant.kind === "agent");
-      // A deployment's run address exists only once the deploy settles; a
-      // workbench whose agent has not surfaced yet keeps the opening message
-      // for the person to send from the workbench itself.
-      if (agents.length > 0) {
-        await sendToWorkbench({
-          workbenchTenantId: tenantId,
-          participants,
-          content: input.openingMessage,
-        });
-      }
-    } catch (cause) {
-      throw failure(cause, "opening-message", tenantId);
-    }
   }
 
   return tenantId;
