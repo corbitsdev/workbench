@@ -1,10 +1,6 @@
 import { WorkflowDefinitionSource } from "@intx/types/workflow-sources";
 import { type } from "arktype";
 
-const ManifestVersion = type("number").narrow(
-  (version, ctx) => version === 1 || ctx.mustBe("manifest version 1"),
-);
-
 export const WorkflowDeployInputSchema = type({
   source: WorkflowDefinitionSource,
   entry: "string > 0",
@@ -13,113 +9,6 @@ export const WorkflowDeployInputSchema = type({
   "pin?": "string > 0",
 });
 export type WorkflowDeployInput = typeof WorkflowDeployInputSchema.infer;
-
-const DesiredPrincipalSchema = type({
-  kind: "'user' | 'workflow'",
-  refId: "string > 0",
-  "email?": "string > 0",
-  status: "'active'",
-  roles: "string[]",
-});
-
-export const NeedsListSchema = type({
-  version: ManifestVersion,
-  account: {
-    id: "string > 0",
-    name: "string > 0",
-    email: "string > 0",
-  },
-  primaryTenant: {
-    kind: "'primary'",
-    want: "'existing'",
-  },
-  worker: {
-    definitionRefId: "string > 0",
-    scope: "'top-level'",
-    want: "'running'",
-    "deploy?": WorkflowDeployInputSchema,
-  },
-  workbenches: type({
-    localId: "string > 0",
-    slug: "string > 0",
-    name: "string > 0",
-    kind: "'workbench'",
-    parent: "'primary'",
-    principals: DesiredPrincipalSchema.array(),
-    "initialMessage?": type({
-      runId: "string > 0",
-      content: "string > 0",
-    }),
-  }).array(),
-});
-export type NeedsList = typeof NeedsListSchema.infer;
-
-export type NeedsListInput = {
-  readonly account: {
-    readonly id: string;
-    readonly name: string;
-    readonly email: string;
-  };
-  readonly workerDefinitionRefId: string;
-  readonly workerDeploy?: WorkflowDeployInput;
-  readonly workbenches?: readonly {
-    readonly localId: string;
-    readonly slug: string;
-    readonly name: string;
-    readonly principals?: readonly {
-      readonly kind: "user" | "workflow";
-      readonly refId: string;
-      readonly email?: string;
-      readonly roles: readonly string[];
-    }[];
-    /** Caller-supplied primary-thread first message for the child tenant:
-     * the run to address and the exact content to send. Never synthesized. */
-    readonly initialMessage?: {
-      readonly runId: string;
-      readonly content: string;
-    };
-  }[];
-};
-
-export function buildNeedsList(input: NeedsListInput): NeedsList {
-  return {
-    version: 1,
-    account: { ...input.account },
-    primaryTenant: { kind: "primary", want: "existing" },
-    worker: {
-      definitionRefId: input.workerDefinitionRefId,
-      scope: "top-level",
-      want: "running",
-      ...(input.workerDeploy === undefined ? {} : { deploy: input.workerDeploy }),
-    },
-    workbenches: (input.workbenches ?? []).map((workbench) => ({
-      localId: workbench.localId,
-      slug: workbench.slug,
-      name: workbench.name,
-      kind: "workbench" as const,
-      parent: "primary" as const,
-      principals: (workbench.principals ?? []).map((principal) => ({
-        kind: principal.kind,
-        refId: principal.refId,
-        ...(principal.email === undefined ? {} : { email: principal.email }),
-        status: "active" as const,
-        roles: [...principal.roles],
-      })),
-      ...(workbench.initialMessage === undefined
-        ? {}
-        : {
-            initialMessage: {
-              runId: workbench.initialMessage.runId,
-              content: workbench.initialMessage.content,
-            },
-          }),
-    })),
-  };
-}
-
-export function parseNeedsList(data: unknown) {
-  return NeedsListSchema(data);
-}
 
 export type StringStorage = {
   getItem(key: string): string | null;

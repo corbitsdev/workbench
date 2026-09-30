@@ -36,9 +36,8 @@ export async function runFirstRunFlow(page: Page, origin: string): Promise<void>
   await page.type("input[type=password]", "sk-ant-placeholder");
   await clickText(page, "button", "Connect");
 
-  // Connecting installs Worker, then the ready screen hands off to the
-  // new-workbench prompt (a workspace with no workbenches).
-  await clickText(page, "button", "Start your first workbench");
+  // Connecting hands off to the new-workbench prompt (a workspace with no
+  // workbenches); the first bench's worker is the first worker.
   await page.waitForSelector("textarea", { timeout: STEP_TIMEOUT });
   await page.type("textarea", FIRST_WORKBENCH);
   await page.click("button[aria-label='Start this workbench']");

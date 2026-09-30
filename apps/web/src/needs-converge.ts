@@ -3,23 +3,14 @@
 
 import { type } from "arktype";
 
-import { WORKER_SOURCE_CONFIG } from "./worker-source";
 import {
   childTenantStore,
   threadLinkStore,
   type ChildTenantStore,
-  type NeedsList,
   type StringStorage,
   type WorkflowDeployInput,
 } from "./needs-list";
-import {
-  buildForkReference,
-  deriveDmThreads,
-  deriveThreads,
-  type DmThread,
-  type Thread,
-  type ThreadMessage,
-} from "./threads";
+import { buildForkReference, type ThreadMessage } from "./threads";
 
 export type HubTenant = {
   id: string;
@@ -84,10 +75,6 @@ export type StockHub = {
   // without it every subsequent read 403s.
   inviteMember(tenantId: string, input: { email: string; role: string }): Promise<void>;
   deployWorkflow(tenantId: string, input: WorkflowDeployInput): Promise<void>;
-  /** Whether a live (non-released, non-failed) deployment is anchored to
-   * the tenant's `workflow` asset of that name. Stock mints a deployment's
-   * principal only at its first run, so this is the deploy-time truth. */
-  hasWorkflowDeployment(tenantId: string, assetName: string): Promise<boolean>;
   sendRunMail(input: SendRunMailInput): Promise<{ messageId: string }>;
   listRunMail(input: { tenantId: string }): Promise<MailMessage[]>;
   /** Stock per-agent mailbox search: participant-filtered thread derivation
@@ -98,23 +85,8 @@ export type StockHub = {
   readMailThread(input: { messageId: string }): Promise<MailMessage[]>;
 };
 
-export type HubSnapshot = {
-  primaryTenant: HubTenant;
-  workerDeployed: boolean;
-  primaryPrincipals: HubPrincipal[];
-  childTenants: HubTenant[];
-  childPrincipals: Record<string, HubPrincipal[]>;
-};
-
-export type PrimaryThread = {
-  tenantId: string;
-  rootMessageId: string;
-  subThreads: Thread[];
-};
-
 export type StockHubCapability =
   | "primary-tenant-bootstrap"
-  | "deploy-workflow-inputs"
   | "project-workflow-principal"
   | "principal-roles"
   | "agent-mailbox-reads"
@@ -158,190 +130,6 @@ export async function findOwnedTenants(hub: StockHub): Promise<HubTenant[]> {
   return (
     await Promise.all(activeOwned.map((membership) => hub.getTenant(membership.tenantId)))
   ).filter((tenant): tenant is HubTenant => tenant !== null);
-}
-
-export async function readHubSnapshot(hub: StockHub): Promise<HubSnapshot> {
-  const tenants = await findOwnedTenants(hub);
-  const primaryCandidates = tenants.filter((tenant) => tenant.parentId === null);
-  const [primaryTenant] = primaryCandidates;
-  if (primaryCandidates.length !== 1 || primaryTenant === undefined) {
-    throw new StockHubCapabilityError(
-      "primary-tenant-bootstrap",
-      `Sign-in must leave exactly one owned top-level home; found ${primaryCandidates.length}.`,
-    );
-  }
-  const childTenants = tenants.filter((tenant) => tenant.parentId === primaryTenant.id);
-  const [primaryPrincipals, childRows, workerDeployed] = await Promise.all([
-    hub.listPrincipals(primaryTenant.id),
-    Promise.all(
-      childTenants.map(async (tenant) => [tenant.id, await hub.listPrincipals(tenant.id)] as const),
-    ),
-    hub.hasWorkflowDeployment(primaryTenant.id, WORKER_SOURCE_CONFIG.assetName),
-  ]);
-  return {
-    primaryTenant,
-    workerDeployed,
-    primaryPrincipals,
-    childTenants,
-    childPrincipals: Object.fromEntries(childRows),
-  };
-}
-
-function hasWorker(_manifest: NeedsList, snapshot: HubSnapshot): boolean {
-  return snapshot.workerDeployed;
-}
-
-export type ConvergeReport = {
-  primaryTenantId: string;
-  createdTenantIds: string[];
-  /** DMs derived from participant-filtered threads — never tenants. */
-  directMessages: DmThread[];
-  primaryThreads: PrimaryThread[];
-};
-
-/** Re-resolves the stored tenant id before creating one — the store can
- * point at a tenant the hub no longer has. */
-async function convergeWorkbenchTenant(
-  hub: StockHub,
-  store: ChildTenantStore,
-  snapshot: HubSnapshot,
-  workbench: NeedsList["workbenches"][number],
-): Promise<{ tenantId: string; created: boolean }> {
-  const stored = store.load().find((row) => row.localId === workbench.localId);
-  const existing = snapshot.childTenants.find((tenant) => tenant.id === stored?.tenantId);
-  if (existing !== undefined && stored !== undefined) {
-    return { tenantId: existing.id, created: false };
-  }
-  const created = await hub.createTenant({
-    name: workbench.name,
-    slug: workbench.slug,
-    parentId: snapshot.primaryTenant.id,
-  });
-  store.record({
-    ...(stored ?? {}),
-    localId: workbench.localId,
-    tenantId: created.id,
-    kind: "workbench",
-  });
-  for (const principal of workbench.principals) {
-    if (principal.email !== undefined) {
-      await hub.inviteMember(created.id, {
-        email: principal.email,
-        role: principal.roles[0] ?? "member",
-      });
-    }
-  }
-  return { tenantId: created.id, created: true };
-}
-
-/** A recorded Message-ID means the send already happened — never resend,
- * never mint a custom key. */
-async function convergePrimaryThread(
-  hub: StockHub,
-  store: ChildTenantStore,
-  workbench: NeedsList["workbenches"][number],
-  tenantId: string,
-): Promise<void> {
-  const stored = store.load().find((row) => row.localId === workbench.localId);
-  if (stored?.primaryThreadMessageId !== undefined) return;
-  if (workbench.initialMessage === undefined) return;
-  const sent = await hub.sendRunMail({
-    tenantId,
-    runId: workbench.initialMessage.runId,
-    to: workbench.principals.flatMap((principal) =>
-      principal.email === undefined ? [] : [principal.email],
-    ),
-    subject: workbench.name,
-    body: workbench.initialMessage.content,
-  });
-  store.record({
-    ...(stored ?? {}),
-    localId: workbench.localId,
-    tenantId,
-    kind: "workbench",
-    primaryThreadMessageId: sent.messageId,
-  });
-}
-
-export async function convergeNeedsList(
-  manifest: NeedsList,
-  hub: StockHub,
-  store: ChildTenantStore,
-  suppliedSnapshot?: HubSnapshot,
-  directMail: readonly ThreadMessage[] = [],
-): Promise<ConvergeReport> {
-  const snapshot = suppliedSnapshot ?? (await readHubSnapshot(hub));
-
-  // Gap checks first: nothing is written until every need is satisfiable.
-  if (!hasWorker(manifest, snapshot) && manifest.worker.deploy === undefined) {
-    throw new StockHubCapabilityError(
-      "deploy-workflow-inputs",
-      "The worker is absent and the client was not supplied the exact stock workflow source and offering ids.",
-    );
-  }
-
-  for (const workbench of manifest.workbenches) {
-    for (const principal of workbench.principals) {
-      if (principal.kind === "workflow") {
-        throw new StockHubCapabilityError(
-          "project-workflow-principal",
-          `Stock Interchange cannot carry workflow ${principal.refId} into a child workbench by refId.`,
-        );
-      }
-      if (principal.roles.some((role) => role !== "member")) {
-        throw new StockHubCapabilityError(
-          "principal-roles",
-          "The stock member invite route cannot assign the requested child-workbench roles.",
-        );
-      }
-      if (principal.email === undefined) {
-        throw new StockHubCapabilityError(
-          "project-workflow-principal",
-          `The stock member invite route cannot project user ${principal.refId} without an email address.`,
-        );
-      }
-    }
-  }
-
-  if (!hasWorker(manifest, snapshot) && manifest.worker.deploy !== undefined) {
-    await hub.deployWorkflow(snapshot.primaryTenant.id, manifest.worker.deploy);
-  }
-
-  // Writes after gap checks, in needs-list order: child tenant, then its
-  // primary-thread first message.
-  const createdTenantIds: string[] = [];
-  for (const workbench of manifest.workbenches) {
-    const converged = await convergeWorkbenchTenant(hub, store, snapshot, workbench);
-    if (converged.created) createdTenantIds.push(converged.tenantId);
-    await convergePrimaryThread(hub, store, workbench, converged.tenantId);
-  }
-
-  // Reads stay stock routes: split each workbench mailbox into its primary
-  // thread (first conversation.message sent in the child tenant, or the
-  // recorded primary id) plus forked sub-threads.
-  const primaryThreads: PrimaryThread[] = [];
-  for (const workbench of manifest.workbenches) {
-    const stored = store.load().find((row) => row.localId === workbench.localId);
-    if (stored === undefined) continue;
-    const mail = await hub.listRunMail({ tenantId: stored.tenantId });
-    const grouped = deriveThreads(mail);
-    // The recorded id is authoritative; mail[0] is only a fallback for mail
-    // sent before it was recorded (see docs/chat-mail-threading.md).
-    const rootMessageId = stored.primaryThreadMessageId ?? mail[0]?.messageId;
-    if (rootMessageId === undefined) continue;
-    primaryThreads.push({
-      tenantId: stored.tenantId,
-      rootMessageId,
-      subThreads: grouped.filter((thread) => thread.rootMessageId !== rootMessageId),
-    });
-  }
-
-  return {
-    primaryTenantId: snapshot.primaryTenant.id,
-    createdTenantIds,
-    directMessages: deriveDmThreads(directMail, [manifest.account.email]),
-    primaryThreads,
-  };
 }
 
 export type ForkSubThreadParent = {
@@ -484,13 +272,6 @@ const HubErrorEnvelope = type({
   error: { code: "string", "message?": "string", "userMessage?": "string" },
 });
 
-const WorkflowAssetListShape = type({ id: "string", name: "string" }).array();
-const DeploymentListShape = type({
-  definitionAssetId: "string",
-  status: "string",
-}).array();
-const TERMINAL_DEPLOYMENT_STATUSES = new Set(["released", "failed", "destroy_failed"]);
-
 async function readJson(response: Response, operation: string): Promise<unknown> {
   if (!response.ok) {
     const envelope = HubErrorEnvelope(await response.json().catch(() => undefined));
@@ -599,33 +380,6 @@ export function createFetchStockHub(fetchImpl: typeof fetch = fetch): StockHub {
           body: JSON.stringify(input),
         }),
         "deployWorkflow",
-      );
-    },
-    async hasWorkflowDeployment(tenantId, assetName) {
-      const assets = parseBoundary(
-        WorkflowAssetListShape,
-        await readJson(
-          await fetchImpl(
-            `/api/tenants/${encodeURIComponent(tenantId)}/assets?kind=workflow&inherited=false`,
-          ),
-          "listWorkflowAssets",
-        ),
-        "listWorkflowAssets",
-      );
-      const asset = assets.find((row) => row.name === assetName);
-      if (asset === undefined) return false;
-      const deployments = parseBoundary(
-        DeploymentListShape,
-        await readJson(
-          await fetchImpl(`/api/tenants/${encodeURIComponent(tenantId)}/workflows/deployments`),
-          "listDeployments",
-        ),
-        "listDeployments",
-      );
-      return deployments.some(
-        (deployment) =>
-          deployment.definitionAssetId === asset.id &&
-          !TERMINAL_DEPLOYMENT_STATUSES.has(deployment.status),
       );
     },
     async sendRunMail(input) {

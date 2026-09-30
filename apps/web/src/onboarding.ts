@@ -1,10 +1,8 @@
-// A read-only probe: setup counts as done only once the primary tenant has
-// Worker live, so an install that failed midway resumes instead of landing
-// in an empty shell.
+// A read-only probe: setup counts as done once the primary tenant exists and
+// has a model connected; the first bench's worker is the first worker.
 
 import { type } from "arktype";
 import { reportError } from "@corbits/error-sink";
-import { WORKER_SOURCE_CONFIG } from "./worker-source";
 import { createFetchStockHub, findOwnedTenants, type StockHub } from "./needs-converge";
 
 // The cheap pre-skip read to tell "no credential yet" apart from "still
@@ -62,8 +60,11 @@ export async function triggerFirstLoginProvisioning(
     const owned = await findOwnedTenants(hub);
     const primary = owned.find((tenant) => tenant.parentId === null);
     if (primary === undefined) return { kind: "needs-onboarding" };
-    const deployed = await hub.hasWorkflowDeployment(primary.id, WORKER_SOURCE_CONFIG.assetName);
-    return deployed ? { kind: "existing-member" } : { kind: "needs-onboarding" };
+    const credential = await hasActiveCredential(primary.id);
+    if (credential.kind === "error") throw new Error("Checking your model access hit a snag.");
+    return credential.kind === "active"
+      ? { kind: "existing-member" }
+      : { kind: "needs-onboarding" };
   } catch (cause) {
     const refId = reportError(cause, { operation: "first_login_provisioning" });
     return { kind: "error", message: FALLBACK_ERROR_MESSAGE, refId };

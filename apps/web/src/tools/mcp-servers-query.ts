@@ -147,10 +147,7 @@ async function redeployWorkspaceWorkers(
 ): Promise<RedeployWorkspaceResult> {
   const workbenches = await listWorkbenchTenants(workspaceTenantId);
   const result = await redeployWorkerTenants(
-    [
-      { id: workspaceTenantId, name: "workspace" },
-      ...workbenches.map((workbench) => ({ id: workbench.id, name: workbench.title })),
-    ],
+    workbenches.map((workbench) => ({ id: workbench.id, name: workbench.title })),
     {
       findWorker: async (tenantId) => (await listChatAgents(tenantId)).find(isDefaultWorker),
       redeploy: (tenantId, worker) => redeployWorkbenchAgent(tenantId, worker),

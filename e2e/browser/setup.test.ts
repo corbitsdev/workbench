@@ -1,6 +1,7 @@
 // The hub seeds nothing: before signup it has no tenants for the visitor,
-// and after the client's setup the workspace and Worker exist, created by the
-// signed-in principal. Reloading the app never duplicates either.
+// and after the client's setup the workspace exists with no deployment,
+// created by the signed-in principal; the first bench brings the first
+// worker. Reloading the app never duplicates either.
 import { expect, test } from "bun:test";
 import type { Page } from "puppeteer-core";
 import { bootBrowserApp, browserGate } from "../lib/browser";
@@ -75,21 +76,34 @@ describeBrowser("client setup", () => {
     await page.waitForSelector("input[type=password]");
     await page.type("input[type=password]", "sk-ant-placeholder");
     await clickText(page, "button", "Connect");
-    await clickText(page, "button", "Start your first workbench");
     await page.waitForSelector("textarea", { timeout: STEP_TIMEOUT });
 
-    const first = await snapshot(page);
-    expect(first.tenants).toHaveLength(1);
-    expect(first.tenants[0]?.["parentId"] ?? null).toBeNull();
-    expect(first.deployments).toHaveLength(1);
-    expect(first.deployments[0]?.["tenantId"]).toBe(first.tenants[0]?.["id"]);
+    // Setup leaves one workspace tenant and no deployment anywhere.
+    const setup = await snapshot(page);
+    expect(setup.tenants).toHaveLength(1);
+    expect(setup.tenants[0]?.["parentId"] ?? null).toBeNull();
+    expect(setup.deployments).toHaveLength(0);
     // The stock tenant carries no creator field; the signed-in user's own
     // principal holding owner on it is the client-created proof.
     const mine = items((await probe(page, "/api/me/principals")).body);
     expect(mine).toHaveLength(1);
-    expect(mine[0]?.["tenantId"]).toBe(first.tenants[0]?.["id"]);
+    expect(mine[0]?.["tenantId"]).toBe(setup.tenants[0]?.["id"]);
     expect(mine[0]?.["kind"]).toBe("user");
     expect(JSON.stringify(mine[0]?.["roles"])).toContain("owner");
+
+    // The first bench carries the first worker.
+    await page.type("textarea", "Summarize what shipped this week");
+    await page.click("button[aria-label='Start this workbench']");
+    await page.waitForFunction(`location.pathname.startsWith("/w/")`, { timeout: STEP_TIMEOUT });
+    const benchId = new URL(page.url()).pathname.slice("/w/".length);
+
+    const first = await snapshot(page);
+    expect(first.tenants).toHaveLength(2);
+    expect(first.tenants.find((t) => t["id"] === benchId)?.["parentId"]).toBe(
+      setup.tenants[0]?.["id"],
+    );
+    expect(first.deployments).toHaveLength(1);
+    expect(first.deployments[0]?.["tenantId"]).toBe(benchId);
 
     for (let i = 0; i < 2; i++) {
       await page.reload({ waitUntil: "networkidle0" });

@@ -98,7 +98,6 @@ describeBrowser("0-to-1 gate", () => {
       await fields[1]?.type("mock-model");
       await clickText(page, "button", "Connect");
 
-      await clickText(page, "button", "Start your first workbench");
       await page.waitForSelector("textarea", { timeout: STEP_TIMEOUT });
       await page.type("textarea", "Say hello");
       await page.click("button[aria-label='Start this workbench']");
