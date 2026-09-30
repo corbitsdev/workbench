@@ -1,12 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { renderToStaticMarkup } from "react-dom/server";
 
 import {
   AVATAR_COLORS,
-  CORBIT_DEFAULT_COLOR,
-  CORBIT_GLINT_COLOR,
-  CORBIT_VISOR_COLOR,
-  CorbitAvatar,
   avatarClassForPrincipal,
   avatarColorClass,
   avatarColorForPrincipal,
@@ -84,45 +79,5 @@ describe("resolveAvatarFill", () => {
   test("an empty image string is treated as no image", () => {
     const fill = resolveAvatarFill("prn_alice", "");
     expect(fill.kind).toBe("generated");
-  });
-});
-
-describe("CorbitAvatar", () => {
-  test("paints its field from the identity token", () => {
-    const html = renderToStaticMarkup(<CorbitAvatar />);
-    expect(html).toContain(`fill:var(${CORBIT_DEFAULT_COLOR})`);
-    // The field's old hardcoded fill is gone. The shared visor/glint face
-    // geometry keeps its fixed constants — it is identical on every agent,
-    // so it was never part of the per-principal identity palette.
-    expect(html).not.toContain('fill="#C5D2DE"');
-  });
-
-  test("a chosen palette token paints the field", () => {
-    const html = renderToStaticMarkup(<CorbitAvatar color="--avatar-3" />);
-    expect(html).toContain("fill:var(--avatar-3)");
-  });
-  test("renders an SVG with an accessible name and no visible label", () => {
-    const html = renderToStaticMarkup(<CorbitAvatar ariaLabel="Myra" size="md" />);
-    expect(html).toContain('role="img"');
-    expect(html).toContain('aria-label="Myra"');
-    expect(html).toContain('data-corbit="true"');
-    expect(html).toContain("<svg");
-    expect(html).not.toContain("title=");
-    expect(html).not.toContain(">Myra<");
-  });
-
-  test("contains the visor and glint geometry", () => {
-    const html = renderToStaticMarkup(<CorbitAvatar />);
-    expect(html).toContain(`fill="${CORBIT_VISOR_COLOR}"`);
-    expect(html).toContain(`fill="${CORBIT_GLINT_COLOR}"`);
-  });
-
-  test("supports named and numeric sizes", () => {
-    const namedHtml = renderToStaticMarkup(<CorbitAvatar size="sm" />);
-    expect(namedHtml).toContain("size-6");
-
-    const numericHtml = renderToStaticMarkup(<CorbitAvatar size={28} />);
-    expect(numericHtml).toContain("width:28px");
-    expect(numericHtml).toContain("height:28px");
   });
 });

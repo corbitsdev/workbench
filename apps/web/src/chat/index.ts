@@ -4,8 +4,6 @@ export { NoUsableModelBanner } from "./no-usable-model-banner";
 export {
   CorbitAvatar,
   CORBIT_DEFAULT_COLOR,
-  CORBIT_VISOR_COLOR,
-  CORBIT_GLINT_COLOR,
   AVATAR_COLORS,
   avatarColorClass,
   avatarColorForPrincipal,
