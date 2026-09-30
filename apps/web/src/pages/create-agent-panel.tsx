@@ -60,7 +60,7 @@ export function CreateAgentPanel({
   const [values, setValues] = useState<FormValues>(EMPTY_VALUES);
   const [systemPrompt, setSystemPrompt] = useState("");
   // Handles checked below, out of the workspace catalog — each becomes a
-  // definition binding plus a use requirement, the same as Myra's Exa.
+  // definition binding plus a use requirement, the same as Worker's Exa.
   const [selectedHandles, setSelectedHandles] = useState<readonly string[]>([]);
   const deploy = useDeployAgentMutation(tenantId);
   const catalog = useMcpServers(tenantId);
@@ -164,8 +164,8 @@ export function CreateAgentPanel({
                 <span>MCP servers</span>
               </legend>
               <p className="text-xs text-muted-foreground">
-                The workspace catalog — checked servers are bound into this agent like Myra&apos;s
-                Exa, ask-gated except read-only tools.
+                The workspace catalog — checked servers are bound into this agent like your
+                worker&apos;s Exa, ask-gated except read-only tools.
               </p>
               {catalog.kind === "loading" ? (
                 <p className="text-xs text-muted-foreground">Loading workspace servers…</p>

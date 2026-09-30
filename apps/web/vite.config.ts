@@ -10,18 +10,18 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, type Plugin } from "vite";
 
-const myraDir = path.resolve(__dirname, "..", "..", "agents", "myra");
+const workerDir = path.resolve(__dirname, "..", "..", "packages", "worker");
 
-// Myra's deploy source is a bundle of her workflow entry, generated (and
+// Worker's deploy source is a bundle of her workflow entry, generated (and
 // gitignored) rather than committed; it has to exist before Vite resolves
-// `@corbits/myra/bundle`. Built in a `bun` subprocess because `Bun.build`
+// `@corbits/worker/bundle`. Built in a `bun` subprocess because `Bun.build`
 // is unavailable in the Node process Vite itself runs in.
-function myraWorkflowBundle(): Plugin {
+function workerWorkflowBundle(): Plugin {
   return {
-    name: "myra-workflow-bundle",
+    name: "worker-workflow-bundle",
     buildStart() {
-      execFileSync("bun", ["run", path.join(myraDir, "scripts", "build-bundle.ts")], {
-        cwd: myraDir,
+      execFileSync("bun", ["run", path.join(workerDir, "scripts", "build-bundle.ts")], {
+        cwd: workerDir,
         stdio: "inherit",
       });
     },
@@ -42,7 +42,7 @@ function manualChunks(id: string): string | undefined {
 const hubOrigin = process.env.BASE_URL ?? "http://localhost:3000";
 
 export default defineConfig({
-  plugins: [myraWorkflowBundle(), react(), tailwindcss()],
+  plugins: [workerWorkflowBundle(), react(), tailwindcss()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),

@@ -4,7 +4,6 @@
   "private": true,
   "license": "SEE LICENSE IN LICENSE.md",
   "workspaces": [
-    "agents/*",
     "apps/*",
     "packages/*",
     "vendor/intx/*",
@@ -13,9 +12,9 @@
   "scripts": {
     "check": "bun run typecheck && bun run lint && bun run fmt:check && bun run test",
     "typecheck": "bun run scripts/typecheck.ts",
-    "lint": "oxlint apps packages agents workflows scripts e2e",
-    "fmt": "oxfmt apps packages agents workflows scripts e2e",
-    "fmt:check": "oxfmt --check apps packages agents workflows scripts e2e",
+    "lint": "oxlint apps packages workflows scripts e2e",
+    "fmt": "oxfmt apps packages workflows scripts e2e",
+    "fmt:check": "oxfmt --check apps packages workflows scripts e2e",
     "build": "bun run scripts/run-all.ts build",
     "test": "bun run scripts/run-all.ts test",
     "test:e2e": "bun test e2e",

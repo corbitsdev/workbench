@@ -31,9 +31,9 @@ import {
   type ModelProviderResponse,
   type ModelResponse,
 } from "@/settings/inference";
-import { redeployMyraForModelChange } from "@/settings/myra-model-redeploy";
+import { redeployWorkerForModelChange } from "@/settings/worker-model-redeploy";
 import { tenantKeys } from "@/query-client";
-import { finishDeferredMyraSetup } from "@/deferred-myra-setup";
+import { finishDeferredWorkerSetup } from "@/deferred-worker-setup";
 import { useSessionUser } from "@/navigation";
 import {
   deleteCredential,
@@ -135,8 +135,8 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
 
   function reload() {
     if (tenantId === null) return;
-    // A provider connected after a skipped onboarding finishes Myra's deploy.
-    if (user !== undefined) void finishDeferredMyraSetup(user);
+    // A provider connected after a skipped onboarding finishes Worker's deploy.
+    if (user !== undefined) void finishDeferredWorkerSetup(user);
     void queryClient.invalidateQueries({
       queryKey: tenantKeys.credentials(tenantId),
     });
@@ -217,11 +217,11 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
           input.model,
         );
         if (newOffering.id !== offering.id) {
-          // Myra's own deployed run pins the old offering id — moving her onto
+          // Worker's own deployed run pins the old offering id — moving her onto
           // the new one first, then retiring the old one, is the only order
           // that never leaves a live run pointed at a dead offering. A failed
           // redeploy throws here and both offerings are left in place.
-          await redeployMyraForModelChange({
+          await redeployWorkerForModelChange({
             tenantId,
             oldOfferingId: offering.id,
             newOfferingId: newOffering.id,

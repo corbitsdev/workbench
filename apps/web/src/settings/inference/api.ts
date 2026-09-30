@@ -261,10 +261,10 @@ export function updateModelProviderBaseURL(
  * model-offerings.ts`), and a model's `canonicalName` is immutable once
  * created, so "changing the model" means a new offering row, not an edit
  * of the old one. The old offering is deliberately left alive here: a
- * deployed Myra run pins `sourceOfferingIds` in its stock launch spec
+ * deployed Worker run pins `sourceOfferingIds` in its stock launch spec
  * (`vendor/intx/db/src/schema/workflow-run-launch-spec.ts`) and the
  * allocation service re-resolves by those exact ids, so deleting the old
- * offering before Myra is redeployed onto the new one would leave a live
+ * offering before Worker is redeployed onto the new one would leave a live
  * run pointing at a dead offering. The caller redeploys first, then calls
  * {@link deleteOwnOffering} on the old id only once that succeeds. */
 export async function mintOfferingForModel(

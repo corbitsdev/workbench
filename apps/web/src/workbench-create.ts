@@ -1,10 +1,10 @@
 // An agent joins a workbench by being deployed into the child tenant
 // itself — its deploy route rejects the parent's inherited asset.
 
-import { isMyraAgent } from "@/chat/threads-api";
+import { isDefaultWorker } from "@/chat/threads-api";
 import { agentSlugFromSourceAssetName, deployAgentSource } from "./agent-deploy";
 import { readAgentSource } from "./agent-source-read";
-import { deployMyraSource } from "./myra-deploy";
+import { deployWorkerSource } from "./worker-deploy";
 import { parkOpeningMessage } from "./opening-message";
 import { createFetchStockHub } from "./needs-converge";
 import { resolveExistingOffering } from "./onboarding/provider-connect-step";
@@ -49,7 +49,7 @@ export type CreateWorkbenchInput = {
   readonly benchTenantId: string;
   readonly name: string;
   readonly openingMessage?: string;
-  /** Existing bench agents to re-deploy into the workbench alongside Myra:
+  /** Existing bench agents to re-deploy into the workbench alongside Worker:
    * their source asset id, name, and asset name (for reading it back). */
   readonly pickedAgents?: readonly {
     readonly id: string;
@@ -86,7 +86,7 @@ export async function createWorkbench(input: CreateWorkbenchInput): Promise<stri
     if (offering === null) {
       throw new Error("Connect a model provider in Settings before starting a workbench.");
     }
-    const deployInput = await deployMyraSource({
+    const deployInput = await deployWorkerSource({
       tenantId,
       tenantDomain: domain,
       sourceOfferingIds: offering.sourceOfferingIds,
@@ -95,7 +95,7 @@ export async function createWorkbench(input: CreateWorkbenchInput): Promise<stri
     });
     await hub.deployWorkflow(tenantId, deployInput);
 
-    // Each picked bench agent joins the workbench the same way Myra does: its
+    // Each picked bench agent joins the workbench the same way Worker does: its
     // source is read back out of the bench and re-pushed into the child,
     // since a child's deploy rejects the parent's inherited asset outright.
     for (const picked of input.pickedAgents ?? []) {
@@ -134,7 +134,7 @@ export async function redeployWorkbenchAgent(
   workbenchTenantId: string,
   agent: { readonly id: string; readonly name: string; readonly assetName: string },
 ): Promise<void> {
-  if (isMyraAgent(agent)) {
+  if (isDefaultWorker(agent)) {
     const hub = createFetchStockHub();
     const [tenant, offering] = await Promise.all([
       hub.getTenant(workbenchTenantId),
@@ -145,11 +145,11 @@ export async function redeployWorkbenchAgent(
     }
     if (offering === null) {
       throw new WorkbenchCreateError(
-        "Connect a model provider in Settings before restarting Myra.",
+        "Connect a model provider in Settings before restarting the worker.",
         "deploy",
       );
     }
-    const deployInput = await deployMyraSource({
+    const deployInput = await deployWorkerSource({
       tenantId: workbenchTenantId,
       tenantDomain: tenant.domain,
       sourceOfferingIds: offering.sourceOfferingIds,

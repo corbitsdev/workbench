@@ -1,19 +1,19 @@
 // A credential edit that changes "the model" swaps in a new offering
 // (`mintOfferingForModel`) while the old one stays alive — a deployed
-// Myra run pins `sourceOfferingIds` in its stock launch spec and the
+// Worker run pins `sourceOfferingIds` in its stock launch spec and the
 // allocation service re-resolves by those exact ids, so the old offering
-// can only be retired once a redeploy has moved Myra onto the new one.
+// can only be retired once a redeploy has moved Worker onto the new one.
 // This is the same stock deploy path the client runs at onboarding
-// (`myra-deploy.ts`'s `deployMyraSource`, `POST /workflows/deployments`),
+// (`worker-deploy.ts`'s `deployWorkerSource`, `POST /workflows/deployments`),
 // just re-run here with one offering id swapped for another.
 
 import { type } from "arktype";
 
-import { deployMyraSource } from "@/myra-deploy";
+import { deployWorkerSource } from "@/worker-deploy";
 import { resolveExistingOffering, type DeclaredSource } from "@/onboarding/provider-connect-step";
 import type { ModelProviderPlugin } from "@intx/types";
 
-export class MyraRedeployError extends Error {}
+export class WorkerRedeployError extends Error {}
 
 const TenantDomainShape = type({ domain: "string" });
 
@@ -28,13 +28,15 @@ async function readErrorBody(response: Response): Promise<string> {
 async function resolveTenantDomain(tenantId: string, fetchImpl: typeof fetch): Promise<string> {
   const response = await fetchImpl(`/api/tenants/${encodeURIComponent(tenantId)}`);
   if (!response.ok) {
-    throw new MyraRedeployError(
+    throw new WorkerRedeployError(
       `resolving this workbench's domain failed: ${await readErrorBody(response)}`,
     );
   }
   const parsed = TenantDomainShape(await response.json());
   if (parsed instanceof type.errors) {
-    throw new MyraRedeployError(`this workbench came back an unexpected shape: ${parsed.summary}`);
+    throw new WorkerRedeployError(
+      `this workbench came back an unexpected shape: ${parsed.summary}`,
+    );
   }
   return parsed.domain;
 }
@@ -49,7 +51,7 @@ export type RedeployForModelChangeInput = {
 
 type ExistingOffering = Awaited<ReturnType<typeof resolveExistingOffering>>;
 
-/** The pure swap at this module's center: everything Myra already
+/** The pure swap at this module's center: everything Worker already
  * declares, with exactly the old offering id (and its declared source)
  * replaced by the new one, order and every other source untouched. `null`
  * when the old offering id isn't declared at all — nothing pins it, so
@@ -89,14 +91,14 @@ export function swapDeclaredOffering(
 }
 
 /**
- * Redeploys Myra so her declared sources point at `newOfferingId` instead
+ * Redeploys Worker so her declared sources point at `newOfferingId` instead
  * of `oldOfferingId`, everything else in the fallback chain unchanged.
- * Returns `false` (does nothing) when Myra isn't declaring the old
+ * Returns `false` (does nothing) when Worker isn't declaring the old
  * offering at all — nothing pins it, so the caller can retire it directly
  * — and throws, changing nothing about which offering is declared, if the
  * redeploy itself fails; the caller must leave both offerings in that case.
  */
-export async function redeployMyraForModelChange(
+export async function redeployWorkerForModelChange(
   input: RedeployForModelChangeInput,
   fetchImpl: typeof fetch = fetch,
 ): Promise<boolean> {
@@ -112,7 +114,7 @@ export async function redeployMyraForModelChange(
   if (swapped === null) return false;
 
   const tenantDomain = await resolveTenantDomain(input.tenantId, fetchImpl);
-  const deploy = await deployMyraSource(
+  const deploy = await deployWorkerSource(
     { tenantId: input.tenantId, tenantDomain, ...swapped },
     fetchImpl,
   );
@@ -125,8 +127,8 @@ export async function redeployMyraForModelChange(
     },
   );
   if (!deployed.ok) {
-    throw new MyraRedeployError(
-      `redeploying Myra onto the new model failed: ${await readErrorBody(deployed)}`,
+    throw new WorkerRedeployError(
+      `redeploying the worker onto the new model failed: ${await readErrorBody(deployed)}`,
     );
   }
   return true;

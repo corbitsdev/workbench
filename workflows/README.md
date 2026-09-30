@@ -1,10 +1,10 @@
 # Workflow packages
 
 Owner ruling (2026-09-17, LESS IS MORE): the shipped workflow catalog is
-deleted. Myra (`agents/myra`) creates workflows dynamically for a
+deleted. The bench worker (`packages/worker`) creates workflows dynamically for a
 tenant's own needs; there is no seeded catalog of ready-made workflows
 any more. The `echo` fixture workflow is gone too — the e2e smoke suites
-now deploy Myra's own `agents/myra` definition to prove the
+now deploy the `packages/worker` definition to prove the
 mail-triggered contract works.
 
 Each subdirectory is a deployable workflow package: an Interchange
@@ -32,7 +32,7 @@ re-explaining these three independent flags each time:
   approval gate is a poor fit for unattended scheduling.
 - **Seeded** — historically, whether the workflow was provisioned into
   every tenant's bench by default via a hub-side seed step; CL-8207 deleted
-  that step (the hub never seeds — the web client deploys only Myra, over
+  that step (the hub never seeds — the web client deploys only the worker, over
   stock routes, per tenant). A workflow can be `automatable` without being
   seeded (opt-in, e.g. because it needs a credential not every tenant has
   connected) — the two are independent decisions.

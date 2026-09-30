@@ -19,9 +19,9 @@ function titleCase(handle: string): string {
 export function workerRole(input: {
   readonly tools: readonly string[];
   readonly mcpServers: readonly string[];
-  readonly isMyra: boolean;
+  readonly isDefaultWorker: boolean;
 }): string {
-  if (input.isMyra) return "Assistant";
+  if (input.isDefaultWorker) return "Co-worker";
   const items = new Set<string>();
   for (const [pattern, label] of TOOL_FAMILIES) {
     if (input.tools.some((tool) => pattern.test(tool))) items.add(label);

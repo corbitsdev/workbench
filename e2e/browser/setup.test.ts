@@ -1,5 +1,5 @@
 // The hub seeds nothing: before signup it has no tenants for the visitor,
-// and after the client's setup the workspace and Myra exist, created by the
+// and after the client's setup the workspace and Worker exist, created by the
 // signed-in principal. Reloading the app never duplicates either.
 import { expect, test } from "bun:test";
 import type { Page } from "puppeteer-core";

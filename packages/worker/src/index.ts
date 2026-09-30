@@ -1,4 +1,4 @@
-// Myra's workflow entry: a single-step, mail-triggered conversational
+// The worker's workflow entry: a single-step, mail-triggered conversational
 // definition whose agent carries its tool factories inline.
 //
 // This module is never imported by a browser bundle. It is the entrypoint
@@ -19,7 +19,7 @@ import { mcpServers } from "@corbits/mcp/sidecar-bundle";
 import { toolSearch } from "@corbits/deferred-tools";
 
 import {
-  ASSISTANT_STEP_ID,
+  WORKER_STEP_ID,
   artifactToolsCredentialBinding,
   artifactToolsCredentialUseRequirement,
   mcpServerCredentialBinding,
@@ -30,20 +30,20 @@ import {
   type McpServerDeployment,
 } from "./workflow-ids";
 
-export { ASSISTANT_SYSTEM_PROMPT } from "./system-prompt";
-export { ASSISTANT_STEP_ID, ASSISTANT_WORKFLOW_ID } from "./workflow-ids";
+export { WORKER_SYSTEM_PROMPT } from "./system-prompt";
+export { WORKER_STEP_ID, WORKER_WORKFLOW_ID } from "./workflow-ids";
 
 /** The description the agent step carries; mirrored by the JSON projection
  * the deploy writes beside the entry, so both must stay identical. */
-export const ASSISTANT_DESCRIPTION =
-  "A general-purpose assistant that answers questions, drafts " +
-  "text, and reasons through problems for the team";
+export const WORKER_DESCRIPTION =
+  "A co-worker that lives in one workbench: answers questions, " +
+  "drafts text, and gets things done for the team";
 
 // Tool packages in the shape Interchange has: mail over the agent's
 // transport, posix over its working tree, and artifacts and memory through
 // the hub credential the deploy binds — the agent itself holds no client
 // code and no secret.
-export const MYRA_TOOL_FACTORIES = [
+export const WORKER_TOOL_FACTORIES = [
   mail,
   posix,
   artifacts,
@@ -59,7 +59,7 @@ function toolNames(factories: readonly AnnotatedToolFactory[]): string[] {
   return factories.flatMap((factory) => factory.definitions.map((definition) => definition.name));
 }
 
-export function myraDirector(mcpHandles: readonly string[]) {
+export function workerDirector(mcpHandles: readonly string[]) {
   return {
     id: "@corbits/deferred-tools/director",
     config: {
@@ -75,8 +75,8 @@ export function myraDirector(mcpHandles: readonly string[]) {
 }
 
 /** Everything the definition needs that is per-deployment data. */
-export interface MyraWorkflowInput {
-  /** The definition id: Myra's fixed `ASSISTANT_WORKFLOW_ID`, or a created
+export interface WorkerWorkflowInput {
+  /** The definition id: The default `WORKER_WORKFLOW_ID`, or a created
    * agent's slug — the bundle is generic over which agent it builds. */
   readonly workflowId: string;
   /** The deployment's mail address; each inbound mail is one run. */
@@ -96,7 +96,7 @@ export interface MyraWorkflowInput {
 }
 
 /**
- * Builds Myra's definition. Exactly one step, on purpose: the single-step
+ * Builds the worker's definition. Exactly one step, on purpose: the single-step
  * shape is what makes a deployment conversational (the execution host keeps
  * one warm agent with durable memory across runs). A second step would
  * silently trade that memory away, so the step count is contract, not style.
@@ -107,18 +107,18 @@ export interface MyraWorkflowInput {
  * `toolPackagePins` is empty because the source lineage resolves no
  * manifest: the factories above are the whole tool surface.
  */
-export function buildMyraWorkflow(input: MyraWorkflowInput): WorkflowDefinition {
+export function buildWorkerWorkflow(input: WorkerWorkflowInput): WorkflowDefinition {
   if (input.workflowId === "") {
-    throw new Error("buildMyraWorkflow requires a non-empty workflowId");
+    throw new Error("buildWorkerWorkflow requires a non-empty workflowId");
   }
   if (input.triggerAddress === "") {
-    throw new Error("buildMyraWorkflow requires a non-empty triggerAddress");
+    throw new Error("buildWorkerWorkflow requires a non-empty triggerAddress");
   }
   if (input.systemPrompt === "") {
-    throw new Error("buildMyraWorkflow requires a non-empty systemPrompt");
+    throw new Error("buildWorkerWorkflow requires a non-empty systemPrompt");
   }
   if (input.hubCredentialId === "") {
-    throw new Error("buildMyraWorkflow requires a non-empty hubCredentialId");
+    throw new Error("buildWorkerWorkflow requires a non-empty hubCredentialId");
   }
   return defineWorkflow({
     id: input.workflowId,
@@ -134,13 +134,13 @@ export function buildMyraWorkflow(input: MyraWorkflowInput): WorkflowDefinition 
       ...input.mcpServers.map((server) => mcpServerCredentialUseRequirement(server.credentialId)),
     ],
     steps: {
-      assistant: step({
+      worker: step({
         agent: {
-          id: ASSISTANT_STEP_ID,
-          description: ASSISTANT_DESCRIPTION,
+          id: WORKER_STEP_ID,
+          description: WORKER_DESCRIPTION,
           systemPrompt: input.systemPrompt,
           toolFactories: [
-            ...MYRA_TOOL_FACTORIES,
+            ...WORKER_TOOL_FACTORIES,
             // Built per deployment: the factory is configured with the stored
             // catalogs, so construction stays synchronous and offline.
             mcpServers({
@@ -154,7 +154,7 @@ export function buildMyraWorkflow(input: MyraWorkflowInput): WorkflowDefinition 
               })),
             }) as unknown as AnnotatedToolFactory,
           ],
-          director: myraDirector(input.mcpServers.map((server) => server.handle)),
+          director: workerDirector(input.mcpServers.map((server) => server.handle)),
           capabilities: [],
           inference: { sources: input.inferencePreferences },
           toolPackagePins: [],

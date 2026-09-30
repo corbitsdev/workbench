@@ -118,7 +118,7 @@ describeBrowser("0-to-1 gate", () => {
       await waitForText(page, ARTIFACT_TITLE);
 
       // Gap: no routine workflow is deployed in the harness, so "Run now" mails
-      // Myra's own deployment; the brief is her scripted reply, not a
+      // Worker's own deployment; the brief is her scripted reply, not a
       // routine-authored brief with its own artifact.
       const run = (await page.evaluate(TRIGGER_SCRIPT)) as {
         trigger?: { status: number };

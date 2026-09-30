@@ -7,7 +7,7 @@ import { runOutcomeStatus, withListingAbandoned } from "@corbits/workflows/clien
 import { isAgentDeploySourceAssetName } from "./agent-deploy";
 import type { Approval } from "./api";
 import type { InsightsRun } from "./insights-api";
-import { MYRA_SOURCE_CONFIG } from "./myra-source";
+import { WORKER_SOURCE_CONFIG } from "./worker-source";
 
 /** Compact integer; null/undefined → em-dash. Lifted out of the deleted
  * `@corbits/insights/client` — this app's own copy since it has
@@ -25,12 +25,12 @@ export function durationLabel(ms: number): string {
 }
 
 // The native feed already excludes non-top-level runs; what remains to drop
-// are the platform's own deploy-source runs (Myra and created agents), which
+// are the platform's own deploy-source runs (Worker and created agents), which
 // are plumbing, not a person's workflows.
 export function purposeRunsForInsights(runs: readonly InsightsRun[]): readonly InsightsRun[] {
   return runs.filter(
     (run) =>
-      run.definitionName !== MYRA_SOURCE_CONFIG.assetName &&
+      run.definitionName !== WORKER_SOURCE_CONFIG.assetName &&
       !isAgentDeploySourceAssetName(run.definitionName),
   );
 }

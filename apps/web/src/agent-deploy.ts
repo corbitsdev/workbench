@@ -1,5 +1,5 @@
-// Deploys a hand-authored agent the same way Myra deploys herself
-// (`myra-deploy.ts`), generalized over {name, displayName, systemPrompt}.
+// Deploys a hand-authored agent the same way the default worker deploys
+// (`worker-deploy.ts`), generalized over {name, displayName, systemPrompt}.
 import { renderBundledWorkflowSourceTree } from "@corbits/workflows/client";
 import { installPackage } from "./install-package";
 import { type } from "arktype";
@@ -13,7 +13,7 @@ import {
   memoryToolsCredentialBinding,
   memoryToolsCredentialUseRequirement,
   type McpServerDeployment,
-} from "@corbits/myra/workflow-ids";
+} from "@corbits/worker/workflow-ids";
 
 import { ensureAgentHubCredential } from "./agent-hub-credential";
 import { personMailAddress } from "./mail-address";
@@ -39,7 +39,7 @@ async function readErrorBody(response: Response): Promise<string> {
 }
 
 /** The exact `WorkflowDefinition` JSON for a single-step, mail-triggered,
- * unbounded-turn agent — the same shape `buildMyraDefinitionJson` produces,
+ * unbounded-turn agent — the same shape `buildWorkerDefinitionJson` produces,
  * generalized over the caller's own name and system prompt. */
 export function buildAgentDefinitionJson(args: {
   slug: string;
@@ -48,7 +48,7 @@ export function buildAgentDefinitionJson(args: {
   declaredSources: readonly { readonly provider: string; readonly model: string }[];
   hubCredentialId: string;
   /** Workspace-catalog servers this agent binds — the same bindings and use
-   * requirements Myra carries, so remote tools stay ask-gated except the
+   * requirements Worker carries, so remote tools stay ask-gated except the
    * read-only ones the server itself annotates. */
   mcpServers: readonly McpServerDeployment[];
 }): unknown {
@@ -87,7 +87,7 @@ export function buildAgentDefinitionJson(args: {
         drainBehavior: "wait",
         // No `timeout`: it stays armed across an approval park, so any
         // finite value aborts a run waiting on a person to answer an
-        // ask-gated tool call (see agents/myra/src/index.ts).
+        // ask-gated tool call (see packages/worker/src/index.ts).
         triggers: "unbounded",
         input: { from: "trigger.payload" },
       },
@@ -96,7 +96,7 @@ export function buildAgentDefinitionJson(args: {
   };
 }
 
-// The bundle's `buildMyraWorkflow` is generic over which agent it builds.
+// The bundle's `buildWorkerWorkflow` is generic over which agent it builds.
 async function renderAgentSourceTree(
   packageName: string,
   args: {
@@ -108,20 +108,20 @@ async function renderAgentSourceTree(
     readonly mcpServers: readonly McpServerDeployment[];
   },
 ): Promise<Record<string, string>> {
-  const { MYRA_BUNDLE_BUILD_EXPORT, MYRA_DIRECTORS_BUNDLE, MYRA_WORKFLOW_BUNDLE } =
-    await import("@corbits/myra/bundle");
+  const { WORKER_BUNDLE_BUILD_EXPORT, WORKER_DIRECTORS_BUNDLE, WORKER_WORKFLOW_BUNDLE } =
+    await import("@corbits/worker/bundle");
   return renderBundledWorkflowSourceTree({
     packageName,
-    bundle: MYRA_WORKFLOW_BUNDLE,
-    directorsBundle: MYRA_DIRECTORS_BUNDLE,
-    buildExport: MYRA_BUNDLE_BUILD_EXPORT,
+    bundle: WORKER_WORKFLOW_BUNDLE,
+    directorsBundle: WORKER_DIRECTORS_BUNDLE,
+    buildExport: WORKER_BUNDLE_BUILD_EXPORT,
     buildInput: {
       workflowId: args.slug,
       triggerAddress: args.triggerAddress,
       inferencePreferences: args.declaredSources.map((source) => ({ ...source })),
       systemPrompt: args.systemPrompt,
       hubCredentialId: args.hubCredentialId,
-      // The workspace-catalog servers the New Agent dialog (or Myra's
+      // The workspace-catalog servers the New Agent dialog (or Worker's
       // create-agent card) bound to this agent; the bundle wires their tools
       // behind the deferred director, ask-gated except read-only ones.
       mcpServers: args.mcpServers,
@@ -149,7 +149,7 @@ export function agentDeploySourceAssetName(slug: string): string {
 const AGENT_DEPLOY_SOURCE_ASSET_NAME = /^agent-(.+)-source$/;
 
 /** True for any asset this deploy pipeline named — used to keep created
- * agents (and Myra, checked separately by callers) out of surfaces that
+ * agents (and Worker, checked separately by callers) out of surfaces that
  * list real workflows, since both are `workflow`-kind assets. */
 export function isAgentDeploySourceAssetName(name: string): boolean {
   return AGENT_DEPLOY_SOURCE_ASSET_NAME.test(name);
@@ -170,8 +170,8 @@ export type NewAgentInput = {
    * of being re-derived from `name`, so the asset name stays stable. */
   readonly slug?: string;
   /** Workspace-catalog server handles to bind, as chosen in the New Agent
-   * dialog (or on Myra's create-agent card). Each becomes a definition
-   * binding plus a use requirement, the same as Myra's Exa. */
+   * dialog (or on Worker's create-agent card). Each becomes a definition
+   * binding plus a use requirement, the same as Worker's Exa. */
   readonly mcpHandles?: readonly string[];
   /** A five-field cron expression: on success, a `@corbits/cron` schedule
    * row is created targeting this agent's definition, so the ticker mails
@@ -304,7 +304,7 @@ export async function deployAgentSource(
   }
 
   // The chosen handles bind workspace-catalog servers by ancestor walk, the
-  // same as Myra's Exa; an empty choice deploys a server-less agent.
+  // same as Worker's Exa; an empty choice deploys a server-less agent.
   const requestedHandles = args.input.mcpHandles ?? [];
   const mcpServers =
     requestedHandles.length === 0

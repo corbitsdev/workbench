@@ -22,10 +22,9 @@ never seeds data on a client's behalf.
   `apps/*` belongs in a package. `workflows/*` are plain npm-shaped packages,
   deployable to any stock Interchange hub through the stock deploy route —
   this repo does not publish them to npm.
-- **Myra is the one default agent.** `agents/myra` is the assistant
-  that uses Workbench on the person's behalf; every agent package under
-  `agents/*` is trim — `index.ts` (plus `system-prompt.ts` when the prompt
-  is large) — with no agent-owned artifact client/tool code of its own.
+- **`packages/worker` is the default harness** — the one definition package a
+  bench's worker, and any agent Workbench creates, deploys on; it is trim
+  (index.ts + system-prompt.ts) with no hub-calling code.
 - **No fallbacks.** Cut over cleanly — never leave a legacy path beside a
   new one. Config/manifest objects are explicit literals; the one exception
   is an optional key under `exactOptionalPropertyTypes` (see below), where

@@ -14,7 +14,7 @@ side belongs on the other.
 `chat/wire/id-leak-guard.ts` centralizes the check that a person never sees
 an internal identifier (a raw `run_…`/`wfd_…`/etc., or `humanizeSlug`'s
 Title-Cased reading of one, e.g. "Run 737a058d…"). This recurred repeatedly
-as one-off display-time patches (insights, a Myra reply, a chat title)
+as one-off display-time patches (insights, a worker reply, a chat title)
 before being consolidated here, so a new id-generating prefix is a missed
 test run rather than a missed grep. Prefix words mirror `@intx/hub-common`'s
 `generateId` (`PREFIXES` in `packages/hub-common/src/ids.ts`).

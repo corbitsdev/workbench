@@ -32,7 +32,7 @@ const STEPS: readonly Step[] = [
   {
     target: '[data-tour="sidebar-list"]',
     title: "Your workbenches",
-    content: "Every conversation with Myra and your agents lives here.",
+    content: "Every conversation with your worker and your agents lives here.",
     placement: "right",
     disableBeacon: true,
   },

@@ -8,7 +8,7 @@ import { useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore
 import { getLogger } from "@/lib/client-log";
 import { App } from "./app";
 import { validatedNextPath } from "./login-next";
-import { finishDeferredMyraSetup } from "./deferred-myra-setup";
+import { finishDeferredWorkerSetup } from "./deferred-worker-setup";
 import { triggerFirstLoginProvisioning } from "./onboarding";
 import { isProviderSkipped } from "./provider-skip";
 import { getPath, navigateTo, subscribeToPath } from "./router-store";
@@ -54,9 +54,9 @@ export function Root() {
     void triggerFirstLoginProvisioning().then((result) => {
       if (cancelled) return;
       if (result.kind === "needs-onboarding") {
-        // A skipped provider step keeps the shell; Myra deploys once a model exists.
+        // A skipped provider step keeps the shell; Worker deploys once a model exists.
         if (isProviderSkipped(provisionedUser.id)) {
-          void finishDeferredMyraSetup(provisionedUser);
+          void finishDeferredWorkerSetup(provisionedUser);
           return;
         }
         navigate(ONBOARDING_PATH);

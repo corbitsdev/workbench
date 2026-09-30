@@ -1,10 +1,10 @@
 // A read-only probe: setup counts as done only once the primary tenant has
-// Myra live, so an install that failed midway resumes instead of landing
+// Worker live, so an install that failed midway resumes instead of landing
 // in an empty shell.
 
 import { type } from "arktype";
 import { reportError } from "@corbits/error-sink";
-import { MYRA_SOURCE_CONFIG } from "./myra-source";
+import { WORKER_SOURCE_CONFIG } from "./worker-source";
 import { createFetchStockHub, findOwnedTenants, type StockHub } from "./needs-converge";
 
 // The cheap pre-skip read to tell "no credential yet" apart from "still
@@ -62,7 +62,7 @@ export async function triggerFirstLoginProvisioning(
     const owned = await findOwnedTenants(hub);
     const primary = owned.find((tenant) => tenant.parentId === null);
     if (primary === undefined) return { kind: "needs-onboarding" };
-    const deployed = await hub.hasWorkflowDeployment(primary.id, MYRA_SOURCE_CONFIG.assetName);
+    const deployed = await hub.hasWorkflowDeployment(primary.id, WORKER_SOURCE_CONFIG.assetName);
     return deployed ? { kind: "existing-member" } : { kind: "needs-onboarding" };
   } catch (cause) {
     const refId = reportError(cause, { operation: "first_login_provisioning" });

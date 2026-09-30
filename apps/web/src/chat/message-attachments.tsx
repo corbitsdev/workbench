@@ -76,7 +76,7 @@ function DeployPackageCard({
   const deployed = deploy.data;
   const scheduleValid = pkg.schedule === undefined || isFiveFieldCron(pkg.schedule);
   const sentence = pkg.schedule !== undefined && scheduleValid ? cronSentence(pkg.schedule) : null;
-  // Handles Myra named that are not in this workspace's catalog can never
+  // Handles Worker named that are not in this workspace's catalog can never
   // bind — name them before deploy, where the failure would only read as a
   // rejected deploy. While the catalog is still loading there is nothing to
   // check against, so the card stays enabled and deploy fails closed.
@@ -100,7 +100,7 @@ function DeployPackageCard({
         ) : null}
         {unknownHandles.length > 0 ? (
           <span className="chat-deploy-card-error">
-            {`This package names MCP servers this workspace doesn't have: ${unknownHandles.join(", ")}. Ask Myra to use the Tools page handles.`}
+            {`This package names MCP servers this workspace doesn't have: ${unknownHandles.join(", ")}. Ask your worker to use the Tools page handles.`}
           </span>
         ) : null}
       </div>

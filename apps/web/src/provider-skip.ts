@@ -1,4 +1,4 @@
-// A person who skips the provider step has a working shell and no Myra yet.
+// A person who skips the provider step has a working shell and no Worker yet.
 // The flag is per user and client-side only; it never reaches the hub.
 
 import { reportError } from "@corbits/error-sink";

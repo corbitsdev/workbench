@@ -5,7 +5,7 @@ import {
   parseWorkflowSourceDefinition,
   WORKFLOW_SOURCE_DEFINITION_PATH,
 } from "@corbits/workflows/client";
-import { MCP_TOOLS_PACKAGE } from "@corbits/myra/workflow-ids";
+import { MCP_TOOLS_PACKAGE } from "@corbits/worker/workflow-ids";
 import { type } from "arktype";
 
 import { fetchSourceFile } from "./git-fetch";
@@ -113,7 +113,7 @@ export async function readAgentSource(
 }
 
 /** Empty for an agent whose tools ride bundled into its `workflow.js`
- * closure instead — see `deployed-tool-packages.ts`'s `MYRA_TOOL_PACKAGES`. */
+ * closure instead — see `deployed-tool-packages.ts`'s `WORKER_TOOL_PACKAGES`. */
 export async function readAgentToolPackagePins(
   tenantId: string,
   assetId: string,

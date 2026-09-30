@@ -8,7 +8,7 @@ import { WorkflowDeploymentResponse } from "@intx/types";
 import type { APIQuery } from "@/lib/api-query";
 import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@/lib/api-query";
 import { isAgentDeploySourceAssetName } from "@/agent-deploy";
-import { MYRA_SOURCE_CONFIG } from "@/myra-source";
+import { WORKER_SOURCE_CONFIG } from "@/worker-source";
 
 export const ScheduledWorkflowDefinition = type({
   definitionId: "string",
@@ -170,10 +170,10 @@ async function fetchJSON<T>(path: string, schema: (data: unknown) => T | type.er
   return parsed;
 }
 
-// Myra and every deployed agent are `workflow`-kind assets too, but they're
+// Worker and every deployed agent are `workflow`-kind assets too, but they're
 // chat partners, not workflows — excluded by name, not runtime state.
 function isAgentAssetName(name: string): boolean {
-  return name === MYRA_SOURCE_CONFIG.assetName || isAgentDeploySourceAssetName(name);
+  return name === WORKER_SOURCE_CONFIG.assetName || isAgentDeploySourceAssetName(name);
 }
 
 /** Every workflow deployment on this tenant, named from the backing

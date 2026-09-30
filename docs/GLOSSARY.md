@@ -11,7 +11,7 @@ paths keep the platform's own names.
 | **Workbench (bench)** | tenant (child) | A child tenant `/new` creates under the workspace — a channel with many people and agents — with its own deployed agents. |
 | **User**      | principal      | An identity that can act in a workspace or workbench — human or agent. |
 | **Agent**     | principal (agent) | A named coworker principal, not a template. |
-| **Myra**      | —              | The `assistant` workflow: every workspace's default agent. Given a job it can't already do, she authors a new tool, skill, or workflow as code, deploys it with only the access it needs, and uses it. |
+| **Worker**    | —              | A workbench's own persistent agent, deployed on the `packages/worker` harness. Given a job it can't already do, it authors a new tool, skill, or workflow as code, deploys it with only the access it needs, and uses it. |
 | **Thread**    | mailbox thread | The ordered messages of one conversation, served by `@corbits/mailbox` (`GET /me/inbox/threads`, `POST /me/inbox/send`). |
 | **Grant**     | grant          | Permission for a principal to act on a resource. |
 | **Approval**  | approval       | A human decision gating an external side effect. |

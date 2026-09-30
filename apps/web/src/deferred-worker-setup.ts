@@ -4,7 +4,7 @@
 import { reportError } from "@corbits/error-sink";
 
 import { runPortableClientBootstrap } from "./client-bootstrap";
-import { deployMyraSource } from "./myra-deploy";
+import { deployWorkerSource } from "./worker-deploy";
 import { createFetchStockHub, findOwnedTenants } from "./needs-converge";
 import { resolveExistingOffering } from "./onboarding/provider-connect-step";
 import { isProviderSkipped, setProviderSkipped } from "./provider-skip";
@@ -12,9 +12,9 @@ import type { SessionUser } from "./session";
 
 let inFlight: Promise<boolean> | null = null;
 
-/** True once Myra is deployed and the skip flag is cleared; false while
+/** True once Worker is deployed and the skip flag is cleared; false while
  * there is nothing to do yet (no skip, or no model connected). */
-export function finishDeferredMyraSetup(user: SessionUser): Promise<boolean> {
+export function finishDeferredWorkerSetup(user: SessionUser): Promise<boolean> {
   if (!isProviderSkipped(user.id)) return Promise.resolve(false);
   inFlight ??= run(user).finally(() => {
     inFlight = null;
@@ -29,19 +29,19 @@ async function run(user: SessionUser): Promise<boolean> {
     if (primary === undefined) return false;
     const offering = await resolveExistingOffering(primary.id);
     if (offering === null) return false;
-    const myraDeploy = await deployMyraSource({
+    const workerDeploy = await deployWorkerSource({
       tenantId: primary.id,
       tenantDomain: primary.domain,
       sourceOfferingIds: offering.sourceOfferingIds,
       defaultSourceOfferingId: offering.defaultSourceOfferingId,
       declaredSources: offering.declaredSources,
     });
-    const result = await runPortableClientBootstrap(user, { myraDeploy });
+    const result = await runPortableClientBootstrap(user, { workerDeploy });
     if (result.kind !== "ready") return false;
     setProviderSkipped(user.id, false);
     return true;
   } catch (cause) {
-    reportError(cause, { operation: "deferred_myra_setup" });
+    reportError(cause, { operation: "deferred_worker_setup" });
     return false;
   }
 }

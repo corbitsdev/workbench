@@ -5,7 +5,7 @@
 // sidecar bundle, so redeploying never touches the network.
 //
 // The catalog lives once on the workspace (top-level) tenant: every
-// workbench Myra binds it by walking up, so two workbenches share one Exa
+// workbench Worker binds it by walking up, so two workbenches share one Exa
 // row and a second workspace sees none of it.
 import { MCP_NO_TOKEN_SENTINEL, MCP_STREAMABLE_HTTP_PROVIDER_KEY } from "@corbits/credential-mcp";
 import { reportError } from "@corbits/error-sink";
@@ -16,11 +16,11 @@ import {
   mcpProviderName,
   type McpServerDeployment,
   type McpTool,
-} from "@corbits/myra/workflow-ids";
+} from "@corbits/worker/workflow-ids";
 import { type } from "arktype";
 
 export { MCP_SERVER_CATALOG };
-export type { McpCatalogEntry } from "@corbits/myra/workflow-ids";
+export type { McpCatalogEntry } from "@corbits/worker/workflow-ids";
 
 export class McpServerError extends Error {}
 
@@ -390,7 +390,7 @@ export async function migrateWorkbenchMcpCatalogToWorkspace(
   }
 }
 
-/** Ensures that land on one workspace (two workbench Myras deploying, a
+/** Ensures that land on one workspace (two workbench Workers deploying, a
  * StrictMode double-invoke) run one after another, so a later one sees the
  * Exa an earlier one added instead of adding its own. */
 const ensureQueue = new Map<string, Promise<readonly McpServer[]>>();
@@ -398,9 +398,9 @@ const ensureQueue = new Map<string, Promise<readonly McpServer[]>>();
 /** Every workspace starts with Exa, which needs no account: stored once on
  * the workspace (top-level) tenant, then left alone so a later removal is
  * not undone by the next start. Callers pass any tenant id — a workbench id
- * resolves up to its workspace — and each workbench Myra binds the shared
+ * resolves up to its workspace — and each workbench Worker binds the shared
  * row by walking up. Also moves that caller's legacy workbench rows up,
- * best-effort: a failed cleanup must not block deploying Myra with the
+ * best-effort: a failed cleanup must not block deploying Worker with the
  * workspace catalog that is already correct. */
 export async function ensureBuiltInMcpServers(
   tenantId: string,

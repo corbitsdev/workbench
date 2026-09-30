@@ -33,7 +33,7 @@ export const NeedsListSchema = type({
     kind: "'primary'",
     want: "'existing'",
   },
-  myra: {
+  worker: {
     definitionRefId: "string > 0",
     scope: "'top-level'",
     want: "'running'",
@@ -60,8 +60,8 @@ export type NeedsListInput = {
     readonly name: string;
     readonly email: string;
   };
-  readonly myraDefinitionRefId: string;
-  readonly myraDeploy?: WorkflowDeployInput;
+  readonly workerDefinitionRefId: string;
+  readonly workerDeploy?: WorkflowDeployInput;
   readonly workbenches?: readonly {
     readonly localId: string;
     readonly slug: string;
@@ -86,11 +86,11 @@ export function buildNeedsList(input: NeedsListInput): NeedsList {
     version: 1,
     account: { ...input.account },
     primaryTenant: { kind: "primary", want: "existing" },
-    myra: {
-      definitionRefId: input.myraDefinitionRefId,
+    worker: {
+      definitionRefId: input.workerDefinitionRefId,
       scope: "top-level",
       want: "running",
-      ...(input.myraDeploy === undefined ? {} : { deploy: input.myraDeploy }),
+      ...(input.workerDeploy === undefined ? {} : { deploy: input.workerDeploy }),
     },
     workbenches: (input.workbenches ?? []).map((workbench) => ({
       localId: workbench.localId,
