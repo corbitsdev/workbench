@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { sendToWorkbench, type WorkbenchParticipant } from "@/chat/threads-api";
 import { workbenchKeys } from "../chat-path";
 import { clearOpeningMessage, readOpeningMessage } from "../opening-message";
+import "./pending-opening-message.css";
 
 const CAP_MS = 60_000;
 

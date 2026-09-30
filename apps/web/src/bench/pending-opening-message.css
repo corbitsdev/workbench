@@ -1,0 +1,5 @@
+.chat-thread-status {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 13px;
+}

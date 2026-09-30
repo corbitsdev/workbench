@@ -1,5 +1,4 @@
-// Only reasoning crosses this boundary now — tool calls render through
-// `tool-activity.tsx` instead, since react-ui's `ToolBlock` shows raw JSON.
+// Only reasoning crosses this boundary.
 
 import type { PartReasoning } from "@corbits/react-ui";
 import type { ReasoningPart } from "./wire/parts";
