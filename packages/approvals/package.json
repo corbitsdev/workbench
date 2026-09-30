@@ -2,7 +2,7 @@
   "name": "@corbits/approvals",
   "version": "0.0.1",
   "private": true,
-  "description": "The grant-allowance gate that decides when a tenant's standing grants already authorize a tool call, plus the pure headline builder that names an approval for a human",
+  "description": "The pure headline builder that names an approval for a human",
   "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
@@ -13,19 +13,8 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
-  "dependencies": {
-    "@intx/authz": "0.4.0",
-    "@intx/db": "workspace:*",
-    "@intx/hub-api": "workspace:*",
-    "@intx/types": "workspace:*",
-    "arktype": "catalog:",
-    "drizzle-orm": "catalog:",
-    "hono": "catalog:"
-  },
   "devDependencies": {
-    "@intx/hub-common": "0.4.0",
     "@types/bun": "catalog:",
-    "postgres": "catalog:",
     "typescript": "catalog:"
   }
 }
