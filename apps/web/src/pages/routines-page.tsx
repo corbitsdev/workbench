@@ -12,6 +12,7 @@ import { Link } from "../navigation";
 import { benchLink, useFromBench } from "../shell/page-crumbs";
 import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
+import { ListCard, ListFilter } from "./library-list";
 import {
   PauseResumeButton,
   RoutinePill,
@@ -43,22 +44,25 @@ function RoutineListRow({
   const state = routineState(row, lastRun);
   return (
     <li
-      className="routine-row"
+      className="lib-row"
       data-ctx-routine={row.definition.definitionId}
       data-ctx-routine-name={row.definition.name}
     >
       <Link
         to={benchLink(routineDetailPath(row.definition.definitionId), fromId)}
-        className="routine-name"
+        className="lib-cell lib-name lib-name--mono"
       >
         {row.definition.name}
       </Link>
-      <span className="routine-meta">{scheduleSentence(row.definition.schedule)}</span>
-      <span className="routine-meta">
+      <span className="lib-cell">{scheduleSentence(row.definition.schedule)}</span>
+      <span className="lib-cell">{row.tenantName === "" ? "This workbench" : row.tenantName}</span>
+      <span className="lib-cell">
         {runs.kind === "ready" ? formatWhen(lastRun?.createdAt) : "…"}
       </span>
-      <RoutinePill tone={state.tone}>{state.label}</RoutinePill>
-      <div className="flex items-center gap-2">
+      <span className="lib-cell">
+        <RoutinePill tone={state.tone}>{state.label}</RoutinePill>
+      </span>
+      <div className="lib-cell lib-cell--end">
         <PauseResumeButton row={row} />
         <RunNowButton variant="outline" size="sm" onRun={() => onRunNow(row)} />
       </div>
@@ -86,9 +90,11 @@ export function GlobalRoutinesList({
 }) {
   const [query, setQuery] = useState("");
   const fromId = useFromBench();
+  const filter = <ListFilter label="Filter workflows" value={query} onChange={setQuery} />;
   if (rows.length === 0) {
     return (
       <WorkflowsLayout>
+        {filter}
         <RichEmptyState
           icon={<Clock />}
           title="No workflows yet"
@@ -105,14 +111,12 @@ export function GlobalRoutinesList({
   );
   return (
     <WorkflowsLayout>
-      <input
-        className="routines-filter"
-        placeholder="Filter workflows"
-        aria-label="Filter workflows"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-      />
-      <ul className="routine-rows">
+      {filter}
+      <ListCard
+        label="Workflows"
+        columns="minmax(0, 1.4fr) minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 0.8fr) auto auto"
+        heads={["Workflow", "Schedule", "Delivers to", "Last run", "Status", ""]}
+      >
         {shown.map((row) => (
           <RoutineListRow
             key={row.definition.definitionId}
@@ -121,7 +125,7 @@ export function GlobalRoutinesList({
             onRunNow={onRunNow}
           />
         ))}
-      </ul>
+      </ListCard>
     </WorkflowsLayout>
   );
 }

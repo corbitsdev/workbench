@@ -11,3 +11,13 @@ export function workflowRunIdFromSource(
   const runId = source.runId;
   return typeof runId === "string" && runId !== "" ? runId : null;
 }
+
+/** Where an artifact came from, for the list's From column. Null when the
+ * `source` names no origin. */
+export function artifactFromLabel(
+  source: Record<string, unknown> | null | undefined,
+): string | null {
+  if (source === null || source === undefined) return null;
+  if (source.origin === "workflow") return "Workflow run";
+  return typeof source.origin === "string" && source.origin !== "" ? source.origin : null;
+}

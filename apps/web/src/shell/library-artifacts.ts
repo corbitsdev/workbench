@@ -1,3 +1,4 @@
+import { artifactFromLabel } from "@/library";
 import type { ArtifactSummary } from "@/library";
 import { ApiQueryError, UnauthenticatedError } from "@/lib/api-query";
 
@@ -10,6 +11,7 @@ export type ArtifactListRow = {
   readonly title: string;
   readonly createdAt: string;
   readonly updatedAt: string;
+  readonly source?: Record<string, unknown>;
 };
 
 /** Detail body — list metadata plus the stored content string. */
@@ -26,6 +28,7 @@ export function artifactListRowToSummary(row: ArtifactListRow): ArtifactSummary 
     kind: row.kind,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    from: artifactFromLabel(row.source),
   };
 }
 

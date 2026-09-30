@@ -1,0 +1,100 @@
+/* The raised list card and filter the Workflows, Artifacts and Skills
+   pages share (mockups: workflows.html, artifacts.html, skills.html). */
+.lib-filter {
+  display: block;
+  height: 34px;
+  width: 240px;
+  max-width: 100%;
+  margin-bottom: 16px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13.5px;
+}
+.lib-filter:focus {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px var(--ink-3),
+    0 0 0 3px var(--hover);
+}
+
+.lib-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--raised);
+  overflow: hidden;
+  font-size: 13.5px;
+}
+
+.lib-head,
+.lib-row {
+  display: grid;
+  grid-template-columns: var(--lib-cols);
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.lib-head {
+  padding-block: 10px;
+  background: var(--surface-sunk);
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 700;
+}
+.lib-row:last-child {
+  border-bottom: 0;
+}
+.lib-row[data-link] {
+  cursor: pointer;
+}
+.lib-row[data-link]:hover,
+.lib-row[data-state="selected"] {
+  background: var(--surface-sunk);
+}
+
+.lib-cell {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.lib-cell--soft {
+  color: var(--ink-2);
+}
+.lib-cell--end {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.lib-name {
+  font-weight: 700;
+  color: var(--ink);
+  text-decoration: none;
+}
+.lib-name--mono {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+@media (max-width: 720px) {
+  .lib-head {
+    display: none;
+  }
+  .lib-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .lib-cell--end {
+    justify-content: flex-start;
+  }
+}

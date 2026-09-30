@@ -2,32 +2,24 @@
 // created; its version history is that asset's git history. No external
 // catalog — skills are authored here, private by default or shared.
 
-import {
-  Button,
-  EmptyState,
-  RichEmptyState,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@corbits/react-ui";
-import { Lightning, Plus } from "@/lib/icons";
+import { EmptyState, RichEmptyState } from "@corbits/react-ui";
+import { Lightning } from "@/lib/icons";
 import { WorkbenchLoadingState } from "@/chat";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { tenantKeys } from "../query-client";
 
-import "./library-page.css";
 import { rowActivationProps } from "../activatable-row";
+import { ListCard, ListFilter } from "./library-list";
+import { RoutinePill } from "./routine-ui";
 import { consumePendingNewSkill } from "../command-palette-actions";
 import { createSkill, listSkills, type SkillSummary } from "../skills-api";
 import { CreateSkillDialog, type SkillCreateInput } from "./create-skill-dialog";
 import { useBench } from "../bench-context";
 import { SKILLS_PATH_PREFIX } from "../path-ids";
 import { skillDisplayName } from "../skill-display-name";
+import { useFromBench } from "../shell/page-crumbs";
 import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
 
@@ -100,25 +92,14 @@ export function SkillsPage({
 
   const crumbs = [{ label: "Skills" }];
 
-  function stage(
-    actions: ReactNode,
-    body: ReactNode,
-    filter?: {
-      readonly value: string;
-      readonly onChange: (value: string) => void;
-    },
-  ) {
+  function stage(body: ReactNode) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <StageTopBar
-          crumbs={crumbs}
-          {...(filter === undefined ? {} : { filter: { label: "Filter skills", ...filter } })}
-        />
+        <StageTopBar crumbs={crumbs} />
         <div className="min-h-0 flex-1 overflow-y-auto">
           <PageLayout
             title="Skills"
             subtitle="Know-how your workers draw on. Ask for more in any bench."
-            actions={actions}
           >
             {body}
           </PageLayout>
@@ -127,26 +108,20 @@ export function SkillsPage({
     );
   }
 
-  const newSkillButton = (
-    <Button size="sm" onClick={() => setCreateOpen(true)}>
-      <Plus /> New skill
-    </Button>
-  );
+  const filterInput = <ListFilter label="Filter skills" value={query} onChange={setQuery} />;
 
   if (tenantId === null) {
     return stage(
-      null,
       <p className="text-sm text-muted-foreground">Pick a workbench to see its skills.</p>,
     );
   }
 
   if (state.status === "loading") {
-    return stage(null, <WorkbenchLoadingState title="Loading skills…" />);
+    return stage(<WorkbenchLoadingState title="Loading skills…" />);
   }
 
   if (state.status === "error") {
     return stage(
-      null,
       <RichEmptyState
         icon={<Lightning />}
         title="Couldn't load your skills"
@@ -160,8 +135,8 @@ export function SkillsPage({
 
   if (skills.length === 0) {
     return stage(
-      newSkillButton,
       <div className="flex flex-col gap-4">
+        {filterInput}
         <RichEmptyState
           icon={<Lightning />}
           title="No skills yet"
@@ -183,8 +158,8 @@ export function SkillsPage({
         );
 
   return stage(
-    newSkillButton,
-    <div className="flex flex-col gap-4">
+    <>
+      {filterInput}
       {filtered.length === 0 ? (
         <EmptyState
           icon={<Lightning />}
@@ -192,42 +167,36 @@ export function SkillsPage({
           description={`Nothing matches “${query.trim()}”.`}
         />
       ) : (
-        <div>
-          <Table aria-label="Skills">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-48">Skill</TableHead>
-                <TableHead className="max-w-sm">What it teaches</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((skill) => (
-                <TableRow
-                  key={skill.assetId}
-                  className="cursor-pointer"
-                  {...rowActivationProps(() => open(skill.name))}
-                >
-                  <TableCell className="w-48 font-medium">
-                    <span className="skill-row-name">{skillDisplayName(skill)}</span>
-                  </TableCell>
-                  <TableCell className="max-w-sm truncate text-muted-foreground">
-                    {skill.description}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <ListCard
+          label="Skills"
+          columns="minmax(0, 1fr) minmax(0, 2fr) 96px"
+          heads={["Skill", "What it teaches", "Status"]}
+        >
+          {filtered.map((skill) => (
+            <li
+              key={skill.assetId}
+              className="lib-row"
+              data-link
+              {...rowActivationProps(() => open(skill.name))}
+            >
+              <span className="lib-cell lib-name lib-name--mono">{skillDisplayName(skill)}</span>
+              <span className="lib-cell lib-cell--soft">{skill.description}</span>
+              <span className="lib-cell">
+                <RoutinePill tone="live">installed</RoutinePill>
+              </span>
+            </li>
+          ))}
+        </ListCard>
       )}
       {createDialog}
-    </div>,
-    { value: query, onChange: setQuery },
+    </>,
   );
 }
 
 // A thin adapter that resolves which workbench's registry is listed.
 export function SkillsRoute({ navigate }: { readonly navigate: (to: string) => void }) {
   const { selectedTenantId } = useBench();
+  const fromBench = useFromBench();
 
-  return <SkillsPage tenantId={selectedTenantId} navigate={navigate} />;
+  return <SkillsPage tenantId={fromBench ?? selectedTenantId} navigate={navigate} />;
 }
