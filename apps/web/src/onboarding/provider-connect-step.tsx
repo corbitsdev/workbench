@@ -1,13 +1,7 @@
 // Connects one provider credential through the stock catalog routes and
 // derives the single offering it mints; a tenant that already resolves an
 // offering skips this step (see `resolveExistingOffering`).
-import {
-  Button,
-  Input,
-  RadioGroup,
-  RadioOption,
-  Select,
-} from "@corbits/react-ui";
+import { Button, Input, RadioGroup, RadioOption, Select } from "@corbits/react-ui";
 import {
   cancelProviderLogin,
   credentialNameFor,
@@ -165,11 +159,7 @@ export async function resolveExistingOffering(
 }
 
 /** An offering minted from exactly one option: one credential, one model. */
-function offeringFromOption(
-  option: ProviderOption,
-  canonicalName: string,
-  id: string,
-) {
+function offeringFromOption(option: ProviderOption, canonicalName: string, id: string) {
   return {
     sourceOfferingIds: [id],
     defaultSourceOfferingId: id,
@@ -194,9 +184,7 @@ export function ProviderConnectStep({
   const [loginId, setLoginId] = useState<string | null>(null);
 
   // No provider is preselected: the person chooses.
-  const option = PROVIDER_OPTIONS.find(
-    (candidate) => candidate.id === selected,
-  );
+  const option = PROVIDER_OPTIONS.find((candidate) => candidate.id === selected);
   const isLocal = option?.local === true;
   const oauthProvider = option?.oauthProvider;
 
@@ -223,9 +211,7 @@ export function ProviderConnectStep({
 
   function fail(cause: unknown, operation: string) {
     const refId = reportError(cause, { operation, tenantId });
-    onError(
-      `${cause instanceof Error ? cause.message : String(cause)} (ref ${refId})`,
-    );
+    onError(`${cause instanceof Error ? cause.message : String(cause)} (ref ${refId})`);
   }
 
   function selectOption(id: string) {
@@ -248,10 +234,7 @@ export function ProviderConnectStep({
   // Starting a login is the hub's job end to end: it runs the loopback PKCE
   // flow and stores the tokens, and hands back only a URL to open.
   const startLogin = useMutation({
-    mutationFn: async (target: {
-      option: ProviderOption;
-      provider: string;
-    }) => {
+    mutationFn: async (target: { option: ProviderOption; provider: string }) => {
       const providerId = await ensureProviderRow(tenantId, {
         providerName: target.option.label,
         plugin: target.option.plugin,
@@ -279,8 +262,7 @@ export function ProviderConnectStep({
     queryKey: ["onboarding", "oauth-login", tenantId, loginId],
     enabled: loginId !== null && option !== undefined,
     queryFn: async () => {
-      if (loginId === null || option === undefined)
-        throw new Error("no login in flight");
+      if (loginId === null || option === undefined) throw new Error("no login in flight");
       const state = await readProviderLogin(tenantId, loginId);
       if (state.status !== "completed") return state;
       const created = await shadowOffering(tenantId, {
@@ -297,8 +279,7 @@ export function ProviderConnectStep({
         offering: offeringFromOption(option, option.canonicalName, created.id),
       };
     },
-    refetchInterval: (query) =>
-      query.state.data?.status === "pending" ? 2000 : false,
+    refetchInterval: (query) => (query.state.data?.status === "pending" ? 2000 : false),
   });
 
   const loginState = login.data;
@@ -356,10 +337,7 @@ export function ProviderConnectStep({
         : "Connect";
 
   return (
-    <form
-      className="onboarding-credential-form"
-      onSubmit={(event) => void handleSubmit(event)}
-    >
+    <form className="onboarding-credential-form" onSubmit={(event) => void handleSubmit(event)}>
       <RadioGroup
         name="provider"
         label="Inference provider"
@@ -417,15 +395,12 @@ export function ProviderConnectStep({
           </label>
           {tagsQuery.isError ? (
             <p className="onboarding-inline-error" role="alert">
-              {tagsQuery.error instanceof Error
-                ? tagsQuery.error.message
-                : String(tagsQuery.error)}
+              {tagsQuery.error instanceof Error ? tagsQuery.error.message : String(tagsQuery.error)}
             </p>
           ) : null}
           {!tagsQuery.isError && modelName !== "" && !modelKnown ? (
             <p className="onboarding-inline-error" role="alert">
-              {modelName} is not one of the models Ollama reports at this base
-              URL.
+              {modelName} is not one of the models Ollama reports at this base URL.
             </p>
           ) : null}
         </>
