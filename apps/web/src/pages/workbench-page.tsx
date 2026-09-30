@@ -71,6 +71,34 @@ function WorkbenchMessageRow({
   // see echoed back at them.
   const body = message.author === "me" ? stripRoster(message.body) : message.body;
   const { pkg, renderedBody } = resolveMessagePackage(message.attachments, body);
+  const own = message.author === "me";
+  const time = new Date(message.at);
+  const content = (
+    <>
+      <Markdown text={renderedBody} />
+      <MessageAttachments
+        tenantId={workbenchTenantId}
+        attachments={message.attachments}
+        pkg={pkg}
+      />
+    </>
+  );
+  const reply =
+    onReply === undefined ? null : (
+      <button type="button" className="workbench-replies-link" onClick={() => onReply(message)}>
+        Reply
+      </button>
+    );
+  if (own) {
+    return (
+      <div className="chat-thread-message" data-author="me">
+        <div className="chat-thread-body">
+          <div className="chat-thread-own-bubble">{content}</div>
+          {reply}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="chat-thread-message" data-author={message.author}>
       <span className="shell-ch-avatar">
@@ -81,17 +109,16 @@ function WorkbenchMessageRow({
         />
       </span>
       <div className="chat-thread-body">
-        <Markdown text={renderedBody} />
-        <MessageAttachments
-          tenantId={workbenchTenantId}
-          attachments={message.attachments}
-          pkg={pkg}
-        />
-        {onReply === undefined ? null : (
-          <button type="button" className="workbench-replies-link" onClick={() => onReply(message)}>
-            Reply
-          </button>
-        )}
+        <div className="chat-thread-head">
+          <b>{avatarName}</b>
+          {Number.isNaN(time.getTime()) ? null : (
+            <time dateTime={message.at}>
+              {time.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+            </time>
+          )}
+        </div>
+        {content}
+        {reply}
       </div>
     </div>
   );

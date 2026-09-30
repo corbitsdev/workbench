@@ -1035,8 +1035,7 @@
 /* The owner asked for own messages back on the right, evaluated
    per viewer (`isOwn` in timeline.tsx already keys off `currentUser`, never
    a fixed account) — reversing flat, no-alignment timeline. Still
-   no bubble, no border, no background fill: only the row mirrors, so the
-   avatar sits on the right and the header/text shrink to their own content
+   the row mirrors, so the avatar sits on the right and the header/text shrink to their own content
    width against that same edge instead of stretching the full row. `.chat-
    block` (approve/connect-service/connect-github/poll/form/steps) and
    `.chat-trace` rows render as siblings of the bubble, not inside
