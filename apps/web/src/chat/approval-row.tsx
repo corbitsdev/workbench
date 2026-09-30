@@ -59,6 +59,7 @@ export function ApprovalRow({
         <Button
           variant="ghost"
           size="sm"
+          className="btn-danger-ghost"
           disabled={pending !== null}
           onClick={() => resolveMutation.mutate("deny")}
         >

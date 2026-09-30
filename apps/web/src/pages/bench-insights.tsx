@@ -37,7 +37,7 @@ function dayLabel(date: Date): string {
   });
 }
 
-function OutcomeChart({ days }: { readonly days: readonly BenchDay[] }) {
+export function OutcomeChart({ days }: { readonly days: readonly BenchDay[] }) {
   const [active, setActive] = useState<number | null>(null);
   const max = Math.max(...days.map((d) => d.ok + d.fail), 1);
   const every = days.length > 30 ? 14 : days.length > 7 ? 5 : 1;

@@ -1,20 +1,20 @@
 // One section and nothing else: Workbenches. Agent membership is a
 // workbench concept.
 
-import { EmptyState, Input, Skeleton } from "@corbits/react-ui";
-import { Hash, MagnifyingGlass } from "@/lib/icons";
-import { useState } from "react";
+import { EmptyState, Skeleton } from "@corbits/react-ui";
+import { useQuery } from "@tanstack/react-query";
+import { WorkbenchAvatar } from "@/chat/avatar";
+import { listChatAgents } from "@/chat/threads-api";
+import { Hash } from "@/lib/icons";
 
 import { useBench } from "../bench-context";
+import { useBenchWorkerStatus } from "../worker-status";
+import { tenantKeys } from "../query-client";
 import { workbenchIdFromPath, workbenchPath } from "../workbench-path";
 import type { HubTenant } from "../needs-converge";
 import { useSidebarSections } from "./sidebar-sections";
 
 export const SIDEBAR_EMPTY_COPY = "No workbenches yet";
-
-function matches(text: string, needle: string): boolean {
-  return text.toLowerCase().includes(needle);
-}
 
 function SectionLabel({ children }: { readonly children: string }) {
   return <div className="shell-panel-section-label">{children}</div>;
@@ -60,7 +60,6 @@ export function WorkbenchList({
 }) {
   const { selectedTenantId } = useBench();
   const sections = useSidebarSections(selectedTenantId);
-  const [query, setQuery] = useState("");
 
   if (sections.kind === "loading") {
     return (
@@ -81,41 +80,93 @@ export function WorkbenchList({
     );
   }
 
-  const needle = query.trim().toLowerCase();
-  const workbenches = sections.workbenches.filter(
-    (tenant) => needle === "" || matches(tenant.name, needle),
-  );
   const activeWorkbenchId = workbenchIdFromPath(path);
+  const { workbenches } = sections;
 
   return (
-    <div className="panel-stack" aria-label="Workbenches">
-      <label className="shell-panel-search">
-        <MagnifyingGlass aria-hidden="true" />
-        <Input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search…"
-          aria-label="Search workbenches"
-        />
-      </label>
+    <div className="panel-stack" aria-label="Workbenches and workers">
+      <div className="panel-stack-group">
+        <SectionLabel>Workbenches</SectionLabel>
+        {workbenches.length === 0 ? (
+          <p className="shell-panel-list-empty">{SIDEBAR_EMPTY_COPY}</p>
+        ) : null}
+        {workbenches.map((tenant) => (
+          <WorkbenchRow
+            key={tenant.id}
+            tenant={tenant}
+            active={tenant.id === activeWorkbenchId}
+            onSelect={() => onNavigate(workbenchPath(tenant.id))}
+          />
+        ))}
+      </div>
+      <WorkerGroup path={path} onNavigate={onNavigate} benches={workbenches} />
+    </div>
+  );
+}
 
-      {workbenches.length === 0 ? (
-        <p className="shell-panel-list-empty">{SIDEBAR_EMPTY_COPY}</p>
-      ) : null}
+function WorkerRow({
+  agent,
+  benches,
+  active,
+  onSelect,
+}: {
+  readonly agent: { readonly name: string };
+  readonly benches: readonly HubTenant[];
+  readonly active: boolean;
+  readonly onSelect: () => void;
+}) {
+  // Sidebar workers are the workspace's agents; a bench's copy shares the name.
+  const status = useBenchWorkerStatus(benches, (p) => p.name === agent.name);
+  return (
+    <button
+      type="button"
+      className="shell-ch-row"
+      aria-current={active ? "true" : undefined}
+      data-active={active ? "true" : undefined}
+      onClick={onSelect}
+    >
+      <WorkbenchAvatar kind="worker" name={agent.name} size="sm" status={status.tone} />
+      <span className="shell-ch-meta">
+        <span className="shell-ch-name-row">
+          <span className="shell-ch-name">{agent.name}</span>
+        </span>
+      </span>
+    </button>
+  );
+}
 
-      {workbenches.length === 0 ? null : (
-        <div className="panel-stack-group">
-          <SectionLabel>Workbenches</SectionLabel>
-          {workbenches.map((tenant) => (
-            <WorkbenchRow
-              key={tenant.id}
-              tenant={tenant}
-              active={tenant.id === activeWorkbenchId}
-              onSelect={() => onNavigate(workbenchPath(tenant.id))}
-            />
-          ))}
-        </div>
-      )}
+function WorkerGroup({
+  path,
+  onNavigate,
+  benches,
+}: {
+  readonly path: string;
+  readonly onNavigate: (to: string) => void;
+  readonly benches: readonly HubTenant[];
+}) {
+  const { selectedTenantId } = useBench();
+  const agents = useQuery({
+    queryKey: tenantKeys.agents(selectedTenantId ?? "none"),
+    enabled: selectedTenantId !== null,
+    queryFn: () => listChatAgents(selectedTenantId as string),
+  });
+  const workers = agents.data ?? [];
+  if (workers.length === 0) return null;
+  return (
+    <div className="panel-stack-group">
+      <SectionLabel>Workers</SectionLabel>
+      {workers.map((agent) => {
+        const to = `/workers/${agent.id}`;
+        return (
+          <WorkerRow
+            key={agent.id}
+            agent={agent}
+            benches={benches}
+            active={path === to}
+            onSelect={() => onNavigate(to)}
+          />
+        );
+      })}
     </div>
   );
 }

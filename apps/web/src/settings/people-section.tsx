@@ -4,7 +4,6 @@
 import {
   Badge,
   Button,
-  ConfirmButton,
   Dialog,
   DialogBody,
   DialogContent,
@@ -14,13 +13,6 @@ import {
   DialogTitle,
   EmptyState,
   Input,
-  SettingsPanel,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
 } from "@corbits/react-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -42,6 +34,8 @@ import {
   type Principal,
   type Role,
 } from "./tenancy-api";
+import { ConfirmButton } from "../components/confirm-button";
+import { SettingsGroup, SettingsRow } from "./rows";
 
 const STATUS_TONE: Record<Principal["status"], "success" | "info" | "neutral"> = {
   active: "success",
@@ -86,7 +80,9 @@ export function PeopleSection({ tenantId }: { readonly tenantId: string | null }
 
   function reload() {
     if (tenantId === null) return;
-    void queryClient.invalidateQueries({ queryKey: tenantKeys.principals(tenantId) });
+    void queryClient.invalidateQueries({
+      queryKey: tenantKeys.principals(tenantId),
+    });
   }
 
   const inviteMutation = useMutation({
@@ -99,7 +95,10 @@ export function PeopleSection({ tenantId }: { readonly tenantId: string | null }
       reload();
     },
     onError: (cause: unknown) => {
-      reportError(cause, { operation: "settings.people.invite", tenantId: tenantId ?? "none" });
+      reportError(cause, {
+        operation: "settings.people.invite",
+        tenantId: tenantId ?? "none",
+      });
     },
   });
 
@@ -175,15 +174,15 @@ export function PeopleSection({ tenantId }: { readonly tenantId: string | null }
   return (
     <QueryView query={query} label={SETTINGS_STRINGS.peopleLoadError}>
       {({ people, roles }) => (
-        <SettingsPanel
+        <SettingsGroup
           title={SETTINGS_STRINGS.peopleSectionTitle}
           description={SETTINGS_STRINGS.peopleSectionDescription}
-        >
-          <div className="settings-section-toolbar">
+          action={
             <Button variant="primary" onClick={() => setInviteOpen(true)}>
               {SETTINGS_STRINGS.peopleInviteAction}
             </Button>
-          </div>
+          }
+        >
           {rowError !== null && (
             <p className="settings-inline-error" role="alert">
               {rowError}
@@ -204,10 +203,13 @@ export function PeopleSection({ tenantId }: { readonly tenantId: string | null }
             submitting={inviteMutation.isPending}
             error={inviteMutation.isError ? SETTINGS_STRINGS.peopleInviteError : null}
             onInvite={(email, roleId) =>
-              inviteMutation.mutate({ email, ...(roleId !== undefined ? { roleId } : {}) })
+              inviteMutation.mutate({
+                email,
+                ...(roleId !== undefined ? { roleId } : {}),
+              })
             }
           />
-        </SettingsPanel>
+        </SettingsGroup>
       )}
     </QueryView>
   );
@@ -345,91 +347,73 @@ export function PeopleTable({
     );
   }
   return (
-    <div className="settings-table-scroll">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Kind</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Roles</TableHead>
-            <TableHead className="settings-actions-cell">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {people.map((person) => {
-            const identity = principalLabel(person.displayName);
-            const selectableRoles = [ownerRole, memberRole].filter(
-              (r): r is Role => r !== undefined,
-            );
-            const currentRoleId =
-              person.roles.find((r) => selectableRoles.some((role) => role.id === r.id))?.id ??
-              memberRole?.id;
+    <>
+      {people.map((person) => {
+        const identity = principalLabel(person.displayName);
+        const selectableRoles = [ownerRole, memberRole].filter((r): r is Role => r !== undefined);
+        const currentRoleId =
+          person.roles.find((r) => selectableRoles.some((role) => role.id === r.id))?.id ??
+          memberRole?.id;
 
-            return (
-              <TableRow key={person.id}>
-                <TableCell>
-                  <span title={identity.raw ?? undefined}>{identity.label}</span>
-                  {person.email !== undefined ? (
-                    <span className="settings-member-email"> {person.email}</span>
-                  ) : null}
-                </TableCell>
-                <TableCell>{PRINCIPAL_KIND_LABEL[person.kind]}</TableCell>
-                <TableCell>
-                  <Badge tone={STATUS_TONE[person.status]}>{person.status}</Badge>
-                </TableCell>
-                <TableCell>
-                  {selectableRoles.length === 2 ? (
-                    <select
-                      className="settings-select"
-                      aria-label={`${SETTINGS_STRINGS.peopleInviteRoleLabel} — ${identity.label}`}
-                      value={currentRoleId}
-                      onChange={(event) => onRoleChange(person, event.target.value)}
-                    >
-                      {selectableRoles.map((role) => (
-                        <option key={role.id} value={role.id}>
-                          {role.name.toLowerCase() === "owner"
-                            ? SETTINGS_STRINGS.peopleInviteRoleOwner
-                            : SETTINGS_STRINGS.peopleInviteRoleMember}
-                        </option>
+        return (
+          <SettingsRow
+            key={person.id}
+            title={<span title={identity.raw ?? undefined}>{identity.label}</span>}
+            meta={
+              <>
+                {person.email !== undefined ? <span>{person.email}</span> : null}
+                <span>{PRINCIPAL_KIND_LABEL[person.kind]}</span>
+                <Badge tone={STATUS_TONE[person.status]}>{person.status}</Badge>
+                {selectableRoles.length === 2
+                  ? null
+                  : person.roles.length === 0
+                    ? SETTINGS_STRINGS.peopleRoleNone
+                    : person.roles.map((role) => (
+                        <Badge key={role.id} tone="neutral">
+                          {role.name}
+                        </Badge>
                       ))}
-                    </select>
-                  ) : person.roles.length === 0 ? (
-                    SETTINGS_STRINGS.peopleRoleNone
-                  ) : (
-                    person.roles.map((role) => (
-                      <Badge key={role.id} tone="neutral">
-                        {role.name}
-                      </Badge>
-                    ))
-                  )}
-                </TableCell>
-                <TableCell className="settings-actions-cell">
-                  <div className="settings-row-actions">
-                    {person.status === "suspended" ? (
-                      <Button variant="outline" size="sm" onClick={() => onReactivate(person)}>
-                        {SETTINGS_STRINGS.peopleReactivate}
-                      </Button>
-                    ) : (
-                      <Button variant="outline" size="sm" onClick={() => onSuspend(person)}>
-                        {SETTINGS_STRINGS.peopleSuspend}
-                      </Button>
-                    )}
-                    <ConfirmButton
-                      variant="destructive"
-                      size="sm"
-                      confirmLabel={SETTINGS_STRINGS.peopleRemoveConfirm}
-                      onConfirm={() => onRemove(person)}
-                    >
-                      {SETTINGS_STRINGS.peopleRemove}
-                    </ConfirmButton>
-                  </div>
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </div>
+              </>
+            }
+            actions={
+              <>
+                {selectableRoles.length === 2 ? (
+                  <select
+                    className="settings-select"
+                    aria-label={`${SETTINGS_STRINGS.peopleInviteRoleLabel} — ${identity.label}`}
+                    value={currentRoleId}
+                    onChange={(event) => onRoleChange(person, event.target.value)}
+                  >
+                    {selectableRoles.map((role) => (
+                      <option key={role.id} value={role.id}>
+                        {role.name.toLowerCase() === "owner"
+                          ? SETTINGS_STRINGS.peopleInviteRoleOwner
+                          : SETTINGS_STRINGS.peopleInviteRoleMember}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+                {person.status === "suspended" ? (
+                  <Button variant="outline" size="sm" onClick={() => onReactivate(person)}>
+                    {SETTINGS_STRINGS.peopleReactivate}
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" onClick={() => onSuspend(person)}>
+                    {SETTINGS_STRINGS.peopleSuspend}
+                  </Button>
+                )}
+                <ConfirmButton
+                  size="sm"
+                  confirmLabel={SETTINGS_STRINGS.peopleRemoveConfirm}
+                  onConfirm={() => onRemove(person)}
+                >
+                  {SETTINGS_STRINGS.peopleRemove}
+                </ConfirmButton>
+              </>
+            }
+          />
+        );
+      })}
+    </>
   );
 }

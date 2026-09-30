@@ -21,6 +21,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { tenantKeys } from "../query-client";
 
+import "./library-page.css";
 import { rowActivationProps } from "../activatable-row";
 import { consumePendingNewSkill } from "../command-palette-actions";
 import { createSkill, listSkills, type SkillSummary } from "../skills-api";
@@ -189,11 +190,12 @@ export function SkillsPage({
         />
       ) : (
         <div className="px-4 pb-5 sm:px-7">
+          <p className="page-lede">Know-how your workers draw on. Ask for more in any bench.</p>
           <Table aria-label="Skills">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-48">Name</TableHead>
-                <TableHead className="max-w-sm">Description</TableHead>
+                <TableHead className="w-48">Skill</TableHead>
+                <TableHead className="max-w-sm">What it teaches</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -203,7 +205,9 @@ export function SkillsPage({
                   className="cursor-pointer"
                   {...rowActivationProps(() => open(skill.name))}
                 >
-                  <TableCell className="w-48 font-medium">{skillDisplayName(skill)}</TableCell>
+                  <TableCell className="w-48 font-medium">
+                    <span className="skill-row-name">{skillDisplayName(skill)}</span>
+                  </TableCell>
                   <TableCell className="max-w-sm truncate text-muted-foreground">
                     {skill.description}
                   </TableCell>

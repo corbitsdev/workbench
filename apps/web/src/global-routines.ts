@@ -9,13 +9,10 @@ import { describeApiError } from "@/lib/api-query";
 import type { APIQuery } from "@/lib/api-query";
 
 import { useBench } from "./bench-context";
+import { useFromBench } from "./shell/page-crumbs";
 import { WORKFLOWS_PATH_PREFIX } from "./path-ids";
 import { tenantKeys } from "./query-client";
-import {
-  listScheduledWorkflows,
-  runScheduledWorkflowNow,
-  setScheduledWorkflowStatus,
-} from "./routines-api";
+import { listScheduledWorkflows, runScheduledWorkflowNow } from "./routines-api";
 import type { ScheduledWorkflowDefinition } from "./routines-api";
 
 const ROUTINES_QUERY_SCOPE = "global-page";
@@ -30,7 +27,7 @@ export function routineDetailPath(definitionId: string): string {
   return `${WORKFLOWS_PATH_PREFIX}/${encodeURIComponent(definitionId)}`;
 }
 
-function useMemberBenches(): {
+function useMemberBenches(fromBench: string | null): {
   readonly kind: "loading" | "ready";
   readonly benches: readonly { tenantId: string; tenantName: string }[];
 } {
@@ -42,12 +39,15 @@ function useMemberBenches(): {
     () => benchMemberships.map((m) => ({ tenantId: m.tenantId, tenantName: m.tenantName })),
     [benchMemberships],
   );
+  if (fromBench !== null) {
+    return { kind: "ready", benches: [{ tenantId: fromBench, tenantName: "" }] };
+  }
   if (memberships.kind !== "ready") return { kind: "loading", benches: [] };
   return { kind: "ready", benches };
 }
 
 export function useGlobalRoutines(): APIQuery<readonly GlobalRoutineRow[]> {
-  const { kind: benchesKind, benches } = useMemberBenches();
+  const { kind: benchesKind, benches } = useMemberBenches(useFromBench());
   const results = useQueries({
     queries: benches.map((bench) => ({
       queryKey: [...tenantKeys.routines(bench.tenantId), ROUTINES_QUERY_SCOPE],
@@ -94,7 +94,6 @@ export function useInvalidateRoutines(): (tenantId: string) => void {
 
 export type RoutineActions = {
   readonly runNow: (row: GlobalRoutineRow) => Promise<void>;
-  readonly setEnabled: (row: GlobalRoutineRow, enabled: boolean) => Promise<void>;
 };
 
 export function useRoutineActions(): RoutineActions {
@@ -102,7 +101,11 @@ export function useRoutineActions(): RoutineActions {
   return {
     runNow: async (row) => {
       try {
-        await runScheduledWorkflowNow(row.tenantId, row.definition.definitionId);
+        await runScheduledWorkflowNow(
+          row.tenantId,
+          row.definition.definitionId,
+          row.definition.name,
+        );
         invalidate(row.tenantId);
         toast(`${row.definition.name} started`);
       } catch (cause) {
@@ -112,27 +115,6 @@ export function useRoutineActions(): RoutineActions {
         });
         toast(
           `Couldn't start ${row.definition.name}: ${describeApiError(cause, "starting this routine")}`,
-        );
-      }
-    },
-    setEnabled: async (row, enabled) => {
-      try {
-        await setScheduledWorkflowStatus(
-          row.tenantId,
-          row.definition.definitionId,
-          enabled ? "deployed" : "stopped",
-        );
-        invalidate(row.tenantId);
-      } catch (cause) {
-        reportError(cause, {
-          operation: "scheduled_workflow_set_status",
-          tenantId: row.tenantId,
-        });
-        toast(
-          `Couldn't ${enabled ? "resume" : "pause"} ${row.definition.name}: ${describeApiError(
-            cause,
-            enabled ? "resuming this routine" : "pausing this routine",
-          )}`,
         );
       }
     },

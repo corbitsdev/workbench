@@ -9,6 +9,7 @@ import { ensurePrimaryTenant, runPortableClientBootstrap } from "../client-boots
 import { createFetchStockHub, findOwnedTenants } from "../needs-converge";
 import { deployMyraSource } from "../myra-deploy";
 import { useNavigate } from "../navigation";
+import { NEW_WORKBENCH_PATH } from "../routes";
 import { triggerFirstLoginProvisioning } from "../onboarding";
 import { OnboardingLayout } from "../onboarding/onboarding-layout";
 import {
@@ -184,7 +185,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
 
   if (state.phase === "checking" || state.phase === "resolving-tenant") {
     return (
-      <OnboardingLayout>
+      <OnboardingLayout step={0}>
         <div className="onboarding-phase onboarding-phase--loading" key="checking">
           <WorkbenchLoadingState
             delayMs={0}
@@ -199,11 +200,11 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
 
   if (state.phase === "provider-setup") {
     return (
-      <OnboardingLayout>
+      <OnboardingLayout step={1}>
         <div className="onboarding-phase onboarding-phase--credential" key="provider-setup">
-          <h1 className="onboarding-title">Connect a model provider</h1>
+          <h1 className="onboarding-title">Connect a brain</h1>
           <p className="onboarding-subtitle">
-            Myra needs one working inference credential before she can start.
+            Pick a provider and connect it, or skip for now and connect one later in Settings.
           </p>
           <div className="onboarding-content">
             <ProviderConnectStep
@@ -227,6 +228,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
                 });
               }}
               onError={(message) => setState({ phase: "error", message })}
+              onSkip={() => navigate(NEW_WORKBENCH_PATH)}
             />
           </div>
         </div>
@@ -236,7 +238,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
 
   if (state.phase === "publishing-myra" || state.phase === "installing") {
     return (
-      <OnboardingLayout>
+      <OnboardingLayout step={2}>
         <div className="onboarding-phase onboarding-phase--loading" key="installing">
           <WorkbenchLoadingState
             delayMs={0}
@@ -251,14 +253,19 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
 
   if (state.phase === "setup-pending") {
     return (
-      <OnboardingLayout>
+      <OnboardingLayout step={2}>
         <div className="onboarding-phase" key="setup-pending">
           <h1 className="onboarding-title">Set up your workbench</h1>
           <p className="onboarding-subtitle">{state.message}</p>
           <div className="onboarding-content">
-            <Button variant="outline" onClick={checkStatus}>
-              Check again
-            </Button>
+            <div className="onboarding-actions">
+              <Button variant="primary" onClick={checkStatus}>
+                Check again
+              </Button>
+              <Button variant="ghost" onClick={() => navigate(NEW_WORKBENCH_PATH)}>
+                Skip for now
+              </Button>
+            </div>
           </div>
         </div>
       </OnboardingLayout>
@@ -266,7 +273,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   }
 
   return (
-    <OnboardingLayout>
+    <OnboardingLayout step={0}>
       <div className="onboarding-phase" key="status-error">
         <div className="onboarding-content">
           <EmptyState
@@ -286,9 +293,14 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
               )
             }
             action={
-              <Button variant="outline" onClick={checkStatus}>
-                Try again
-              </Button>
+              <div className="onboarding-actions">
+                <Button variant="primary" onClick={checkStatus}>
+                  Try again
+                </Button>
+                <Button variant="ghost" onClick={() => navigate(NEW_WORKBENCH_PATH)}>
+                  Skip for now
+                </Button>
+              </div>
             }
           />
         </div>

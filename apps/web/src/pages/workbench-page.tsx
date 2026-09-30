@@ -23,9 +23,18 @@ import {
   type WorkbenchMessage,
   type WorkbenchParticipant,
 } from "@/chat/threads-api";
+import { VoiceOverlay } from "../voice/voice-overlay";
 import { BenchDrawer } from "../bench/bench-drawer";
 import { BenchPill } from "../bench/bench-pill";
+import { PendingOpeningMessage } from "../bench/pending-opening-message";
+import { ArtifactsTab } from "../bench/artifacts-tab";
+import { markTurnPending, useWorkerStatus } from "../worker-status";
+import { GrantsTab } from "../bench/grants-tab";
 import { InformationTab } from "../bench/information-tab";
+import { InsightsTab } from "../bench/insights-tab";
+import { MembersTab } from "../bench/members-tab";
+import { ToolsTab } from "../bench/tools-tab";
+import { WorkflowsTab } from "../bench/workflows-tab";
 import { useBench } from "../bench-context";
 import { createFetchStockHub } from "../needs-converge";
 import { workbenchKeys } from "../chat-path";
@@ -63,6 +72,34 @@ function WorkbenchMessageRow({
   // see echoed back at them.
   const body = message.author === "me" ? stripRoster(message.body) : message.body;
   const { pkg, renderedBody } = resolveMessagePackage(message.attachments, body);
+  const own = message.author === "me";
+  const time = new Date(message.at);
+  const content = (
+    <>
+      <Markdown text={renderedBody} />
+      <MessageAttachments
+        tenantId={workbenchTenantId}
+        attachments={message.attachments}
+        pkg={pkg}
+      />
+    </>
+  );
+  const reply =
+    onReply === undefined ? null : (
+      <button type="button" className="workbench-replies-link" onClick={() => onReply(message)}>
+        Reply
+      </button>
+    );
+  if (own) {
+    return (
+      <div className="chat-thread-message" data-author="me">
+        <div className="chat-thread-body">
+          <div className="chat-thread-own-bubble">{content}</div>
+          {reply}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="chat-thread-message" data-author={message.author}>
       <span className="shell-ch-avatar">
@@ -73,17 +110,16 @@ function WorkbenchMessageRow({
         />
       </span>
       <div className="chat-thread-body">
-        <Markdown text={renderedBody} />
-        <MessageAttachments
-          tenantId={workbenchTenantId}
-          attachments={message.attachments}
-          pkg={pkg}
-        />
-        {onReply === undefined ? null : (
-          <button type="button" className="workbench-replies-link" onClick={() => onReply(message)}>
-            Reply
-          </button>
-        )}
+        <div className="chat-thread-head">
+          <b>{avatarName}</b>
+          {Number.isNaN(time.getTime()) ? null : (
+            <time dateTime={message.at}>
+              {time.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+            </time>
+          )}
+        </div>
+        {content}
+        {reply}
       </div>
     </div>
   );
@@ -124,6 +160,8 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
   const [openThread, setOpenThread] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const endVoice = useCallback(() => setVoiceOpen(false), []);
 
   const tenant = useQuery({
     queryKey: workbenchKeys.tenant(workbenchTenantId),
@@ -172,6 +210,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
       agent.address === "" && agent.assetName !== undefined,
   );
   const startingAgent = releasedAgents[0];
+  const workerStatus = useWorkerStatus(workbenchTenantId, agents[0]?.id);
   // Only a live agent can be addressed, so only one can be mentioned.
   const mentionables = agents
     .filter((agent) => agent.address.includes("@"))
@@ -190,10 +229,12 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
         content,
         ...(inReplyTo !== undefined ? { inReplyTo } : {}),
       }),
+    onMutate: () => markTurnPending(queryClient, workbenchTenantId),
     onSuccess: () =>
       queryClient.invalidateQueries({
         queryKey: workbenchKeys.scope(workbenchTenantId),
       }),
+    onError: () => queryClient.setQueryData(workbenchKeys.pendingTurn(workbenchTenantId), null),
   });
 
   const messages = timeline.data ?? [];
@@ -228,7 +269,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
           <BenchPill
             benchName={tenant.data?.name ?? "Workbench"}
             worker={agents[0]}
-            status={startingAgent === undefined ? "Live" : "Starting"}
+            status={workerStatus}
             open={drawerOpen}
             onToggle={() => setDrawerOpen((open) => !open)}
           />
@@ -245,6 +286,10 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                       onReply={(target) => setOpenThread(target.messageId)}
                     />
                   ))}
+                  <PendingOpeningMessage
+                    workbenchTenantId={workbenchTenantId}
+                    participants={participants.data ?? []}
+                  />
                 </div>
                 {send.error === null ? null : (
                   <p className="chat-thread-error">{errorText(send.error)}</p>
@@ -263,6 +308,10 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                   disabled={startingAgent !== undefined}
                   mentionables={mentionables}
                   onSend={(text) => send.mutate({ content: text })}
+                  onVoice={() => {
+                    setDrawerOpen(false);
+                    setVoiceOpen(true);
+                  }}
                 />
               </PageShell>
             </div>
@@ -298,11 +347,19 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
               />
             </aside>
           )}
+          {voiceOpen ? (
+            <VoiceOverlay
+              worker={agents[0]}
+              messages={messages}
+              onSend={(text) => send.mutate({ content: text })}
+              onEnd={endVoice}
+            />
+          ) : null}
         </div>
         <BenchDrawer
           open={drawerOpen}
           title={tenant.data?.name ?? "Workbench"}
-          subtitle={startingAgent === undefined ? "Live" : "Starting"}
+          subtitle={workerStatus.text}
           onClose={closeDrawer}
           tabs={{
             Information: (
@@ -312,6 +369,17 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                 participants={participants.data ?? []}
               />
             ),
+            Artifacts: <ArtifactsTab workbenchTenantId={workbenchTenantId} />,
+            Tools: <ToolsTab workbenchTenantId={workbenchTenantId} />,
+            Grants: <GrantsTab workbenchTenantId={workbenchTenantId} />,
+            Insights: <InsightsTab workbenchTenantId={workbenchTenantId} />,
+            Members: (
+              <MembersTab
+                workbenchTenantId={workbenchTenantId}
+                participants={participants.data ?? []}
+              />
+            ),
+            Workflows: <WorkflowsTab workbenchTenantId={workbenchTenantId} />,
           }}
         />
       </div>

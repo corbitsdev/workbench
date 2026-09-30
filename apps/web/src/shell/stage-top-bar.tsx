@@ -5,18 +5,13 @@
 // `filter` is per-page (DECISIONS.md -> Search), not shell chrome — a page
 // with nothing to filter gets no magnifier at all.
 
-import { Fragment, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
-import { Link } from "../navigation";
+import { PageCrumbs, type PageCrumb } from "./page-crumbs";
 import { Chip, type ChipTone } from "./chip";
 import { StageSearch, type StageSearchProps } from "./stage-search";
 
-export type StageCrumb = {
-  readonly label: string;
-  /** The route this crumb links to. Omitted on the last crumb — the
-   * current page is the title, never a link. */
-  readonly href?: string;
-};
+export type StageCrumb = PageCrumb;
 
 export function StageTopBar({
   crumbs,
@@ -42,7 +37,7 @@ export function StageTopBar({
   return (
     <header className="stage-top-bar" data-testid="stage-top-bar">
       <div className="stage-top-bar-title">
-        <StageCrumbTrail crumbs={crumbs} />
+        <PageCrumbs crumbs={crumbs} />
       </div>
       {hasSubtitle ? (
         <>
@@ -56,41 +51,5 @@ export function StageTopBar({
         {actions}
       </div>
     </header>
-  );
-}
-
-function StageCrumbTrail({ crumbs }: { readonly crumbs: readonly StageCrumb[] }) {
-  const lastIndex = crumbs.length - 1;
-  const trail = crumbs.map((crumb, index) => (
-    <Fragment key={`${String(index)}-${crumb.label}`}>
-      {index > 0 ? (
-        <span className="stage-crumbs-sep" aria-hidden="true">
-          /
-        </span>
-      ) : null}
-      {index === lastIndex ? (
-        <span className="stage-crumb-current" aria-current="page">
-          {crumb.label}
-        </span>
-      ) : crumb.href === undefined ? (
-        <span className="stage-crumb-label">{crumb.label}</span>
-      ) : (
-        <Link to={crumb.href} className="stage-crumb-link">
-          {crumb.label}
-        </Link>
-      )}
-    </Fragment>
-  ));
-
-  // A one-level page has nowhere to go up to — a Breadcrumb landmark around
-  // a bare page title is noise, so the landmark appears only for a real
-  // trail.
-  if (lastIndex === 0) {
-    return <div className="stage-crumbs">{trail}</div>;
-  }
-  return (
-    <nav className="stage-crumbs" aria-label="Breadcrumb">
-      {trail}
-    </nav>
   );
 }

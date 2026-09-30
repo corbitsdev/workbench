@@ -1,0 +1,22 @@
+/* Button roles from DESIGN.md "Color roles". Primary is charcoal via the
+   `--primary` token; its icon carries the orange. Orange never fills. */
+[data-slot="button"].bg-primary svg {
+  color: var(--action);
+}
+
+/* Danger-ghost: text-only red for everyday refusals (Deny, Remove). */
+[data-slot="button"].btn-danger-ghost {
+  color: var(--danger);
+}
+[data-slot="button"].btn-danger-ghost:hover {
+  background: var(--danger-wash);
+  color: var(--danger);
+}
+[data-slot="button"].bg-destructive:hover {
+  background: var(--danger-hover);
+  opacity: 1;
+}
+[data-slot="button"].bg-destructive:focus-visible,
+[data-slot="button"].btn-danger-ghost:focus-visible {
+  outline-color: var(--danger);
+}
