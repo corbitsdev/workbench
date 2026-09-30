@@ -15,6 +15,7 @@ import { useBench } from "../bench-context";
 import { workbenchKeys } from "../chat-path";
 import { createWorkbench, WorkbenchCreateError } from "../workbench-create";
 import { useNavigate } from "../navigation";
+import { ProviderSkipBanner } from "../provider-skip-banner";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { workbenchPath } from "../workbench-path";
 import { CreateAgentPanel } from "./create-agent-panel";
@@ -171,6 +172,7 @@ export function NewWorkbenchPickerRoute() {
           <WorkbenchLoadingState delayMs={0} title="Setting up your workbench…" />
         ) : (
           <>
+            <ProviderSkipBanner />
             <h3>What do you want your Workbench to do?</h3>
             <p className="new-workbench-picker-sub">
               Tell it what you&apos;re trying to get done. Takes about ten seconds.
