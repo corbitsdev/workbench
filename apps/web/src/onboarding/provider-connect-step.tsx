@@ -1,7 +1,13 @@
 // Connects one provider credential through the stock catalog routes and
 // derives the single offering it mints; a tenant that already resolves an
 // offering skips this step (see `resolveExistingOffering`).
-import { Button, Input, RadioGroup, RadioOption, Select } from "@corbits/react-ui";
+import {
+  Button,
+  Input,
+  RadioGroup,
+  RadioOption,
+  Select,
+} from "@corbits/react-ui";
 import {
   cancelProviderLogin,
   credentialNameFor,
@@ -140,7 +146,10 @@ export async function resolveExistingOffering(
   const models = await getResolvedCatalog(tenantId, fetchImpl);
   const offerings = models
     .flatMap((model) =>
-      model.offerings.map((offering) => ({ ...offering, model: model.canonicalName })),
+      model.offerings.map((offering) => ({
+        ...offering,
+        model: model.canonicalName,
+      })),
     )
     .sort((a, b) => a.priority - b.priority);
   const defaultSourceOfferingId = offerings[0]?.offeringId;
@@ -156,7 +165,11 @@ export async function resolveExistingOffering(
 }
 
 /** An offering minted from exactly one option: one credential, one model. */
-function offeringFromOption(option: ProviderOption, canonicalName: string, id: string) {
+function offeringFromOption(
+  option: ProviderOption,
+  canonicalName: string,
+  id: string,
+) {
   return {
     sourceOfferingIds: [id],
     defaultSourceOfferingId: id,
@@ -173,15 +186,17 @@ export function ProviderConnectStep({
   readonly onConnected: (offering: ExistingOffering) => void;
   readonly onError: (message: string) => void;
 }) {
-  const [selected, setSelected] = useState<string>(PROVIDER_OPTIONS[0]?.id ?? "anthropic");
+  const [selected, setSelected] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [baseURL, setBaseURL] = useState("");
   const [modelName, setModelName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [loginId, setLoginId] = useState<string | null>(null);
 
-  const option =
-    PROVIDER_OPTIONS.find((candidate) => candidate.id === selected) ?? PROVIDER_OPTIONS[0];
+  // No provider is preselected: the person chooses.
+  const option = PROVIDER_OPTIONS.find(
+    (candidate) => candidate.id === selected,
+  );
   const isLocal = option?.local === true;
   const oauthProvider = option?.oauthProvider;
 
@@ -200,14 +215,17 @@ export function ProviderConnectStep({
   const modelKnown = !isLocal || tags.includes(modelName);
 
   const ready =
-    oauthProvider !== undefined ||
-    (isLocal
-      ? baseURL.trim().length > 0 && modelName.trim().length > 0 && modelKnown
-      : apiKey.trim().length > 0);
+    option !== undefined &&
+    (oauthProvider !== undefined ||
+      (isLocal
+        ? baseURL.trim().length > 0 && modelName.trim().length > 0 && modelKnown
+        : apiKey.trim().length > 0));
 
   function fail(cause: unknown, operation: string) {
     const refId = reportError(cause, { operation, tenantId });
-    onError(`${cause instanceof Error ? cause.message : String(cause)} (ref ${refId})`);
+    onError(
+      `${cause instanceof Error ? cause.message : String(cause)} (ref ${refId})`,
+    );
   }
 
   function selectOption(id: string) {
@@ -215,7 +233,10 @@ export function ProviderConnectStep({
     if (loginId !== null) {
       // Abandoning a login must free the fixed loopback port it holds.
       void cancelProviderLogin(tenantId, loginId).catch((cause: unknown) => {
-        reportError(cause, { operation: "onboarding.cancel-provider-login", tenantId });
+        reportError(cause, {
+          operation: "onboarding.cancel-provider-login",
+          tenantId,
+        });
       });
       setLoginId(null);
     }
@@ -227,7 +248,10 @@ export function ProviderConnectStep({
   // Starting a login is the hub's job end to end: it runs the loopback PKCE
   // flow and stores the tokens, and hands back only a URL to open.
   const startLogin = useMutation({
-    mutationFn: async (target: { option: ProviderOption; provider: string }) => {
+    mutationFn: async (target: {
+      option: ProviderOption;
+      provider: string;
+    }) => {
       const providerId = await ensureProviderRow(tenantId, {
         providerName: target.option.label,
         plugin: target.option.plugin,
@@ -255,7 +279,8 @@ export function ProviderConnectStep({
     queryKey: ["onboarding", "oauth-login", tenantId, loginId],
     enabled: loginId !== null && option !== undefined,
     queryFn: async () => {
-      if (loginId === null || option === undefined) throw new Error("no login in flight");
+      if (loginId === null || option === undefined)
+        throw new Error("no login in flight");
       const state = await readProviderLogin(tenantId, loginId);
       if (state.status !== "completed") return state;
       const created = await shadowOffering(tenantId, {
@@ -272,7 +297,8 @@ export function ProviderConnectStep({
         offering: offeringFromOption(option, option.canonicalName, created.id),
       };
     },
-    refetchInterval: (query) => (query.state.data?.status === "pending" ? 2000 : false),
+    refetchInterval: (query) =>
+      query.state.data?.status === "pending" ? 2000 : false,
   });
 
   const loginState = login.data;
@@ -330,11 +356,14 @@ export function ProviderConnectStep({
         : "Connect";
 
   return (
-    <form className="onboarding-credential-form" onSubmit={(event) => void handleSubmit(event)}>
+    <form
+      className="onboarding-credential-form"
+      onSubmit={(event) => void handleSubmit(event)}
+    >
       <RadioGroup
         name="provider"
         label="Inference provider"
-        value={selected}
+        value={selected ?? ""}
         onValueChange={selectOption}
       >
         {PROVIDER_OPTIONS.map((candidate) => (
@@ -346,7 +375,7 @@ export function ProviderConnectStep({
           />
         ))}
       </RadioGroup>
-      {oauthProvider !== undefined ? (
+      {option === undefined ? null : oauthProvider !== undefined ? (
         <p>
           {waiting
             ? "Finish signing in on the tab that opened, then come back here."
@@ -388,12 +417,15 @@ export function ProviderConnectStep({
           </label>
           {tagsQuery.isError ? (
             <p className="onboarding-inline-error" role="alert">
-              {tagsQuery.error instanceof Error ? tagsQuery.error.message : String(tagsQuery.error)}
+              {tagsQuery.error instanceof Error
+                ? tagsQuery.error.message
+                : String(tagsQuery.error)}
             </p>
           ) : null}
           {!tagsQuery.isError && modelName !== "" && !modelKnown ? (
             <p className="onboarding-inline-error" role="alert">
-              {modelName} is not one of the models Ollama reports at this base URL.
+              {modelName} is not one of the models Ollama reports at this base
+              URL.
             </p>
           ) : null}
         </>
