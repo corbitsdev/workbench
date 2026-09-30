@@ -211,7 +211,7 @@ export async function createHubServer({
     database: process.env["DB_NAME"] ?? "interchange",
     ...(pgSchema !== undefined && { schema: pgSchema }),
   };
-  const { db } = createDB(dbConfig);
+  const { db, close: closeDb } = createDB(dbConfig);
 
   // Platform schema plus every mounted Corbits package's own migration,
   // applied once at boot before anything below reads or writes the
@@ -852,5 +852,15 @@ export async function createHubServer({
     websocket: sidecarWebsocket,
     port,
     idleTimeout: 0,
+    /** Stops every background ticker and the database pool; spawned sidecars are left to their pid files. */
+    async shutdown(): Promise<void> {
+      allocationScheduler.stop();
+      probeCleanupScheduler.stop();
+      dispatchScheduler.stop();
+      connectionRepairScheduler.stop();
+      cronTicker?.stop();
+      oauthTokenRefresher?.stop();
+      await closeDb();
+    },
   };
 }
