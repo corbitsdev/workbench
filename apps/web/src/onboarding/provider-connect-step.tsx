@@ -14,6 +14,7 @@ import {
 } from "@/settings/inference";
 import { reportError } from "@corbits/error-sink";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { type } from "arktype";
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
@@ -38,7 +39,25 @@ export type ProviderOption = {
   /** Set when this provider signs in instead of taking a key: the name the
    * hub registered its OAuth login under. */
   readonly oauthProvider?: string;
+  /** An OpenAI-compatible relay: the model is typed in beside the key. */
+  readonly typedModel?: boolean;
+  /** The base URL is typed in too (Custom). */
+  readonly customURL?: boolean;
 };
+
+// https everywhere; plain http only for a server on this machine.
+const baseUrlSchema = type("string").narrow((value, ctx) => {
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    return ctx.mustBe("a URL");
+  }
+  const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  return url.protocol === "https:" || (url.protocol === "http:" && local)
+    ? true
+    : ctx.mustBe("an https URL (http only for localhost)");
+});
 
 // Each hosted option names one canonical model so connecting mints exactly
 // one offering and the flow never asks "which model".
@@ -102,6 +121,31 @@ export const PROVIDER_OPTIONS: readonly ProviderOption[] = [
     keyHint: "",
     local: false,
     oauthProvider: "xai",
+  },
+  {
+    id: "openrouter",
+    plugin: "openai-compatible",
+    label: "OpenRouter",
+    description: "Many models through one OpenRouter key.",
+    canonicalName: "",
+    modelDisplayName: "",
+    baseURL: "https://openrouter.ai/api/v1",
+    keyHint: "sk-or-",
+    local: false,
+    typedModel: true,
+  },
+  {
+    id: "custom",
+    plugin: "openai-compatible",
+    label: "Custom",
+    description: "Any OpenAI-compatible endpoint: base URL, key, and model.",
+    canonicalName: "",
+    modelDisplayName: "",
+    baseURL: "",
+    keyHint: "",
+    local: false,
+    typedModel: true,
+    customURL: true,
   },
   {
     id: "ollama",
@@ -191,6 +235,10 @@ export function ProviderConnectStep({
   const option = PROVIDER_OPTIONS.find((candidate) => candidate.id === selected);
   const isLocal = option?.local === true;
   const oauthProvider = option?.oauthProvider;
+  const typedModel = option?.typedModel === true;
+  const customURL = option?.customURL === true;
+  const urlCheck = baseUrlSchema(baseURL);
+  const urlError = customURL && baseURL.trim() !== "" && urlCheck instanceof type.errors;
 
   // Fetched straight from the browser to the user-supplied base URL — this
   // never touches the hub. Validates the base URL is actually an Ollama
@@ -211,7 +259,11 @@ export function ProviderConnectStep({
     (oauthProvider !== undefined ||
       (isLocal
         ? baseURL.trim().length > 0 && modelName.trim().length > 0 && modelKnown
-        : apiKey.trim().length > 0));
+        : typedModel
+          ? apiKey.trim().length > 0 &&
+            modelName.trim().length > 0 &&
+            (!customURL || !(urlCheck instanceof type.errors))
+          : apiKey.trim().length > 0));
 
   function fail(cause: unknown, operation: string) {
     const refId = reportError(cause, { operation, tenantId });
@@ -312,13 +364,14 @@ export function ProviderConnectStep({
     }
     setSubmitting(true);
     try {
-      const canonicalName = isLocal ? modelName.trim() : option.canonicalName;
+      const typed = isLocal || typedModel;
+      const canonicalName = typed ? modelName.trim() : option.canonicalName;
       const created = await shadowOffering(tenantId, {
         canonicalName,
-        modelDisplayName: isLocal ? modelName.trim() : option.modelDisplayName,
+        modelDisplayName: typed ? modelName.trim() : option.modelDisplayName,
         providerName: option.label,
         plugin: option.plugin,
-        baseURL: isLocal ? baseURL.trim() : option.baseURL,
+        baseURL: isLocal || customURL ? baseURL.trim() : option.baseURL,
         credential: { apiKey: isLocal ? LOCAL_PLACEHOLDER_KEY : apiKey.trim() },
         priority: 0,
       });
@@ -423,17 +476,48 @@ export function ProviderConnectStep({
           ) : null}
         </>
       ) : (
-        <label>
-          API key
-          <Input
-            type="password"
-            autoComplete="off"
-            placeholder={option?.keyHint}
-            value={apiKey}
-            onChange={(event) => setApiKey(event.target.value)}
-            required
-          />
-        </label>
+        <>
+          {customURL ? (
+            <label>
+              Base URL
+              <Input
+                type="url"
+                autoComplete="off"
+                placeholder="https://"
+                value={baseURL}
+                onChange={(event) => setBaseURL(event.target.value)}
+                required
+              />
+            </label>
+          ) : null}
+          {urlError ? (
+            <p className="onboarding-inline-error" role="alert">
+              The base URL must be an https URL (http only for localhost).
+            </p>
+          ) : null}
+          <label>
+            API key
+            <Input
+              type="password"
+              autoComplete="off"
+              placeholder={option?.keyHint}
+              value={apiKey}
+              onChange={(event) => setApiKey(event.target.value)}
+              required
+            />
+          </label>
+          {typedModel ? (
+            <label>
+              Model
+              <Input
+                autoComplete="off"
+                value={modelName}
+                onChange={(event) => setModelName(event.target.value)}
+                required
+              />
+            </label>
+          ) : null}
+        </>
       )}
       <div className="onboarding-actions">
         <Button type="submit" variant="primary" disabled={submitting || waiting || !ready}>
