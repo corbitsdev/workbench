@@ -54,12 +54,15 @@ export async function writeSkillSource(
     actions: ["can_read", "can_push"],
     lifetimeMs: PUSH_TOKEN_LIFETIME_MS,
     fetchImpl,
-    use: (token) =>
-      pushSourceTree({
-        url: skillAssetUrl(tenantId, assetName),
-        token,
-        tree: { [SKILL_SOURCE_PATH]: content },
-        message: "Update SKILL.md",
-      }),
+    use: async (token) =>
+      (
+        await pushSourceTree({
+          fetch: fetchImpl,
+          url: skillAssetUrl(tenantId, assetName),
+          token,
+          tree: { [SKILL_SOURCE_PATH]: content },
+          message: "Update SKILL.md",
+        })
+      ).commitSha,
   });
 }

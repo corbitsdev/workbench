@@ -1,8 +1,8 @@
 // Deploys a hand-authored agent the same way Myra deploys herself
 // (`myra-deploy.ts`), generalized over {name, displayName, systemPrompt}.
 import { renderBundledWorkflowSourceTree } from "@corbits/workflows/client";
+import { installPackage } from "./install-package";
 import { type } from "arktype";
-import { WorkflowDeploymentResponse } from "@intx/types";
 import { reportError } from "@corbits/error-sink";
 
 import {
@@ -24,16 +24,11 @@ import { isValidSlug, slugify } from "@/lib/slug";
 
 export class AgentDeployError extends Error {}
 
-const AssetCreatedShape = type({ id: "string" });
-const AssetListShape = type({ id: "string", name: "string" }).array();
-const GitTokenMintShape = type({ id: "string", secret: "string" });
 const TenantDomainShape = type({ domain: "string" });
 // Same shape `session.ts`'s `fetchSession` parses; a person's refId is
 // their better-auth user id, exactly what `threads-api.ts` builds a
 // principal's mailbox address from.
 const SessionUserShape = type({ user: { id: "string" } });
-
-const PUSH_TOKEN_LIFETIME_MS = 10 * 60 * 1000;
 
 async function readErrorBody(response: Response): Promise<string> {
   const body: unknown = await response.json().catch(() => undefined);
@@ -41,57 +36,6 @@ async function readErrorBody(response: Response): Promise<string> {
     error: { code: "string", userMessage: "string", refId: "string" },
   })(body);
   return envelope instanceof type.errors ? `HTTP ${response.status}` : envelope.error.userMessage;
-}
-
-/** The `workflow`-kind asset a given agent's source pushes into, derived
- * from its name — idempotent create-or-find, mirroring `ensureMyraSourceAsset`
- * but keyed on a caller-supplied name rather than Myra's fixed one. */
-export async function ensureAgentSourceAsset(
-  tenantId: string,
-  assetName: string,
-  displayName: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<string> {
-  const created = await fetchImpl(`/api/tenants/${encodeURIComponent(tenantId)}/assets`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ kind: "workflow", name: assetName, displayName }),
-  });
-  if (created.status === 201) {
-    const parsed = AssetCreatedShape(await created.json());
-    if (parsed instanceof type.errors) {
-      throw new AgentDeployError(
-        `this agent's source came back an unexpected shape: ${parsed.summary}`,
-      );
-    }
-    return parsed.id;
-  }
-  if (created.status !== 409) {
-    throw new AgentDeployError(
-      `preparing this agent's source failed: ${await readErrorBody(created)}`,
-    );
-  }
-  const listed = await fetchImpl(
-    `/api/tenants/${encodeURIComponent(tenantId)}/assets?kind=workflow&inherited=false`,
-  );
-  if (!listed.ok) {
-    throw new AgentDeployError(
-      `checking this workbench's agents failed: ${await readErrorBody(listed)}`,
-    );
-  }
-  const parsed = AssetListShape(await listed.json());
-  if (parsed instanceof type.errors) {
-    throw new AgentDeployError(
-      `this workbench's agent list came back an unexpected shape: ${parsed.summary}`,
-    );
-  }
-  const existing = parsed.find((asset) => asset.name === assetName);
-  if (existing === undefined) {
-    throw new AgentDeployError(
-      "this agent's source reported a name conflict but is not listed on this workbench",
-    );
-  }
-  return existing.id;
 }
 
 /** The exact `WorkflowDefinition` JSON for a single-step, mail-triggered,
@@ -152,44 +96,8 @@ export function buildAgentDefinitionJson(args: {
   };
 }
 
-async function withPushToken<T>(
-  tenantId: string,
-  assetId: string,
-  fetchImpl: typeof fetch,
-  push: (token: string) => Promise<T>,
-): Promise<T> {
-  const tokensPath = `/api/tenants/${encodeURIComponent(tenantId)}/git-tokens`;
-  const minted = await fetchImpl(tokensPath, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      name: `agent-deploy-${crypto.randomUUID()}`,
-      resource: `asset:${assetId}`,
-      refPattern: "refs/heads/main",
-      actions: ["can_read", "can_push"],
-      expiresAt: new Date(Date.now() + PUSH_TOKEN_LIFETIME_MS).toISOString(),
-    }),
-  });
-  if (!minted.ok) {
-    throw new AgentDeployError(`minting a push token failed: ${await readErrorBody(minted)}`);
-  }
-  const token = GitTokenMintShape(await minted.json());
-  if (token instanceof type.errors) {
-    throw new AgentDeployError(`the push token came back an unexpected shape: ${token.summary}`);
-  }
-  try {
-    return await push(token.secret);
-  } finally {
-    await fetchImpl(`${tokensPath}/${encodeURIComponent(token.id)}`, { method: "DELETE" });
-  }
-}
-
 // The bundle's `buildMyraWorkflow` is generic over which agent it builds.
-// Returns the commit sha the deploy pins to.
-export async function pushAgentSource(
-  tenantId: string,
-  assetId: string,
-  assetName: string,
+async function renderAgentSourceTree(
   packageName: string,
   args: {
     readonly slug: string;
@@ -199,11 +107,10 @@ export async function pushAgentSource(
     readonly hubCredentialId: string;
     readonly mcpServers: readonly McpServerDeployment[];
   },
-  fetchImpl: typeof fetch = fetch,
-): Promise<string> {
+): Promise<Record<string, string>> {
   const { MYRA_BUNDLE_BUILD_EXPORT, MYRA_DIRECTORS_BUNDLE, MYRA_WORKFLOW_BUNDLE } =
     await import("@corbits/myra/bundle");
-  const tree = renderBundledWorkflowSourceTree({
+  return renderBundledWorkflowSourceTree({
     packageName,
     bundle: MYRA_WORKFLOW_BUNDLE,
     directorsBundle: MYRA_DIRECTORS_BUNDLE,
@@ -230,14 +137,6 @@ export async function pushAgentSource(
       }),
     ),
   });
-  const url = new URL(
-    `/api/tenants/${encodeURIComponent(tenantId)}/assets/workflow/${assetName}.git`,
-    globalThis.location.origin,
-  ).toString();
-  const { pushSourceTree } = await import("./git-push");
-  return withPushToken(tenantId, assetId, fetchImpl, (token) =>
-    pushSourceTree({ url, token, tree, message: `Publish ${assetName}'s definition` }),
-  );
 }
 
 /** Every created agent's source asset name, `agent-<slug>-source` — the one
@@ -368,7 +267,7 @@ async function scheduleAgentRun(
   }
 }
 
-export type DeployedAgent = typeof WorkflowDeploymentResponse.infer;
+export type DeployedAgent = Awaited<ReturnType<typeof installPackage>>;
 
 // Fails closed when no provider is connected yet — there is no offering
 // to deploy against.
@@ -404,13 +303,6 @@ export async function deployAgentSource(
     throw new AgentDeployError("connect a model provider in Settings before deploying an agent");
   }
 
-  const assetId = await ensureAgentSourceAsset(args.tenantId, assetName, name, fetchImpl);
-  // Minted before the push: the definition binds this credential by name
-  // and requires its use by id, so it must exist before the source does.
-  const hubCredentialId = await ensureAgentHubCredential(
-    { tenantId: args.tenantId, definitionId: slug, assetId },
-    fetchImpl,
-  );
   // The chosen handles bind workspace-catalog servers by ancestor walk, the
   // same as Myra's Exa; an empty choice deploys a server-less agent.
   const requestedHandles = args.input.mcpHandles ?? [];
@@ -424,42 +316,30 @@ export async function deployAgentSource(
   // Grant configuration only, not a routable address: the hub mints the
   // agent's real address (its run address) at deploy time.
   const triggerAddress = `${slug}@${tenant.domain}`;
-  const commitSha = await pushAgentSource(
-    args.tenantId,
-    assetId,
+  const parsed = await installPackage({
+    fetch: fetchImpl,
+    origin: globalThis.location.origin,
+    tenantId: args.tenantId,
     assetName,
-    packageName,
-    {
-      slug,
-      systemPrompt,
-      triggerAddress,
-      declaredSources: offering.declaredSources,
-      hubCredentialId,
-      mcpServers,
-    },
-    fetchImpl,
-  );
-
-  const deployed = await fetchImpl(
-    `/api/tenants/${encodeURIComponent(args.tenantId)}/workflows/deployments`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        source: { kind: "asset", assetId, package: { format: "source", commitSha } },
-        entry: "./workflow.js",
-        sourceOfferingIds: offering.sourceOfferingIds,
-        defaultSourceOfferingId: offering.defaultSourceOfferingId,
+    displayName: name,
+    // Minted once the asset exists: the definition binds this credential by
+    // name and requires its use by id, so it must precede the source.
+    files: async (assetId) =>
+      renderAgentSourceTree(packageName, {
+        slug,
+        systemPrompt,
+        triggerAddress,
+        declaredSources: offering.declaredSources,
+        hubCredentialId: await ensureAgentHubCredential(
+          { tenantId: args.tenantId, definitionId: slug, assetId },
+          fetchImpl,
+        ),
+        mcpServers,
       }),
-    },
-  );
-  if (!deployed.ok) {
-    throw new AgentDeployError(`deploying this agent failed: ${await readErrorBody(deployed)}`);
-  }
-  const parsed = WorkflowDeploymentResponse(await deployed.json());
-  if (parsed instanceof type.errors) {
-    throw new AgentDeployError(`this deployment came back an unexpected shape: ${parsed.summary}`);
-  }
+    entry: "./workflow.js",
+    sourceOfferingIds: offering.sourceOfferingIds,
+    defaultSourceOfferingId: offering.defaultSourceOfferingId,
+  });
   if (args.input.schedule !== undefined) {
     await scheduleAgentRun(args.tenantId, args.input.schedule, assetName, tenant.domain, fetchImpl);
   }
