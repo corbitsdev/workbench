@@ -2,8 +2,8 @@
 // the sidebar's "+" menu.
 
 import { useState } from "react";
-import { Button, PageShell, RichEmptyState, toast } from "@corbits/react-ui";
-import { Robot } from "@/lib/icons";
+import { Button, RichEmptyState, toast } from "@corbits/react-ui";
+import { Plus, Robot } from "@/lib/icons";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { reportError } from "@corbits/error-sink";
 
@@ -15,7 +15,9 @@ import { describeRestartFailure, redeployWorkbenchAgent } from "../workbench-cre
 import { useBench } from "../bench-context";
 import { Link } from "../navigation";
 import { useTenantQuery } from "../routines-api";
+import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
+import { CreateAgentPanel } from "./create-agent-panel";
 import { WORKERS_PATH_PREFIX } from "../path-ids";
 
 export type WorkerTone = "working" | "ready" | "idle";
@@ -94,7 +96,7 @@ export function WorkersRosterList({
       <RichEmptyState
         icon={<Robot />}
         title="No workers yet"
-        description="Create a worker, a name and instructions, from the + menu and it appears here."
+        description="Create one with New worker and it appears here."
       />
     );
   }
@@ -202,14 +204,24 @@ export function WorkersRoute() {
     benchMemberships.find((member) => member.tenantId === selectedTenantId)?.tenantName ??
     "This workbench";
 
+  const queryClient = useQueryClient();
+  const [createOpen, setCreateOpen] = useState(false);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <StageTopBar
-        crumbs={[{ label: "Workers" }]}
-        subtitle="Each worker keeps its memory and asks before it writes anywhere."
-      />
+      <StageTopBar crumbs={[{ label: "Workers" }]} />
       <div className="min-h-0 flex-1 overflow-auto">
-        <PageShell width="full" className="page-fill">
+        <PageLayout
+          title="Workers"
+          subtitle="Each worker picks a name, keeps its memory, and asks before it writes anywhere."
+          actions={
+            selectedTenantId === null ? undefined : (
+              <Button size="sm" onClick={() => setCreateOpen(true)}>
+                <Plus /> New worker
+              </Button>
+            )
+          }
+        >
           {selectedTenantId === null ? (
             <RichEmptyState
               icon={<Robot />}
@@ -217,7 +229,7 @@ export function WorkersRoute() {
               description="Pick a workbench from the switcher to see its workers."
             />
           ) : (
-            <div className="px-4 pb-5 sm:px-7">
+            <>
               <QueryView query={agentsQuery} label="your workers" skeleton="rows">
                 {(agents) => (
                   <WorkersRosterList
@@ -227,9 +239,19 @@ export function WorkersRoute() {
                   />
                 )}
               </QueryView>
-            </div>
+              <CreateAgentPanel
+                open={createOpen}
+                onOpenChange={setCreateOpen}
+                tenantId={selectedTenantId}
+                onCreated={() => {
+                  void queryClient.invalidateQueries({
+                    queryKey: tenantKeys.agents(selectedTenantId),
+                  });
+                }}
+              />
+            </>
           )}
-        </PageShell>
+        </PageLayout>
       </div>
     </div>
   );

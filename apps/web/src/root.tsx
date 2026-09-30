@@ -8,7 +8,9 @@ import { useCallback, useEffect, useLayoutEffect, useState, useSyncExternalStore
 import { getLogger } from "@/lib/client-log";
 import { App } from "./app";
 import { validatedNextPath } from "./login-next";
+import { finishDeferredMyraSetup } from "./deferred-myra-setup";
 import { triggerFirstLoginProvisioning } from "./onboarding";
+import { isProviderSkipped } from "./provider-skip";
 import { getPath, navigateTo, subscribeToPath } from "./router-store";
 import { ONBOARDING_PATH } from "./routes";
 import { fetchSession, signOut } from "./session";
@@ -44,14 +46,19 @@ export function Root() {
     message: string;
     refId?: string | undefined;
   } | null>(null);
-  const provisionedUserId = session.kind === "signed-in" ? session.user.id : null;
+  const provisionedUser = session.kind === "signed-in" ? session.user : null;
   const runProvisioning = useCallback(() => {
-    if (provisionedUserId === null) return () => undefined;
+    if (provisionedUser === null) return () => undefined;
     let cancelled = false;
     setProvisioningError(null);
     void triggerFirstLoginProvisioning().then((result) => {
       if (cancelled) return;
       if (result.kind === "needs-onboarding") {
+        // A skipped provider step keeps the shell; Myra deploys once a model exists.
+        if (isProviderSkipped(provisionedUser.id)) {
+          void finishDeferredMyraSetup(provisionedUser);
+          return;
+        }
         navigate(ONBOARDING_PATH);
       } else if (result.kind === "error") {
         setProvisioningError({ message: result.message, refId: result.refId });
@@ -60,7 +67,7 @@ export function Root() {
     return () => {
       cancelled = true;
     };
-  }, [provisionedUserId, navigate]);
+  }, [provisionedUser, navigate]);
   useEffect(runProvisioning, [runProvisioning]);
   const handleRetryProvisioning = useCallback(() => {
     runProvisioning();

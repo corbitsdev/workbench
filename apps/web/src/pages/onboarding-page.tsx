@@ -11,6 +11,7 @@ import { deployMyraSource } from "../myra-deploy";
 import { useNavigate } from "../navigation";
 import { NEW_WORKBENCH_PATH } from "../routes";
 import { triggerFirstLoginProvisioning } from "../onboarding";
+import { setProviderSkipped } from "../provider-skip";
 import { OnboardingLayout } from "../onboarding/onboarding-layout";
 import {
   ProviderConnectStep,
@@ -26,6 +27,7 @@ type GateState =
   | { readonly phase: "provider-setup"; readonly tenantId: string }
   | { readonly phase: "publishing-myra" }
   | { readonly phase: "installing"; readonly myraDeploy: WorkflowDeployInput }
+  | { readonly phase: "ready" }
   | {
       readonly phase: "setup-pending";
       readonly message: string;
@@ -41,6 +43,12 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   const navigate = useNavigate();
   const [state, setState] = useState<GateState>({ phase: "checking" });
   const installRef = useRef<ReturnType<typeof runPortableClientBootstrap> | null>(null);
+
+  // Remembered so a reload lands in the shell instead of back here.
+  function skipForNow() {
+    setProviderSkipped(user.id, true);
+    navigate(NEW_WORKBENCH_PATH);
+  }
 
   // One status read per landing (plus each manual recheck): a hub that
   // already has tenants means setup is done; an empty hub starts the
@@ -163,7 +171,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
       (result) => {
         if (cancelled) return;
         if (result.kind === "ready") {
-          navigate("/");
+          setState({ phase: "ready" });
         } else if (result.code === "stock-capability-missing") {
           setState({ phase: "setup-pending", message: result.gap });
         } else {
@@ -228,7 +236,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
                 });
               }}
               onError={(message) => setState({ phase: "error", message })}
-              onSkip={() => navigate(NEW_WORKBENCH_PATH)}
+              onSkip={skipForNow}
             />
           </div>
         </div>
@@ -251,6 +259,26 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     );
   }
 
+  if (state.phase === "ready") {
+    return (
+      <OnboardingLayout step={3}>
+        <div className="onboarding-phase" key="ready">
+          <h1 className="onboarding-title">Myra is ready</h1>
+          <p className="onboarding-subtitle">
+            Describe the job and your co-worker sets up the rest.
+          </p>
+          <div className="onboarding-content">
+            <div className="onboarding-actions">
+              <Button variant="primary" onClick={() => navigate("/")}>
+                Start your first workbench
+              </Button>
+            </div>
+          </div>
+        </div>
+      </OnboardingLayout>
+    );
+  }
+
   if (state.phase === "setup-pending") {
     return (
       <OnboardingLayout step={2}>
@@ -262,7 +290,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
               <Button variant="primary" onClick={checkStatus}>
                 Check again
               </Button>
-              <Button variant="ghost" onClick={() => navigate(NEW_WORKBENCH_PATH)}>
+              <Button variant="ghost" onClick={skipForNow}>
                 Skip for now
               </Button>
             </div>
@@ -297,7 +325,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
                 <Button variant="primary" onClick={checkStatus}>
                   Try again
                 </Button>
-                <Button variant="ghost" onClick={() => navigate(NEW_WORKBENCH_PATH)}>
+                <Button variant="ghost" onClick={skipForNow}>
                   Skip for now
                 </Button>
               </div>

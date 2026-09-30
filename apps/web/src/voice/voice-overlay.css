@@ -1,0 +1,5 @@
+/* Opaque themed backdrop: the thread must not ghost through the voice view. */
+.voice[role="dialog"] {
+  background: var(--canvas);
+  backdrop-filter: none;
+}

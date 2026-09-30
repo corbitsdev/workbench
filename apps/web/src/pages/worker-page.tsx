@@ -9,6 +9,7 @@ import type { GrantEffect } from "@intx/types";
 
 import { WorkbenchAvatar } from "@/chat/avatar";
 import { isMyraAgent, listChatAgents, type ChatAgent } from "@/chat/threads-api";
+import { listWorkbenches } from "@/chat/workbench-tenants";
 import { ChatCircle } from "@/lib/icons";
 import { QueryView, describeApiError } from "@/lib/api-query";
 import { listTopLevelRuns } from "../agents-api";
@@ -269,27 +270,52 @@ function DetailsCard({
     queryFn: () => readAgentSource(tenantId, agent.id, agent.assetName),
   });
   const first = source.data?.declaredSources[0];
+  const runs = useQuery({
+    queryKey: [...tenantKeys.agents(tenantId), "runs", agent.id],
+    queryFn: () => listTopLevelRuns(tenantId),
+  });
+  const own = (runs.data ?? []).filter((run) => agent.addresses.includes(run.address));
+  const created = own.map((run) => Date.parse(run.createdAt)).sort((a, b) => a - b)[0];
   return (
     <Card className="p-5">
       <CardTitle className="text-[14px]">Details</CardTitle>
       <dl className="mt-3 grid grid-cols-[90px_1fr] gap-y-2 text-[13.5px]">
         <dt className="text-(--ink-3)">Model</dt>
         <dd>{first === undefined ? "…" : `${first.provider} · ${first.model}`}</dd>
+        {created === undefined ? null : (
+          <>
+            <dt className="text-(--ink-3)">Created</dt>
+            <dd>
+              {new Date(created).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+            </dd>
+          </>
+        )}
+        {runs.data === undefined ? null : (
+          <>
+            <dt className="text-(--ink-3)">Runs</dt>
+            <dd className="tabular-nums">{own.length}</dd>
+          </>
+        )}
       </dl>
     </Card>
   );
 }
 
 export function WorkerRoute({ agentId }: { readonly agentId: string }) {
-  const { selectedTenantId, benchMemberships } = useBench();
+  const { selectedTenantId } = useBench();
   const agentsQuery = useTenantQuery(
     tenantKeys.agents(selectedTenantId ?? "none"),
     selectedTenantId !== null,
     () => listChatAgents(selectedTenantId as string),
   );
-  const benchName =
-    benchMemberships.find((member) => member.tenantId === selectedTenantId)?.tenantName ??
-    "workbench";
+  // The workspace is not a bench; the worker's workbench is one of its child
+  // tenants, the same rows the sidebar lists.
+  const benches = useQuery({
+    queryKey: tenantKeys.workbenches(selectedTenantId ?? "none"),
+    enabled: selectedTenantId !== null,
+    queryFn: () => listWorkbenches(selectedTenantId as string),
+  });
+  const bench = benches.data?.[0];
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -326,18 +352,23 @@ export function WorkerRoute({ agentId }: { readonly agentId: string }) {
                       />
                       <div className="min-w-0 flex-1">
                         <h1 className="text-[24px] font-extrabold">{agent.name}</h1>
+                        {isMyraAgent(agent) ? (
+                          <p className="mt-0.5 text-[14px] text-(--ink-2)">Your assistant</p>
+                        ) : null}
                         <p className="mt-1 flex items-center gap-2 text-[14px] text-(--ink-2)">
                           <StatusPill tone={status.tone} />
                           {status.text}
                         </p>
                       </div>
-                      <Link
-                        to={workbenchPath(selectedTenantId)}
-                        className="inline-flex h-9 items-center gap-2 rounded-(--r-md) bg-(--primary) px-4 text-[14px] font-bold text-(--primary-foreground)"
-                      >
-                        <ChatCircle />
-                        Open {benchName}
-                      </Link>
+                      {bench === undefined ? null : (
+                        <Link
+                          to={workbenchPath(bench.id)}
+                          className="inline-flex h-9 items-center gap-2 rounded-(--r-md) bg-(--primary) px-4 text-[14px] font-bold text-(--primary-foreground)"
+                        >
+                          <ChatCircle />
+                          Open {bench.title}
+                        </Link>
+                      )}
                     </div>
                     <div className="grid items-start gap-6 md:grid-cols-[minmax(0,1fr)_300px]">
                       <div>
@@ -348,12 +379,19 @@ export function WorkerRoute({ agentId }: { readonly agentId: string }) {
                         <DetailsCard tenantId={selectedTenantId} agent={agent} />
                         <Card className="p-5">
                           <CardTitle className="text-[14px]">Workbench</CardTitle>
-                          <Link
-                            to={workbenchPath(selectedTenantId)}
-                            className="mt-2 block text-[13.5px] font-semibold underline-offset-2 hover:underline"
-                          >
-                            {benchName}
-                          </Link>
+                          {benches.data === undefined || benches.data.length === 0 ? (
+                            <p className="mt-2 text-[13.5px] text-(--ink-3)">No workbenches yet.</p>
+                          ) : (
+                            benches.data.map((item) => (
+                              <Link
+                                key={item.id}
+                                to={workbenchPath(item.id)}
+                                className="mt-2 block text-[13.5px] font-semibold underline-offset-2 hover:underline"
+                              >
+                                {item.title}
+                              </Link>
+                            ))
+                          )}
                         </Card>
                       </aside>
                     </div>

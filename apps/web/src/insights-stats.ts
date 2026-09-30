@@ -5,7 +5,6 @@
 import { runOutcomeStatus, withListingAbandoned } from "@corbits/workflows/client";
 
 import type { InsightsRun } from "./insights-api";
-import type { ScheduledWorkflowDefinition } from "./routines-api";
 
 /** Compact integer; null/undefined → em-dash. Lifted out of the deleted
  * `@corbits/insights/client` — this app's own copy since it has
@@ -21,20 +20,6 @@ export function durationLabel(ms: number): string {
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
   return `${(ms / 60_000).toFixed(1)}m`;
 }
-
-export type InsightsStats = {
-  readonly totalRuns: number;
-  readonly running: number;
-  readonly errored: number;
-  readonly stopped: number;
-  readonly deployed: number;
-  readonly routineCount: number;
-  readonly enabledRoutines: number;
-  readonly recentRuns: readonly InsightsRun[];
-};
-
-/** Cap recent-run table rows so the page stays scannable. */
-export const INSIGHTS_RECENT_LIMIT = 12;
 
 // Identity pass: the native `GET /workflows/runs` feed already excludes
 // non-top-level runs, kept only for callers that still name it explicitly.
@@ -89,53 +74,6 @@ export function groupRunsByDefinition(runs: readonly InsightsRun[]): readonly De
   );
 }
 
-export function computeInsightsStats(
-  runs: readonly InsightsRun[],
-  routines: readonly ScheduledWorkflowDefinition[],
-  recentLimit: number = INSIGHTS_RECENT_LIMIT,
-  now: number = Date.now(),
-): InsightsStats {
-  const purposeful = purposeRunsForInsights(runs);
-  let running = 0;
-  let errored = 0;
-  let stopped = 0;
-  let deployed = 0;
-  for (const run of purposeful) {
-    const outcome = runOutcomeStatus(withListingAbandoned(run, now), now) ?? run.status;
-    switch (outcome) {
-      case "running":
-      case "updating":
-        running += 1;
-        break;
-      case "error":
-        errored += 1;
-        break;
-      case "stopped":
-      case "completed":
-        stopped += 1;
-        break;
-      case "deployed":
-        deployed += 1;
-        break;
-    }
-  }
-
-  const recentRuns = [...purposeful]
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .slice(0, recentLimit);
-
-  return {
-    totalRuns: purposeful.length,
-    running,
-    errored,
-    stopped,
-    deployed,
-    routineCount: routines.length,
-    enabledRoutines: routines.filter((r) => r.status === "deployed").length,
-    recentRuns,
-  };
-}
-
 export const BENCH_RANGES = [7, 30, 90] as const;
 export type BenchRange = (typeof BENCH_RANGES)[number];
 
@@ -145,6 +83,8 @@ export type BenchDay = {
   readonly date: Date;
   readonly ok: number;
   readonly fail: number;
+  /** Runs still going, stopped, or otherwise neither succeeded nor failed. */
+  readonly other: number;
 };
 export type BenchWorkflowRow = {
   readonly key: string;
@@ -188,8 +128,8 @@ function bucketOf(run: InsightsRun, now: number): Bucket {
 }
 
 /** Rollups over the runs created in the last `range` local days (today
- * included). "Other" outcomes (running, stopped) count as runs but are
- * neither succeeded nor failed. */
+ * included). "Other" outcomes (running, stopped) count as runs and get their
+ * own chart segment, but are neither succeeded nor failed. */
 export function computeBenchInsights(
   runs: readonly InsightsRun[],
   range: BenchRange,
@@ -197,11 +137,11 @@ export function computeBenchInsights(
 ): BenchInsights {
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);
-  const days: { date: Date; ok: number; fail: number }[] = [];
+  const days: { date: Date; ok: number; fail: number; other: number }[] = [];
   for (let i = range - 1; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(today.getDate() - i);
-    days.push({ date, ok: 0, fail: 0 });
+    days.push({ date, ok: 0, fail: 0, other: 0 });
   }
   const start = days[0]?.date.getTime() ?? 0;
 
@@ -224,6 +164,8 @@ export function computeBenchInsights(
     } else if (bucket === "fail") {
       fail += 1;
       if (day !== undefined) day.fail += 1;
+    } else if (day !== undefined) {
+      day.other += 1;
     }
     const key = run.routineId ?? run.definitionId;
     groups.set(key, [...(groups.get(key) ?? []), run]);

@@ -729,3 +729,21 @@
   width: auto;
   min-width: 10rem;
 }
+
+/* Active settings row: ink on a hover wash; orange is accent-only. */
+.settings-nav [data-slot="sidebar-item-row"] > div:has(button[aria-current="true"]) {
+  background: var(--hover);
+}
+
+.settings-nav [data-slot="sidebar-item-row"] > div:has(button[aria-current="true"]) > button {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.settings-nav .settings-nav-advanced > summary {
+  margin: 0 0 0.2rem;
+  padding: 0.25rem 0.42rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}

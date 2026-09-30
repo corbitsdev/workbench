@@ -13,8 +13,11 @@ import { listPrincipals } from "../settings/tenancy-api";
 export function MembersTab({
   workbenchTenantId,
   participants,
+  loading,
 }: {
   readonly workbenchTenantId: string;
+  /** True until the roster resolves; an empty list then isn't "no agents". */
+  readonly loading: boolean;
   readonly participants: readonly WorkbenchParticipant[];
 }) {
   // A distinct key from Settings -> People, which caches a different shape
@@ -60,7 +63,10 @@ export function MembersTab({
       </section>
       <section className="insights-panel">
         <h3>Agents</h3>
-        {agents.length === 0 ? <p className="workbench-info-empty-note">No agents yet.</p> : null}
+        {loading ? <Skeleton className="h-12 w-full" /> : null}
+        {!loading && agents.length === 0 ? (
+          <p className="workbench-info-empty-note">No agents yet.</p>
+        ) : null}
         <ul className="drawer-list">
           {agents.map((agent) => (
             <li key={agent.id}>

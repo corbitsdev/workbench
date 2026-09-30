@@ -1,5 +1,6 @@
 // Voice mode: covers the thread, sends each final utterance as an ordinary
 // message, and speaks the worker's replies. Browser speech only.
+import "./voice-overlay.css";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { CorbitAvatar, avatarColorForPrincipal } from "@/chat/avatar";

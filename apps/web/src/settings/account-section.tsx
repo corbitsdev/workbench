@@ -2,12 +2,13 @@
 // The Agent card was removed — nothing there could change until a hub
 // preference store exists to write it to.
 
-import { Avatar, Badge, Button, toast } from "@corbits/react-ui";
+import { Badge, Button, toast } from "@corbits/react-ui";
 import { ChatCircleDots, Copy, SignOut } from "@/lib/icons";
 import { useQuery } from "@tanstack/react-query";
 
 import { QueryView, toAPIQuery } from "@/lib/api-query";
 import { resolveAvatarFill } from "@/chat";
+import { IdentityAvatar } from "@/chat/avatar";
 import webPackage from "../../package.json";
 import { getAccount, type Account } from "./api";
 import { Segmented, SettingsGroup, SettingsRow } from "./rows";
@@ -40,17 +41,6 @@ export function AccountSection({ onSignOut }: { readonly onSignOut?: () => void 
       <AppearanceSection />
     </>
   );
-}
-
-/** First and (if present) second-word initials, upper-cased. Falls back to
- * "?" for an empty name rather than rendering a blank avatar. */
-function initialsOf(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return "?";
-  const first = words[0]?.charAt(0) ?? "";
-  const second = words.length > 1 ? (words[1]?.charAt(0) ?? "") : "";
-  const initials = `${first}${second}`.toUpperCase();
-  return initials.length > 0 ? initials : "?";
 }
 
 async function copyEmail(email: string): Promise<void> {
@@ -94,12 +84,7 @@ export function AccountSectionView({
                 height={40}
               />
             ) : (
-              <Avatar
-                initials={initialsOf(name)}
-                label={name}
-                size="lg"
-                className={fill.className}
-              />
+              <IdentityAvatar kind="person" name={name} principalId={id} />
             )}
             {name}
           </span>
