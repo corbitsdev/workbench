@@ -1,5 +1,6 @@
 import { CaretDown } from "@/lib/icons";
 import { IdentityAvatar } from "@/chat/avatar";
+import type { WorkerStatus } from "../worker-status";
 
 /** Frosted pill centered over the thread: the bench's worker, its name and
  * live status. Toggles the bench drawer. */
@@ -12,7 +13,7 @@ export function BenchPill({
 }: {
   readonly benchName: string;
   readonly worker: { readonly id: string; readonly name: string } | undefined;
-  readonly status: string;
+  readonly status: WorkerStatus;
   readonly open: boolean;
   readonly onToggle: () => void;
 }) {
@@ -25,10 +26,15 @@ export function BenchPill({
       onClick={onToggle}
     >
       {worker === undefined ? null : (
-        <IdentityAvatar kind="agent" name={worker.name} principalId={worker.id} />
+        <IdentityAvatar
+          kind="agent"
+          name={worker.name}
+          principalId={worker.id}
+          status={status.tone}
+        />
       )}
       <b>{benchName}</b>
-      <span className="bench-pill-status">{status}</span>
+      <span className="bench-pill-status">{status.text}</span>
       <CaretDown size={14} aria-hidden="true" />
     </button>
   );

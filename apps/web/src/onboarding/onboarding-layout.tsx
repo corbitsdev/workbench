@@ -1,16 +1,19 @@
 import { CorbitsMark } from "@corbits/react-ui";
 import type { ReactNode } from "react";
 
-import { DitherBackground } from "../auth/dither-background";
+const STEP_LABELS = ["Workspace", "Model", "Myra"] as const;
 
 /**
- * Full-screen wizard frame, modeled on `AuthLayout`'s two-column shell for
- * visual continuity with the sign-in screen: a form column on the left and
- * a dithered brand panel on the right (hidden on small screens). Wider than
- * the auth form column — the credential step's provider picker and the
- * guidance cards need more space than a login form does.
+ * Single centered column with a step progress bar, matching the onboarding
+ * mockup. `step` is the index of the current step (0-2).
  */
-export function OnboardingLayout({ children }: { readonly children: ReactNode }) {
+export function OnboardingLayout({
+  step,
+  children,
+}: {
+  readonly step: 0 | 1 | 2;
+  readonly children: ReactNode;
+}) {
   return (
     <div className="onboarding-shell">
       <main className="onboarding-form-col">
@@ -22,14 +25,21 @@ export function OnboardingLayout({ children }: { readonly children: ReactNode })
         </div>
 
         <div className="onboarding-form-slot">
-          <div className="onboarding-form">{children}</div>
+          <div className="onboarding-form">
+            <ol className="onboarding-progress" aria-label="Setup progress">
+              {STEP_LABELS.map((label, index) => (
+                <li
+                  key={label}
+                  data-state={index < step ? "done" : index === step ? "now" : "ahead"}
+                  aria-label={label}
+                  aria-current={index === step ? "step" : undefined}
+                />
+              ))}
+            </ol>
+            {children}
+          </div>
         </div>
       </main>
-
-      <div aria-hidden className="onboarding-panel">
-        <img src="/images/hero-dither.png" alt="" className="onboarding-panel-fallback" />
-        <DitherBackground className="onboarding-panel-dither" />
-      </div>
     </div>
   );
 }

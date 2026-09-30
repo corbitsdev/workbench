@@ -5,6 +5,7 @@ import { libraryArtifactPath } from "@/library";
 import { FileText } from "@/lib/icons";
 import { Link } from "@/navigation";
 import { ARTIFACTS_PATH_PREFIX } from "@/path-ids";
+import { benchLink } from "../shell/page-crumbs";
 
 /** The files saved in this bench, newest first. */
 export function ArtifactsTab({ workbenchTenantId }: { readonly workbenchTenantId: string }) {
@@ -18,9 +19,7 @@ export function ArtifactsTab({ workbenchTenantId }: { readonly workbenchTenantId
     <section className="drawer-sec">
       <div className="drawer-sec-head">
         <h3>Files saved here</h3>
-        <Link to={`${ARTIFACTS_PATH_PREFIX}?from=${encodeURIComponent(workbenchTenantId)}`}>
-          See all
-        </Link>
+        <Link to={benchLink(ARTIFACTS_PATH_PREFIX, workbenchTenantId)}>See all</Link>
       </div>
       {page.kind === "loading" ? <Skeleton className="h-16 w-full" /> : null}
       {page.kind === "error" ? <p className="workbench-info-empty-note">{page.message}</p> : null}

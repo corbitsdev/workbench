@@ -26,8 +26,11 @@ import {
 import { BenchDrawer } from "../bench/bench-drawer";
 import { BenchPill } from "../bench/bench-pill";
 import { ArtifactsTab } from "../bench/artifacts-tab";
+import { useWorkerStatus } from "../worker-status";
 import { GrantsTab } from "../bench/grants-tab";
 import { InformationTab } from "../bench/information-tab";
+import { InsightsTab } from "../bench/insights-tab";
+import { MembersTab } from "../bench/members-tab";
 import { ToolsTab } from "../bench/tools-tab";
 import { WorkflowsTab } from "../bench/workflows-tab";
 import { useBench } from "../bench-context";
@@ -176,6 +179,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
       agent.address === "" && agent.assetName !== undefined,
   );
   const startingAgent = releasedAgents[0];
+  const workerStatus = useWorkerStatus(workbenchTenantId, agents[0]?.id);
   // Only a live agent can be addressed, so only one can be mentioned.
   const mentionables = agents
     .filter((agent) => agent.address.includes("@"))
@@ -232,7 +236,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
           <BenchPill
             benchName={tenant.data?.name ?? "Workbench"}
             worker={agents[0]}
-            status={startingAgent === undefined ? "Live" : "Starting"}
+            status={workerStatus}
             open={drawerOpen}
             onToggle={() => setDrawerOpen((open) => !open)}
           />
@@ -306,7 +310,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
         <BenchDrawer
           open={drawerOpen}
           title={tenant.data?.name ?? "Workbench"}
-          subtitle={startingAgent === undefined ? "Live" : "Starting"}
+          subtitle={workerStatus.text}
           onClose={closeDrawer}
           tabs={{
             Information: (
@@ -319,6 +323,13 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
             Artifacts: <ArtifactsTab workbenchTenantId={workbenchTenantId} />,
             Tools: <ToolsTab workbenchTenantId={workbenchTenantId} />,
             Grants: <GrantsTab workbenchTenantId={workbenchTenantId} />,
+            Insights: <InsightsTab workbenchTenantId={workbenchTenantId} />,
+            Members: (
+              <MembersTab
+                workbenchTenantId={workbenchTenantId}
+                participants={participants.data ?? []}
+              />
+            ),
             Workflows: <WorkflowsTab workbenchTenantId={workbenchTenantId} />,
           }}
         />

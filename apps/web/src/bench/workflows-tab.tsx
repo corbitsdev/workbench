@@ -9,6 +9,7 @@ import { Link } from "@/navigation";
 import { WORKFLOWS_PATH_PREFIX } from "@/path-ids";
 import { tenantKeys } from "@/query-client";
 import { listScheduledWorkflows } from "@/routines-api";
+import { benchLink } from "../shell/page-crumbs";
 
 /** The workflows deployed in this bench with their schedule and state. */
 export function WorkflowsTab({ workbenchTenantId }: { readonly workbenchTenantId: string }) {
@@ -23,9 +24,7 @@ export function WorkflowsTab({ workbenchTenantId }: { readonly workbenchTenantId
     <section className="drawer-sec">
       <div className="drawer-sec-head">
         <h3>Scheduled here</h3>
-        <Link to={`${WORKFLOWS_PATH_PREFIX}?from=${encodeURIComponent(workbenchTenantId)}`}>
-          See all
-        </Link>
+        <Link to={benchLink(WORKFLOWS_PATH_PREFIX, workbenchTenantId)}>See all</Link>
       </div>
       {flows.isLoading ? <Skeleton className="h-16 w-full" /> : null}
       {flows.isError ? (
