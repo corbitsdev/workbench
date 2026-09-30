@@ -1,6 +1,6 @@
 // The Routines page's seam to stock workflow deployments. See
 // docs/routines-scheduling.md for the schedule join and why run-now/
-// pause/resume stay rejected promises.
+// run-now goes through the stock trigger route.
 
 import { type } from "arktype";
 import { useQuery } from "@tanstack/react-query";
@@ -183,35 +183,39 @@ export async function listScheduledWorkflows(
     });
 }
 
-/** No stock route reruns a deployment on demand yet. */
-export function runScheduledWorkflowNow(
-  tenantId: string,
-  definitionId: string,
-): Promise<{ runId: string }> {
-  return Promise.reject(
-    new ApiQueryError(
-      "Running a workflow now has no stock route yet.",
-      undefined,
-      `/api/tenants/${tenantId}/workflows/deployments/${encodeURIComponent(definitionId)}/run`,
-    ),
-  );
-}
+const TriggerResponse = type({ runId: "string", address: "string", messageId: "string" });
 
-/** No stock route pauses or resumes a deployment yet. */
-export function setScheduledWorkflowStatus(
+/** Fires the deployment through the stock trigger route. The deployment id
+ * is its anchor run id; the message mirrors the workflow's cron row when one
+ * exists so a manual run carries what the schedule would. */
+export async function runScheduledWorkflowNow(
   tenantId: string,
   definitionId: string,
-  status: "deployed" | "stopped",
-): Promise<{ readonly status: string }> {
-  return Promise.reject(
-    new ApiQueryError(
-      status === "deployed"
-        ? "Resuming a deployment has no stock route yet."
-        : "Pausing a deployment has no stock route yet.",
-      undefined,
-      `/api/tenants/${tenantId}/workflows/deployments/${encodeURIComponent(definitionId)}`,
-    ),
+  definitionName?: string,
+): Promise<{ runId: string }> {
+  const path = `/api/tenants/${tenantId}/workflows/${encodeURIComponent(definitionId)}/mail`;
+  const schedules = await listCronSchedules(tenantId);
+  const row = schedules.find(
+    (schedule) => schedule.stoppedAt === null && schedule.definitionName === definitionName,
   );
+  const content = row === undefined ? "Run now" : `${row.subject}\n\n${row.body}`;
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ content }),
+  });
+  if (response.status === 401) throw new UnauthenticatedError();
+  if (response.status === 409) {
+    throw new ApiQueryError("This workflow has ended; redeploy to run it again.", 409, path);
+  }
+  if (!response.ok) {
+    throw new ApiQueryError(`The server answered ${response.status}.`, response.status, path);
+  }
+  const parsed = TriggerResponse(await response.json());
+  if (parsed instanceof type.errors) {
+    throw new ApiQueryError(`Unexpected response shape: ${parsed.summary}`, undefined, path);
+  }
+  return { runId: parsed.runId };
 }
 
 // Keys must be stable arrays under `["tenant", tenantId, ...]` so a bench

@@ -1,4 +1,4 @@
-import { Button, PageShell, RichEmptyState, RunNowButton, Skeleton } from "@corbits/react-ui";
+import { PageShell, RichEmptyState, RunNowButton, Skeleton } from "@corbits/react-ui";
 import { type } from "arktype";
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -165,14 +165,11 @@ function RoutineNotice({
 
 export function RoutineDetailPage({
   row,
-  onToggleEnabled,
   onRunNow,
 }: {
   readonly row: GlobalRoutineRow;
-  readonly onToggleEnabled: (enabled: boolean) => void;
   readonly onRunNow: () => Promise<void>;
 }) {
-  const enabled = row.definition.status === "deployed";
   const sentence = scheduleSentence(row.definition.schedule);
   const runs = useRoutineRuns(row.tenantId, row.definition.definitionId, 1);
   const lastRun = runs.kind === "ready" ? runs.data.data[0] : undefined;
@@ -186,14 +183,6 @@ export function RoutineDetailPage({
         ]}
         actions={
           <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => onToggleEnabled(!enabled)}
-            >
-              {enabled ? "Pause" : "Resume"}
-            </Button>
             <RunNowButton variant="outline" size="sm" onRun={onRunNow} />
           </div>
         }
@@ -249,13 +238,5 @@ export function RoutineDetailRoute({ segment }: { readonly segment: string }) {
     );
   }
 
-  return (
-    <RoutineDetailPage
-      row={resolved}
-      onToggleEnabled={(enabled) => {
-        void actions.setEnabled(resolved, enabled);
-      }}
-      onRunNow={() => actions.runNow(resolved)}
-    />
-  );
+  return <RoutineDetailPage row={resolved} onRunNow={() => actions.runNow(resolved)} />;
 }
