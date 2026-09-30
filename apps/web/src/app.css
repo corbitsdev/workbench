@@ -4569,16 +4569,6 @@ a.drawer-li:hover,
   gap: 10px;
   padding: 8px 10px;
 }
-.sb-menu-head b {
-  display: block;
-  font-size: 13.5px;
-  line-height: 1.2;
-}
-.sb-menu-head span {
-  display: block;
-  font-size: 12px;
-  color: var(--ink-3);
-}
 .sb-menu-sep {
   height: 1px;
   background: var(--line);

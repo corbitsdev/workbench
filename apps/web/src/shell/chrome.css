@@ -1,0 +1,140 @@
+/* Shell chrome geometry from the mockup: a cream frame holding an inset
+   rounded sheet, one sidebar with 16px-aligned labels, and 32px rows. */
+.shell-frame {
+  background: var(--canvas);
+}
+
+.shell-frame .shell-sidebar {
+  background: transparent;
+  border-right: 0;
+  padding: 10px 0 8px;
+}
+
+.shell-frame .shell-main {
+  margin: 8px 8px 8px 0;
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--raised);
+  overflow: hidden;
+}
+
+.shell-frame .shell-main-content {
+  overflow-y: auto;
+}
+
+.shell-sidebar .shell-sidebar-brand-row {
+  height: 40px;
+  padding: 0 10px 0 16px;
+  margin-bottom: 8px;
+}
+
+.shell-sidebar .shell-sidebar-wordmark {
+  padding-left: 0;
+}
+
+.shell-sidebar [data-slot="sidebar-panel-body"] {
+  padding: 0 8px;
+}
+
+.shell-sidebar .panel-stack {
+  gap: 14px;
+  padding: 4px 0;
+}
+
+.shell-sidebar .panel-stack-group {
+  gap: 1px;
+}
+
+.shell-sidebar .shell-panel-section-label {
+  padding: 0 8px 4px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-3);
+}
+
+.shell-sidebar .shell-ch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 5px 8px;
+  border-radius: var(--r-md);
+}
+
+.shell-sidebar .shell-ch-row:hover {
+  background: var(--hover);
+}
+
+.shell-sidebar .shell-ch-row[aria-current="true"],
+.shell-sidebar .shell-ch-row[data-active="true"] {
+  background: var(--surface);
+  box-shadow: var(--raised);
+}
+
+.shell-sidebar .shell-ch-avatar {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  color: var(--ink-3);
+}
+
+.shell-sidebar .shell-ch-initial {
+  width: 20px;
+  height: 20px;
+  border-radius: 0;
+  background: transparent;
+}
+
+.shell-sidebar .shell-ch-initial svg {
+  width: 16px;
+  height: 16px;
+}
+
+.shell-sidebar .shell-ch-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.shell-sidebar .shell-ch-name {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.shell-sidebar .shell-ch-row[aria-current="true"] .shell-ch-name {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.sb-bottom .sb-menu {
+  left: 8px;
+  right: 8px;
+}
+
+.sb-menu-head > div b {
+  display: block;
+  font-size: 13.5px;
+  line-height: 1.2;
+}
+
+.sb-menu-head > div span {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.shell-frame .stage-top-bar {
+  height: 52px;
+  min-height: 52px;
+  padding: 0 12px 0 16px;
+  background: transparent;
+  border-bottom: 1px solid var(--line);
+}
+
+.stage-top-bar-title {
+  font-size: 13.5px;
+  font-weight: 700;
+}
