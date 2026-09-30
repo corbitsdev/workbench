@@ -14,7 +14,7 @@ import { isAgentNotRunning, listChatAgents, type ChatAgent } from "@/chat/thread
 import { WorkbenchAvatar } from "@/chat/avatar";
 import { describeRestartFailure, redeployWorkbenchAgent } from "../workbench-create";
 import { useBench } from "../bench-context";
-import { useWorkerBenches } from "../worker-benches";
+import { useNamedAgents, useWorkerBenches } from "../worker-benches";
 import { Link } from "../navigation";
 import { useTenantQuery } from "../routines-api";
 import { PageLayout } from "../shell/page-layout";
@@ -84,11 +84,12 @@ const ROW_GRID =
 
 export function WorkersRosterList({
   tenantId,
-  agents,
+  agents: listed,
 }: {
   readonly tenantId: string;
   readonly agents: readonly ChatAgent[];
 }) {
+  const agents = useNamedAgents(listed);
   const { byWorker } = useWorkerBenches();
   const [filter, setFilter] = useState<WorkerTone | "all">("all");
   const [query, setQuery] = useState("");

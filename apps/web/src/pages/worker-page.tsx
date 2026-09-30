@@ -30,7 +30,7 @@ import { useTenantQuery } from "../routines-api";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { WORKERS_PATH_PREFIX } from "../path-ids";
 import { workbenchPath } from "../workbench-path";
-import { useWorkerBenches } from "../worker-benches";
+import { useNamedAgents, useWorkerBenches } from "../worker-benches";
 import { StatusPill, WorkerRole, workerStatus } from "./workers-page";
 
 function sourceKey(tenantId: string, agentId: string) {
@@ -296,13 +296,14 @@ export function WorkerRoute({ agentId }: { readonly agentId: string }) {
     selectedTenantId !== null,
     () => listChatAgents(selectedTenantId as string),
   );
+  const named = useNamedAgents(agentsQuery.kind === "ready" ? agentsQuery.data : []);
   const { byWorker } = useWorkerBenches();
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <QueryView query={agentsQuery} label="this worker" skeleton="rows">
-        {(agents) => {
-          const agent = agents.find((candidate) => candidate.id === agentId);
+        {() => {
+          const agent = named.find((candidate) => candidate.id === agentId);
           if (agent === undefined || selectedTenantId === null) {
             return (
               <>

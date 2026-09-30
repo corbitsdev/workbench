@@ -9,7 +9,7 @@ import { Hash } from "@/lib/icons";
 
 import { useBench } from "../bench-context";
 import { useBenchWorkerStatus } from "../worker-status";
-import { useWorkerBenches } from "../worker-benches";
+import { useNamedAgents, useWorkerBenches } from "../worker-benches";
 import { tenantKeys } from "../query-client";
 import { workbenchIdFromPath, workbenchPath } from "../workbench-path";
 import type { HubTenant } from "../needs-converge";
@@ -150,7 +150,7 @@ function WorkerGroup({
     enabled: selectedTenantId !== null,
     queryFn: () => listChatAgents(selectedTenantId as string),
   });
-  const workers = agents.data ?? [];
+  const workers = useNamedAgents(agents.data ?? []);
   if (workers.length === 0) return null;
   return (
     <div className="panel-stack-group">

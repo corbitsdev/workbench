@@ -12,7 +12,7 @@ import { Composer } from "@/chat/composer";
 import { Markdown } from "@/chat/markdown";
 import { MessageAttachments } from "@/chat/message-attachments";
 import { resolveMessagePackage } from "@/chat/deployable-package";
-import { stripRoster } from "@/chat/workbench-roster";
+import { stripFromHeader, stripRoster } from "@/chat/workbench-roster";
 import {
   ancestorChain,
   listWorkbenchParticipants,
@@ -33,6 +33,7 @@ import { ArtifactsTab } from "../bench/artifacts-tab";
 import { markTurnPending, useWorkerStatus } from "../worker-status";
 import { GrantsTab } from "../bench/grants-tab";
 import { useBenchDescription } from "../bench/description";
+import { firstStatedName, nameWorkers, stripNameLine, useWorkerName } from "../bench/worker-name";
 import { InformationTab } from "../bench/information-tab";
 import { InsightsTab } from "../bench/insights-tab";
 import { MembersTab } from "../bench/members-tab";
@@ -44,7 +45,7 @@ import { workbenchKeys } from "../chat-path";
 import { tenantKeys } from "../query-client";
 import { recordLastWorkbenchId } from "../last-workbench";
 import { PROVIDER_SETTINGS_PATH, ProviderSkipBanner } from "../provider-skip-banner";
-import { useNavigate } from "../navigation";
+import { useNavigate, useSessionUser } from "../navigation";
 import { isClassifiedInferenceFailureText } from "@/chat/inference-failure";
 import { redeployWorkbenchAgent } from "../workbench-create";
 import { workbenchIdFromPath } from "../workbench-path";
@@ -92,7 +93,12 @@ function WorkbenchMessageRow({
   // The person's own send carries a trailing roster block so agents in the
   // workbench can hand off to each other; it's never something a person should
   // see echoed back at them.
-  const body = message.author === "me" ? stripRoster(message.body) : message.body;
+  const body =
+    message.author === "me"
+      ? stripFromHeader(stripRoster(message.body))
+      : resolved?.kind === "agent"
+        ? stripNameLine(message.body)
+        : message.body;
   const { pkg, renderedBody } = resolveMessagePackage(message.attachments, body);
   const own = message.author === "me";
   const time = new Date(message.at);
@@ -238,7 +244,24 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
     [workbenchTenantId, queryClient],
   );
 
-  const agents = (participants.data ?? []).filter((participant) => participant.kind === "agent");
+  const workerName = useWorkerName(workbenchTenantId);
+  const roster = nameWorkers(participants.data ?? [], workerName.name);
+  const sessionUser = useSessionUser();
+  const messages = timeline.data ?? [];
+  // The worker's first reply names it; the stored name wins from then on, and
+  // a bench that already has one is never overwritten.
+  const statedName =
+    workerName.loaded && workerName.name === undefined
+      ? firstStatedName(messages, roster)
+      : undefined;
+  const saveName = workerName.save;
+  useEffect(() => {
+    if (statedName !== undefined && !saveName.isPending && !saveName.isSuccess) {
+      saveName.mutate(statedName);
+    }
+  }, [statedName, saveName]);
+
+  const agents = roster.filter((participant) => participant.kind === "agent");
   // Released by a hub restart: the asset is still here but nothing is live.
   const releasedAgents = agents.filter(
     (agent): agent is WorkbenchParticipant & { assetName: string } =>
@@ -260,7 +283,8 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
     }) =>
       sendToWorkbench({
         workbenchTenantId,
-        participants: participants.data ?? [],
+        participants: roster,
+        ...(sessionUser !== undefined ? { senderName: sessionUser.name } : {}),
         content,
         ...(inReplyTo !== undefined ? { inReplyTo } : {}),
       }),
@@ -272,7 +296,6 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
     onError: () => queryClient.setQueryData(workbenchKeys.pendingTurn(workbenchTenantId), null),
   });
 
-  const messages = timeline.data ?? [];
   const openedChain = openThread === null ? [] : ancestorChain(messages, openThread);
   const opened = openedChain.at(-1);
   const failure: unknown = timeline.error ?? participants.error;
@@ -316,7 +339,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                     <WorkbenchMessageRow
                       key={message.id}
                       message={message}
-                      participants={participants.data ?? []}
+                      participants={roster}
                       workbenchTenantId={workbenchTenantId}
                       rosterReady={participants.data !== undefined}
                       onReply={(target) => setOpenThread(target.messageId)}
@@ -324,7 +347,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                   ))}
                   <PendingOpeningMessage
                     workbenchTenantId={workbenchTenantId}
-                    participants={participants.data ?? []}
+                    participants={roster}
                   />
                   {workerStatus.tone === "working" ? <WorkingLabel /> : null}
                 </div>
@@ -367,7 +390,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                   <WorkbenchMessageRow
                     key={message.id}
                     message={message}
-                    participants={participants.data ?? []}
+                    participants={roster}
                     workbenchTenantId={workbenchTenantId}
                     rosterReady={participants.data !== undefined}
                   />
@@ -406,22 +429,17 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                 workbenchTenantId={workbenchTenantId}
                 worker={agents[0]}
                 status={workerStatus}
-                participants={participants.data ?? []}
+                participants={roster}
               />
             ),
             Artifacts: <ArtifactsTab workbenchTenantId={workbenchTenantId} />,
             Tools: <ToolsTab workbenchTenantId={workbenchTenantId} />,
-            Grants: (
-              <GrantsTab
-                workbenchTenantId={workbenchTenantId}
-                participants={participants.data ?? []}
-              />
-            ),
+            Grants: <GrantsTab workbenchTenantId={workbenchTenantId} participants={roster} />,
             Insights: <InsightsTab workbenchTenantId={workbenchTenantId} />,
             Members: (
               <MembersTab
                 workbenchTenantId={workbenchTenantId}
-                participants={participants.data ?? []}
+                participants={roster}
                 loading={participants.isPending}
               />
             ),

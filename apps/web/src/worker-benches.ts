@@ -5,7 +5,8 @@
 
 import { useQueries, useQuery } from "@tanstack/react-query";
 
-import { listChatAgents } from "@/chat/threads-api";
+import { isDefaultWorker, listChatAgents, type ChatAgent } from "@/chat/threads-api";
+import { DEFAULT_WORKER_NAME, useWorkerNames } from "./bench/worker-name";
 import { tenantKeys } from "./query-client";
 import { useBench } from "./bench-context";
 import type { HubTenant } from "./needs-converge";
@@ -47,4 +48,17 @@ export function useWorkerBenches(): WorkerBenches {
   });
 
   return { byWorker, workerIdForAsset: (assetName) => workerIdByAsset.get(assetName), benches };
+}
+
+/** The roster's agents with each bench worker under its bench's stored name
+ * (the first bench when a worker runs in several); "New worker" until named. */
+export function useNamedAgents(agents: readonly ChatAgent[]): readonly ChatAgent[] {
+  const { byWorker } = useWorkerBenches();
+  const firstBenchIds = agents.map((agent) => byWorker.get(agent.id)?.[0]?.id ?? "");
+  const names = useWorkerNames(firstBenchIds.filter((id) => id !== ""));
+  return agents.map((agent, index) =>
+    isDefaultWorker(agent)
+      ? { ...agent, name: names.get(firstBenchIds[index] ?? "") ?? DEFAULT_WORKER_NAME }
+      : agent,
+  );
 }

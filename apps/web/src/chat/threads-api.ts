@@ -10,7 +10,7 @@ import { listTopLevelRuns } from "../agents-api";
 import { WORKER_SOURCE_CONFIG } from "../worker-source";
 import { personMailAddress } from "../mail-address";
 import { mentionedAgents } from "./mentions";
-import { appendRoster } from "./workbench-roster";
+import { appendRoster, prependFromHeader } from "./workbench-roster";
 
 export class ChatApiError extends Error {
   constructor(
@@ -490,6 +490,8 @@ export async function sendToWorkbench(input: {
   readonly workbenchTenantId: string;
   readonly participants: readonly WorkbenchParticipant[];
   readonly content: string;
+  /** The sender's name, put in the `[From: …]` header the worker reads. */
+  readonly senderName?: string;
   /** The turn this reply threads onto — a sub-thread's parent. */
   readonly inReplyTo?: string;
 }): Promise<void> {
@@ -506,14 +508,23 @@ export async function sendToWorkbench(input: {
   const people = input.participants.filter(
     (participant) => participant.kind === "person" && participant.address.includes("@"),
   );
-  const body = appendRoster(input.content, [
-    ...people.map((person) => ({
-      name: person.name,
-      address: person.address,
-      kind: "person" as const,
-    })),
-    ...live.map((agent) => ({ name: agent.name, address: agent.address, kind: "agent" as const })),
-  ]);
+  const body = appendRoster(
+    input.senderName === undefined
+      ? input.content
+      : prependFromHeader(input.content, input.senderName),
+    [
+      ...people.map((person) => ({
+        name: person.name,
+        address: person.address,
+        kind: "person" as const,
+      })),
+      ...live.map((agent) => ({
+        name: agent.name,
+        address: agent.address,
+        kind: "agent" as const,
+      })),
+    ],
+  );
   let response: Response;
   try {
     response = await fetch(`${mailboxPath(input.workbenchTenantId)}/send`, {

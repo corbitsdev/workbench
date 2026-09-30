@@ -51,3 +51,17 @@ export function stripRoster(body: string): string {
   const index = body.lastIndexOf(marker);
   return index === -1 ? body : body.slice(0, index);
 }
+
+const FROM_HEADER = /^\[From: [^\]\n]*\]\n\n/;
+
+/** Prefixes the message with the `[From: name]` header the worker's prompt
+ * reads the person's name from. */
+export function prependFromHeader(body: string, senderName: string): string {
+  return `[From: ${senderName.replace(/[\]\n]/g, " ")}]\n\n${body}`;
+}
+
+/** Removes the header `prependFromHeader` adds, so a person's own message
+ * never shows it echoed back. */
+export function stripFromHeader(body: string): string {
+  return body.replace(FROM_HEADER, "");
+}

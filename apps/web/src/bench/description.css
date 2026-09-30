@@ -8,7 +8,8 @@
   flex-direction: column;
   gap: 8px;
 }
-.bench-description-form textarea {
+.bench-description-form textarea,
+.bench-description-form input {
   width: 100%;
   min-height: 72px;
   resize: vertical;
@@ -29,4 +30,11 @@
   margin-left: auto;
   font-size: 0.75rem;
   color: var(--muted-foreground);
+}
+.bench-description-form input {
+  min-height: 0;
+}
+.bench-description-form[data-inline] {
+  flex-direction: row;
+  align-items: center;
 }

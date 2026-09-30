@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { sendToWorkbench, type WorkbenchParticipant } from "@/chat/threads-api";
 import { workbenchKeys } from "../chat-path";
+import { useSessionUser } from "../navigation";
 import { clearOpeningMessage, readOpeningMessage } from "../opening-message";
 import "./pending-opening-message.css";
 
@@ -21,6 +22,7 @@ export function PendingOpeningMessage({
   readonly participants: readonly WorkbenchParticipant[];
 }) {
   const queryClient = useQueryClient();
+  const sessionUser = useSessionUser();
   const [text, setText] = useState(() => readOpeningMessage(workbenchTenantId));
   const [timedOut, setTimedOut] = useState(false);
   const attempted = useRef(false);
@@ -31,7 +33,13 @@ export function PendingOpeningMessage({
   }, []);
 
   const send = useMutation({
-    mutationFn: (content: string) => sendToWorkbench({ workbenchTenantId, participants, content }),
+    mutationFn: (content: string) =>
+      sendToWorkbench({
+        workbenchTenantId,
+        participants,
+        ...(sessionUser !== undefined ? { senderName: sessionUser.name } : {}),
+        content,
+      }),
     onSuccess: () => {
       clearOpeningMessage(workbenchTenantId);
       setText(null);
