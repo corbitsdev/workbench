@@ -1,4 +1,4 @@
-import { PageShell, RichEmptyState, RunNowButton, Skeleton } from "@corbits/react-ui";
+import { RichEmptyState, RunNowButton, Skeleton } from "@corbits/react-ui";
 import { type } from "arktype";
 import { useState } from "react";
 import { Clock } from "@/lib/icons";
@@ -9,12 +9,14 @@ import type { GlobalRoutineRow } from "../global-routines";
 import { useNavigate } from "../navigation";
 import { WORKFLOWS_PATH_PREFIX } from "../path-ids";
 import { PageLayout } from "../shell/page-layout";
+import { ListCard } from "./library-list";
 import { StageTopBar } from "../shell/stage-top-bar";
 import {
   PauseResumeButton,
   RoutinePill,
   formatWhen,
   routineState,
+  useRoutineDescription,
   useRoutineRuns,
 } from "./routine-ui";
 import type { RunRow } from "./routine-ui";
@@ -39,6 +41,8 @@ function runLabel(status: RunRow["status"]): string {
   return status === "deployed" ? "ok" : status;
 }
 
+const FAILED_WITHOUT_MESSAGE = "The run failed without reporting an error.";
+
 /** The run's own failure text: the newest error-ish event's message. */
 function failureMessage(events: readonly RunEvent[]): string | null {
   for (const event of events.toReversed()) {
@@ -49,6 +53,23 @@ function failureMessage(events: readonly RunEvent[]): string | null {
     return event.type;
   }
   return null;
+}
+
+/** The Result cell: what the run came to, the failure's own message when it failed. */
+function RunResult({ tenantId, run }: { readonly tenantId: string; readonly run: RunRow }) {
+  const eventsQuery = useAPIQuery(
+    run.status === "error" ? runEventsPath(tenantId, run.id) : "",
+    RunEventsSchema,
+  );
+  if (run.status === "error") {
+    const failure =
+      eventsQuery.kind === "ready"
+        ? (failureMessage(eventsQuery.data.events) ?? FAILED_WITHOUT_MESSAGE)
+        : "…";
+    return <span title={failure}>{failure}</span>;
+  }
+  if (run.status === "running" || run.status === "updating") return <span>Running…</span>;
+  return <span>{run.status === "deployed" ? "Succeeded" : run.status}</span>;
 }
 
 function RunDetail({
@@ -72,7 +93,7 @@ function RunDetail({
     <div className="routine-run-detail">
       {run.status === "error" ? (
         <>
-          <p className="routine-error">{failure ?? "The run failed without reporting an error."}</p>
+          <p className="routine-error">{failure ?? FAILED_WITHOUT_MESSAGE}</p>
           <div>
             <RunNowButton variant="outline" size="sm" label="Retry" onRun={onRetry} />
           </div>
@@ -116,29 +137,33 @@ function RoutineRunsSection({
         <RichEmptyState title="No runs yet" description="This workflow hasn't run yet." />
       ) : null}
       {runsQuery.kind === "ready" && runsQuery.data.data.length > 0 ? (
-        <div className="routine-rows">
+        <ListCard
+          label="Recent runs"
+          columns="minmax(120px, 1fr) minmax(0, 2fr) 100px"
+          heads={["When", "Result", "Status"]}
+        >
           {runsQuery.data.data.map((run) => (
-            <div key={run.id} className="routine-run">
+            <li key={run.id} className="lib-row routine-run">
               <button
                 type="button"
-                className="routine-run-summary"
+                className="lib-cell lib-name routine-run-when"
                 aria-expanded={selectedRunId === run.id}
                 onClick={() => setSelectedRunId(selectedRunId === run.id ? null : run.id)}
               >
-                <span>{formatWhen(run.createdAt)}</span>
-                <span className="routine-meta">
-                  {run.endedAt === null || run.endedAt === undefined
-                    ? "In progress"
-                    : `Ended ${formatWhen(run.endedAt)}`}
-                </span>
-                <RoutinePill tone={runTone(run.status)}>{runLabel(run.status)}</RoutinePill>
+                {formatWhen(run.createdAt)}
               </button>
+              <span className="lib-cell lib-cell--soft">
+                <RunResult tenantId={tenantId} run={run} />
+              </span>
+              <span className="lib-cell">
+                <RoutinePill tone={runTone(run.status)}>{runLabel(run.status)}</RoutinePill>
+              </span>
               {selectedRunId === run.id ? (
                 <RunDetail tenantId={tenantId} run={run} onRetry={onRetry} />
               ) : null}
-            </div>
+            </li>
           ))}
-        </div>
+        </ListCard>
       ) : null}
     </section>
   );
@@ -184,6 +209,8 @@ export function RoutineDetailPage({
   const runs = useRoutineRuns(row.tenantId, row.definition.definitionId, 1);
   const lastRun = runs.kind === "ready" ? runs.data.data[0] : undefined;
   const state = routineState(row, lastRun);
+  const description = useRoutineDescription(row.tenantId, row.definition.name);
+  const paused = state.label === "paused";
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
@@ -191,34 +218,46 @@ export function RoutineDetailPage({
           { label: "Workflows", href: WORKFLOWS_PATH_PREFIX },
           { label: row.definition.name },
         ]}
-        actions={
-          <div className="flex items-center gap-2">
-            <PauseResumeButton row={row} />
-            <RunNowButton variant="outline" size="sm" onRun={onRunNow} />
-          </div>
-        }
       />
-      <PageShell>
-        <div className="routines-page">
-          <div className="routine-head">
-            <h1>{row.definition.name}</h1>
-            <RoutinePill tone={state.tone}>{state.label}</RoutinePill>
-          </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <PageLayout
+          title={row.definition.name}
+          subtitle={
+            <span className="routine-sub">
+              {sentence}
+              <RoutinePill tone={state.tone}>{state.label}</RoutinePill>
+            </span>
+          }
+          actions={
+            <>
+              <PauseResumeButton row={row} />
+              <RunNowButton size="sm" onRun={onRunNow} />
+            </>
+          }
+        >
           <dl className="routine-kv">
             <dt>Schedule</dt>
             <dd>{sentence}</dd>
-            <dt>Workbench</dt>
-            <dd>{row.tenantName}</dd>
+            <dt>Delivers to</dt>
+            <dd>{row.tenantName === "" ? "This workbench" : row.tenantName}</dd>
             <dt>Last run</dt>
             <dd>{runs.kind === "ready" ? formatWhen(lastRun?.createdAt) : "…"}</dd>
+            <dt>Next run</dt>
+            <dd>{paused ? "Paused" : sentence}</dd>
           </dl>
+          {description !== null ? (
+            <section className="routine-sec">
+              <h2>What it does</h2>
+              <p className="routine-prose">{description}</p>
+            </section>
+          ) : null}
           <RoutineRunsSection
             tenantId={row.tenantId}
             definitionId={row.definition.definitionId}
             onRetry={onRunNow}
           />
-        </div>
-      </PageShell>
+        </PageLayout>
+      </div>
     </div>
   );
 }

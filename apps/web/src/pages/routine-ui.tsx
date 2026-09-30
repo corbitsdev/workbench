@@ -3,7 +3,7 @@ import "./routines.css";
 import { Button } from "@corbits/react-ui";
 import { toast } from "@corbits/react-ui/ui/toast";
 import { reportError } from "@corbits/error-sink";
-import { WorkflowRunResponse, paginatedSchema } from "@intx/types";
+import { WorkflowDefinitionResponse, WorkflowRunResponse, paginatedSchema } from "@intx/types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { describeApiError } from "@/lib/api-query";
 import { tenantKeys } from "../query-client";
@@ -25,6 +25,22 @@ export function useRoutineRuns(
   limit: number,
 ): APIQuery<typeof RunsPageSchema.infer> {
   return useAPIQuery(runsPath(tenantId, definitionId, limit), RunsPageSchema);
+}
+
+const DefinitionsPageSchema = paginatedSchema(WorkflowDefinitionResponse);
+
+/** The definition's own description, joined to the deployment by name (the
+ * same join the cron row uses); null while loading or when it has none. */
+export function useRoutineDescription(tenantId: string, name: string): string | null {
+  const query = useAPIQuery(
+    `/api/tenants/${tenantId}/workflows/definitions?limit=100`,
+    DefinitionsPageSchema,
+  );
+  if (query.kind !== "ready") return null;
+  const description = query.data.data.find((definition) => definition.name === name)?.description;
+  return description === undefined || description === null || description === ""
+    ? null
+    : description;
 }
 
 export function formatWhen(iso: string | null | undefined): string {
