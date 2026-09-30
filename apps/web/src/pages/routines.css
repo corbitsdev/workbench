@@ -10,28 +10,6 @@
   font-size: 13.5px;
 }
 
-.routines-page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  max-width: 960px;
-  width: 100%;
-  margin: 0 auto;
-  padding: 24px 16px;
-}
-
-.routines-page h1 {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 800;
-}
-
-.routines-lede {
-  margin: 0;
-  color: var(--ink-3);
-  font-size: 13.5px;
-}
-
 .routine-rows {
   list-style: none;
   margin: 0;

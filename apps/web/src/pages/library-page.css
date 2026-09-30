@@ -1,10 +1,4 @@
 /* Artifacts and Skills list pages (mockups: artifacts.html, skills.html). */
-.page-lede {
-  margin: 0 0 var(--space-4, 1rem);
-  color: var(--ink-soft);
-  font-size: 0.9375rem;
-}
-
 .library-row-title {
   display: inline-flex;
   align-items: center;

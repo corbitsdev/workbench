@@ -10,6 +10,7 @@ import type { GlobalRoutineRow } from "../global-routines";
 import { routineDetailPath } from "../global-routines";
 import { Link } from "../navigation";
 import { benchLink, useFromBench } from "../shell/page-crumbs";
+import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { RoutinePill, formatWhen, routineState, useRoutineRuns } from "./routine-ui";
 
@@ -81,9 +82,10 @@ export function GlobalRoutinesList({
       .includes(needle),
   );
   return (
-    <div className="routines-page">
-      <h1>Workflows</h1>
-      <p className="routines-lede">Deployed workflows, when they run, and how the last run went.</p>
+    <PageLayout
+      title="Workflows"
+      subtitle="Deployed workflows, when they run, and how the last run went."
+    >
       <input
         className="routines-filter"
         placeholder="Filter workflows"
@@ -101,7 +103,7 @@ export function GlobalRoutinesList({
           />
         ))}
       </ul>
-    </div>
+    </PageLayout>
   );
 }
 
