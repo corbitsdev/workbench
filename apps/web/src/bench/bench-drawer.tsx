@@ -1,6 +1,7 @@
 import { Button } from "@corbits/react-ui";
 import "./drawer-narrow.css";
 import { X } from "@/lib/icons";
+import "./drawer.css";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 export const DRAWER_TABS = [
@@ -27,12 +28,27 @@ export function BenchDrawer({
 }: {
   readonly open: boolean;
   readonly title: string;
-  readonly subtitle: string;
+  /** The bench description; nothing renders without one. */
+  readonly subtitle?: string | undefined;
   readonly onClose: () => void;
   readonly tabs: Partial<Record<DrawerTab, ReactNode>>;
 }) {
   const [tab, setTab] = useState<DrawerTab>("Information");
   const ref = useRef<HTMLDivElement>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
+
+  // Never scrollIntoView: it scrolls the clipped work sheet and jerks the view.
+  useEffect(() => {
+    const strip = stripRef.current;
+    const active = strip?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (strip === null || strip === undefined || active === null || active === undefined) return;
+    if (
+      active.offsetLeft < strip.scrollLeft ||
+      active.offsetLeft + active.offsetWidth > strip.scrollLeft + strip.clientWidth
+    ) {
+      strip.scrollLeft = active.offsetLeft - 16;
+    }
+  }, [tab, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -62,13 +78,13 @@ export function BenchDrawer({
         <div className="drawer-head">
           <div>
             <h2>{title}</h2>
-            <p>{subtitle}</p>
+            {subtitle === undefined || subtitle === "" ? null : <p>{subtitle}</p>}
           </div>
           <Button variant="ghost" size="sm" aria-label="Close drawer" onClick={onClose}>
             <X size={16} aria-hidden="true" />
           </Button>
         </div>
-        <div className="drawer-tabs" role="tablist">
+        <div className="drawer-tabs" role="tablist" ref={stripRef}>
           {DRAWER_TABS.map((name) => (
             <button
               key={name}
