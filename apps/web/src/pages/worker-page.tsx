@@ -9,7 +9,6 @@ import type { GrantEffect } from "@intx/types";
 
 import { WorkbenchAvatar } from "@/chat/avatar";
 import { isMyraAgent, listChatAgents, type ChatAgent } from "@/chat/threads-api";
-import { listWorkbenches } from "@/chat/workbench-tenants";
 import { ChatCircle } from "@/lib/icons";
 import { QueryView, describeApiError } from "@/lib/api-query";
 import { listTopLevelRuns } from "../agents-api";
@@ -29,7 +28,7 @@ import { useTenantQuery } from "../routines-api";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { WORKERS_PATH_PREFIX } from "../path-ids";
 import { workbenchPath } from "../workbench-path";
-import { StatusPill, workerStatus } from "./workers-page";
+import { StatusPill, useWorkbenchList, workerStatus } from "./workers-page";
 
 function sourceKey(tenantId: string, agentId: string) {
   return [...tenantKeys.agents(tenantId), "source", agentId] as const;
@@ -308,13 +307,7 @@ export function WorkerRoute({ agentId }: { readonly agentId: string }) {
     selectedTenantId !== null,
     () => listChatAgents(selectedTenantId as string),
   );
-  // The workspace is not a bench; the worker's workbench is one of its child
-  // tenants, the same rows the sidebar lists.
-  const benches = useQuery({
-    queryKey: tenantKeys.workbenches(selectedTenantId ?? "none"),
-    enabled: selectedTenantId !== null,
-    queryFn: () => listWorkbenches(selectedTenantId as string),
-  });
+  const benches = useWorkbenchList(selectedTenantId);
   const bench = benches.data?.[0];
 
   return (

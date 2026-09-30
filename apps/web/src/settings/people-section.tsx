@@ -36,6 +36,7 @@ import {
 } from "./tenancy-api";
 import { ConfirmButton } from "../components/confirm-button";
 import { SettingsGroup, SettingsRow } from "./rows";
+import "../tools/tools-page.css";
 
 const STATUS_TONE: Record<Principal["status"], "success" | "info" | "neutral"> = {
   active: "success",
@@ -363,7 +364,11 @@ export function PeopleTable({
               <>
                 {person.email !== undefined ? <span>{person.email}</span> : null}
                 <span>{PRINCIPAL_KIND_LABEL[person.kind]}</span>
-                <Badge tone={STATUS_TONE[person.status]}>{person.status}</Badge>
+                {person.status === "active" ? (
+                  <span className="tool-live">{person.status}</span>
+                ) : (
+                  <Badge tone={STATUS_TONE[person.status]}>{person.status}</Badge>
+                )}
                 {selectableRoles.length === 2
                   ? null
                   : person.roles.length === 0

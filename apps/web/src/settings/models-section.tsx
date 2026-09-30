@@ -1,22 +1,13 @@
 // No write path here; changing an offering's priority belongs to the
 // catalog-management routes this section deliberately doesn't touch.
 
-import {
-  Badge,
-  EmptyState,
-  SettingsPanel,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@corbits/react-ui";
+import { Badge, EmptyState } from "@corbits/react-ui";
 import { useQuery } from "@tanstack/react-query";
 
 import { QueryView, toAPIQuery } from "@/lib/api-query";
 import { listProviders, type Provider } from "./credentials-api";
 import { getResolvedCatalog, type ModelInfo } from "./inference";
+import { SettingsGroup, SettingsRow } from "./rows";
 import { SETTINGS_STRINGS } from "./strings";
 
 type ModelsData = {
@@ -52,7 +43,7 @@ export function ModelsSection({ tenantId }: { readonly tenantId: string | null }
   return (
     <QueryView query={query} label={SETTINGS_STRINGS.modelsLoadError}>
       {({ providers, models }) => (
-        <SettingsPanel
+        <SettingsGroup
           title={SETTINGS_STRINGS.modelsSectionTitle}
           description={SETTINGS_STRINGS.modelsSectionDescription}
         >
@@ -60,7 +51,7 @@ export function ModelsSection({ tenantId }: { readonly tenantId: string | null }
           <ProvidersTable providers={providers} />
           <h3 className="settings-subhead">{SETTINGS_STRINGS.modelsCatalogHeading}</h3>
           <ModelsTable models={models} />
-        </SettingsPanel>
+        </SettingsGroup>
       )}
     </QueryView>
   );
@@ -76,24 +67,11 @@ function ProvidersTable({ providers }: { readonly providers: readonly Provider[]
     );
   }
   return (
-    <div className="settings-table-scroll">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{SETTINGS_STRINGS.modelsProviderColumn}</TableHead>
-            <TableHead>Plugin</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {providers.map((provider) => (
-            <TableRow key={provider.id}>
-              <TableCell>{provider.name}</TableCell>
-              <TableCell>{provider.plugin}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+    <>
+      {providers.map((provider) => (
+        <SettingsRow key={provider.id} title={provider.name} meta={provider.plugin} />
+      ))}
+    </>
   );
 }
 
@@ -107,30 +85,19 @@ function ModelsTable({ models }: { readonly models: readonly ModelInfo[] }) {
     );
   }
   return (
-    <div className="settings-table-scroll">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{SETTINGS_STRINGS.modelsModelColumn}</TableHead>
-            <TableHead>{SETTINGS_STRINGS.modelsOfferingsColumn}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {models.map((model) => (
-            <TableRow key={model.id}>
-              <TableCell>{model.displayName ?? model.canonicalName}</TableCell>
-              <TableCell>
-                {model.offerings.map((offering, index) => (
-                  <Badge key={offering.offeringId} tone={index === 0 ? "success" : "neutral"}>
-                    {offering.providerName}
-                    {index === 0 ? ` · ${SETTINGS_STRINGS.modelsDefaultBadge}` : ""}
-                  </Badge>
-                ))}
-              </TableCell>
-            </TableRow>
+    <>
+      {models.map((model) => (
+        <SettingsRow
+          key={model.id}
+          title={model.displayName ?? model.canonicalName}
+          meta={model.offerings.map((offering, index) => (
+            <Badge key={offering.offeringId} tone={index === 0 ? "success" : "neutral"}>
+              {offering.providerName}
+              {index === 0 ? ` · ${SETTINGS_STRINGS.modelsDefaultBadge}` : ""}
+            </Badge>
           ))}
-        </TableBody>
-      </Table>
-    </div>
+        />
+      ))}
+    </>
   );
 }
