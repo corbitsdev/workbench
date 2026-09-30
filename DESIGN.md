@@ -73,8 +73,7 @@ or pick a named-template shortcut underneath. Blank `+` / prompt mint
 an empty channel and invite nobody. Named templates mint that same
 empty channel with no host, then instantiate the picked Workbench
 Definition — the agents, block workflows, and pending tools it names
-(Myra joins only when the definition names her; Code review's three
-reviewers do not) — and run its ordered onboarding walkthrough as an
+(Myra joins only when the definition names her) — and run its ordered onboarding walkthrough as an
 in-workbench card the workbench itself posts, never a side effect of hosting an
 agent. The card reads live connection state and flips straight to the
 repo pick, so there is one walkthrough, not a separate already-connected
@@ -347,7 +346,7 @@ In-thread cards flip in place: disconnected → connected → next step. The
 card never unmounts and remounts as a new row, and a connected card never
 still says Connect.
 
-GitHub for Code review is PAT-first today: Connect opens a guided
+GitHub is PAT-first today: Connect opens a guided
 personal-access-token paste, then the same card flips to pick
 repositories. A GitHub App / hosted OAuth Connect as the welcome mat is
 tracked separately (out of scope), not the shipped card.
