@@ -2,6 +2,7 @@
 // derives the single offering it mints; a tenant that already resolves an
 // offering skips this step (see `resolveExistingOffering`).
 import { Button, Input, RadioGroup, RadioOption, Select } from "@corbits/react-ui";
+import { Cpu, Key, LinkSimple } from "@/lib/icons";
 import {
   cancelProviderLogin,
   credentialNameFor,
@@ -19,6 +20,7 @@ import type { FormEvent } from "react";
 import type { ModelProviderPlugin } from "@intx/types";
 
 import { fetchOllamaTags } from "./ollama-tags";
+import "./provider-rows.css";
 
 export type ProviderOption = {
   /** Stable option id: two OAuth providers share one plugin, so the plugin
@@ -346,14 +348,28 @@ export function ProviderConnectStep({
         value={selected ?? ""}
         onValueChange={selectOption}
       >
-        {PROVIDER_OPTIONS.map((candidate) => (
-          <RadioOption
-            key={candidate.id}
-            value={candidate.id}
-            label={candidate.label}
-            description={candidate.description}
-          />
-        ))}
+        {PROVIDER_OPTIONS.map((candidate) => {
+          const rowId = `provider-${candidate.id}`;
+          const RowIcon = candidate.local
+            ? Cpu
+            : candidate.oauthProvider !== undefined
+              ? LinkSimple
+              : Key;
+          return (
+            <div key={candidate.id} className="onboarding-provider-row">
+              <RadioOption value={candidate.id} id={rowId} describedBy={`${rowId}-desc`} />
+              <span className="onboarding-provider-icon" aria-hidden="true">
+                <RowIcon size={16} />
+              </span>
+              <label htmlFor={rowId} className="onboarding-provider-text">
+                <span className="onboarding-provider-name">{candidate.label}</span>
+                <span id={`${rowId}-desc`} className="onboarding-provider-desc">
+                  {candidate.description}
+                </span>
+              </label>
+            </div>
+          );
+        })}
       </RadioGroup>
       {option === undefined ? null : oauthProvider !== undefined ? (
         <p>

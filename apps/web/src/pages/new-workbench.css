@@ -43,25 +43,9 @@
   padding: 0.5rem 0.75rem 0.75rem;
 }
 
-.new-suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.5rem;
-  margin-top: 1rem;
-}
-
-.new-suggestions button {
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--muted);
-  color: var(--foreground);
-  font: inherit;
+.new-hint {
+  margin: 1rem 0 0;
+  text-align: center;
   font-size: 0.8125rem;
-  padding: 0.375rem 0.75rem;
-  cursor: pointer;
-}
-
-.new-suggestions button:hover {
-  border-color: var(--border-strong, var(--border));
+  color: var(--muted-foreground);
 }

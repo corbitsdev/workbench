@@ -27,6 +27,7 @@ type GateState =
   | { readonly phase: "provider-setup"; readonly tenantId: string }
   | { readonly phase: "publishing-myra" }
   | { readonly phase: "installing"; readonly myraDeploy: WorkflowDeployInput }
+  | { readonly phase: "ready" }
   | {
       readonly phase: "setup-pending";
       readonly message: string;
@@ -170,7 +171,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
       (result) => {
         if (cancelled) return;
         if (result.kind === "ready") {
-          navigate("/");
+          setState({ phase: "ready" });
         } else if (result.code === "stock-capability-missing") {
           setState({ phase: "setup-pending", message: result.gap });
         } else {
@@ -253,6 +254,26 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
               state.phase === "publishing-myra" ? "Connecting your model…" : "Getting Myra ready…"
             }
           />
+        </div>
+      </OnboardingLayout>
+    );
+  }
+
+  if (state.phase === "ready") {
+    return (
+      <OnboardingLayout step={3}>
+        <div className="onboarding-phase" key="ready">
+          <h1 className="onboarding-title">Myra is ready</h1>
+          <p className="onboarding-subtitle">
+            Describe the job and your co-worker sets up the rest.
+          </p>
+          <div className="onboarding-content">
+            <div className="onboarding-actions">
+              <Button variant="primary" onClick={() => navigate("/")}>
+                Start your first workbench
+              </Button>
+            </div>
+          </div>
         </div>
       </OnboardingLayout>
     );
