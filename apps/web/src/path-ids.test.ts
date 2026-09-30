@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  AGENTS_PATH_PREFIX,
   detailSlugFromPath,
   settingsEntityIdFromPath,
   settingsSectionIdFromPath,
 } from "./path-ids";
+
+// Any flat top-level prefix exercises the same slug rules.
+const AGENTS_PATH_PREFIX = "/agents";
 
 describe("detailSlugFromPath", () => {
   test("reads the slug a detail path carries", () => {
