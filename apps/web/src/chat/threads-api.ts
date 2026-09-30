@@ -2,6 +2,7 @@
 // timeline, and the deploy roster every workbench surface shares.
 
 import { type } from "arktype";
+import { decodeMail } from "@intx/mime";
 import { WorkflowDeploymentResponse } from "@intx/types";
 import { reportError } from "@corbits/error-sink";
 
@@ -196,82 +197,49 @@ export function base64ToUtf8(base64: string): string {
   return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)));
 }
 
-/** The readable text of an RFC 5322 frame: the bytes after the header
- * section, or the first `text/plain` part of a multipart one. */
-export function frameBody(raw: string): string {
-  let decoded: string;
-  try {
-    decoded = base64ToUtf8(raw);
-  } catch {
-    return "";
-  }
-  return textPart(decoded.replace(/\r\n/g, "\n")) ?? "";
-}
+const utf8 = new TextDecoder();
 
-/** First `text/plain` leaf of a MIME entity, descending nested multiparts
- * (an agent reply is `multipart/signed` around `multipart/mixed`). The
- * boundary is matched case-sensitively: it is a token, not a header name. */
-function textPart(entity: string): string | undefined {
-  const split = entity.indexOf("\n\n");
-  if (split < 0) return undefined;
-  const headers = entity.slice(0, split);
-  const body = entity.slice(split + 2);
-  const boundary = /boundary="?([^";\n]+)"?/i.exec(headers)?.[1];
-  if (boundary === undefined) {
-    return /content-type:\s*text\/plain/i.test(headers) || !/content-type:/i.test(headers)
-      ? body.trim()
-      : undefined;
-  }
-  for (const part of body.split(`--${boundary}`).slice(1)) {
-    if (part.startsWith("--")) break;
-    const found = textPart(part.replace(/^\n/, ""));
-    if (found !== undefined) return found;
-  }
-  return undefined;
-}
-
-/** Every named, non-inline MIME leaf of a frame, decoded. A part counts as
- * an attachment when it carries a filename; the text body has none. */
-export function frameAttachments(raw: string): readonly MailAttachment[] {
-  let decoded: string;
+// Decoded leaf parts of a frame; an undecodable frame has none.
+function frameParts(raw: string, operation: string) {
   try {
-    decoded = base64ToUtf8(raw);
+    const mail = decodeMail(Uint8Array.from(atob(raw), (char) => char.charCodeAt(0)));
+    // RFC 2045: a frame with no Content-Type is text/plain; the decoder
+    // reports it as octet-stream.
+    const bare = mail.rawHeaders["content-type"] === undefined;
+    return mail.parts.map((leaf) =>
+      bare && leaf.contentType === "application/octet-stream"
+        ? { ...leaf, contentType: "text/plain" }
+        : leaf,
+    );
   } catch (cause) {
-    reportError(cause, { operation: "chat_frame_attachments" });
+    reportError(cause, { operation });
     return [];
   }
-  return attachmentParts(decoded.replace(/\r\n/g, "\n"));
 }
 
-function attachmentParts(entity: string): MailAttachment[] {
-  const split = entity.indexOf("\n\n");
-  if (split < 0) return [];
-  const headers = entity.slice(0, split).replace(/\n[ \t]+/g, " ");
-  const body = entity.slice(split + 2);
-  const boundary = /boundary="?([^";\n]+)"?/i.exec(headers)?.[1];
-  if (boundary !== undefined) {
-    const found: MailAttachment[] = [];
-    for (const part of body.split(`--${boundary}`).slice(1)) {
-      if (part.startsWith("--")) break;
-      found.push(...attachmentParts(part.replace(/^\n/, "")));
-    }
-    return found;
-  }
-  const name = /(?:filename|name)\*?="?([^";\n]+)"?/i.exec(headers)?.[1];
-  if (name === undefined) return [];
-  const contentType =
-    /content-type:\s*([^;\n]+)/i.exec(headers)?.[1]?.trim() ?? "application/octet-stream";
-  const base64 = /content-transfer-encoding:\s*base64/i.test(headers);
-  return [{ name, contentType, text: base64 ? decodeBase64(body) : body.trim() }];
+/** The readable text of an RFC 5322 frame: its first unnamed `text/plain`
+ * leaf, however deeply the signed and mixed wrappers nest it. */
+export function frameBody(raw: string): string {
+  const part = frameParts(raw, "chat_frame_body").find(
+    (leaf) => leaf.filename === undefined && leaf.contentType === "text/plain",
+  );
+  return part === undefined ? "" : utf8.decode(part.content).trim();
 }
 
-function decodeBase64(body: string): string {
-  try {
-    return base64ToUtf8(body.replace(/\s+/g, ""));
-  } catch (cause) {
-    reportError(cause, { operation: "chat_attachment_decode" });
-    return "";
-  }
+/** Every named MIME leaf of a frame, decoded. A part counts as an
+ * attachment when it carries a filename; the text body has none. */
+export function frameAttachments(raw: string): readonly MailAttachment[] {
+  return frameParts(raw, "chat_frame_attachments").flatMap((leaf) =>
+    leaf.filename === undefined
+      ? []
+      : [
+          {
+            name: leaf.filename,
+            contentType: leaf.contentType,
+            text: utf8.decode(leaf.content),
+          },
+        ],
+  );
 }
 
 function extractAddress(raw: string): string {
