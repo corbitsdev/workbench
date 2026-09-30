@@ -82,7 +82,7 @@ export function NewWorkbenchPickerRoute() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <StageTopBar crumbs={[{ label: "Workbench" }, { label: "New" }]} />
+      <StageTopBar crumbs={[{ label: "New" }]} />
       <div className="new-wrap">
         {create.isPending ? (
           // `delayMs={0}`: a genuine wait the instant the person sends.

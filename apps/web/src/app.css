@@ -2400,11 +2400,6 @@ a.drawer-li:hover,
 }
 
 /* Bench drawer Insights and Members tabs */
-.drawer-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
 .drawer-link {
   align-self: flex-start;
   font-size: 0.85rem;
