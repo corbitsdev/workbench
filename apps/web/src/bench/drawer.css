@@ -103,11 +103,16 @@
   padding: 0;
   flex: 0 0 auto;
 }
+/* Overlapping avatars; each after the first is ringed by the surface. */
 .drawer-stack {
-  display: flex;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
 }
 .drawer-stack > * + * {
   margin-left: -6px;
+  box-shadow: 0 0 0 2px var(--surface);
+  border-radius: 8px;
 }
 .drawer-pill {
   display: inline-flex;
