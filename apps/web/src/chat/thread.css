@@ -1,0 +1,181 @@
+/* The bench conversation: a left-aligned timeline above the composer. */
+.workbench-layout {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+.workbench-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.workbench-main-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 72px 24px 16px;
+}
+.timeline-inner {
+  max-width: 1200px;
+  padding: 0 8px;
+}
+.workbench-main-composer {
+  flex-shrink: 0;
+  padding: 0 16px 16px;
+}
+
+.wb-corner {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 21;
+}
+.wb-corner-toggle {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.wb-corner-toggle:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.chat-thread-messages {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 1rem;
+}
+.chat-thread-message {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 6px 0;
+  margin-bottom: 14px;
+}
+.chat-thread-avatar {
+  display: block;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+}
+.chat-thread-avatar .wb-av {
+  width: 32px;
+  height: 32px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+.chat-thread-body {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: var(--font-weight-medium);
+  line-height: 1.6;
+  max-width: 76ch;
+}
+.chat-thread-body .chat-attachment-list,
+.chat-thread-body .chat-deploy-card {
+  max-width: 640px;
+}
+.chat-thread-message[data-author="me"] {
+  justify-content: flex-end;
+}
+.chat-thread-message[data-author="me"] .chat-thread-body {
+  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: min(76ch, 78%);
+}
+.chat-thread-own-bubble {
+  background: var(--surface-sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+  padding: 10px 14px;
+  border-radius: 16px 16px 4px 16px;
+  overflow-wrap: anywhere;
+}
+.chat-thread-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.chat-thread-head b {
+  font-size: 14px;
+  font-weight: 800;
+}
+.chat-thread-role {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+.chat-thread-head time {
+  font-size: 12px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.chat-day {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 20px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-3);
+}
+.chat-day::before,
+.chat-day::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+.chat-system-line {
+  margin: 0 0 20px 44px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+.chat-system-line b {
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.chat-thread-error {
+  margin: 0.5rem 0;
+  font-size: 0.82rem;
+  color: var(--destructive);
+}
+
+.workbench-replies-link {
+  display: block;
+  margin-top: 0.35rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+.chat-thread-message:hover .workbench-replies-link,
+.workbench-replies-link:focus-visible {
+  opacity: 1;
+}
+.workbench-replies-link:hover {
+  color: var(--foreground);
+}
+
+@media (max-width: 860px) {
+  .wb-corner {
+    display: none;
+  }
+}

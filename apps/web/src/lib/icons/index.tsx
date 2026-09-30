@@ -9,6 +9,7 @@ export type IconProps = LucideProps;
 
 export {
   Archive,
+  AtSign,
   ArrowDown,
   ArrowLeft,
   ArrowRight,

@@ -1,0 +1,87 @@
+.bench-pill {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  max-width: min(440px, calc(100% - 120px));
+  padding: 0 10px 0 6px;
+  border: 0;
+  border-radius: var(--r-full);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(12px);
+  box-shadow: var(--floating);
+  font-size: 13.5px;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    box-shadow 150ms ease-out,
+    transform 160ms var(--ease-out);
+}
+.bench-pill:hover {
+  box-shadow: var(--overlay);
+}
+.bench-pill:active {
+  transform: translateX(-50%) scale(0.97);
+}
+.bench-pill b {
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bench-pill-status {
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .bench-pill-status {
+    display: none;
+  }
+}
+
+.bench-pill .pulse {
+  position: relative;
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--action);
+}
+.bench-pill .pulse::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1.5px solid var(--action);
+  opacity: 0;
+  animation: bench-pill-pulse 1.8s var(--ease-out) infinite;
+}
+@keyframes bench-pill-pulse {
+  from {
+    transform: scale(0.6);
+    opacity: 0.8;
+  }
+  to {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bench-pill .pulse::after {
+    animation: none;
+  }
+}
+
+.bench-pill-worker {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}

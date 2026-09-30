@@ -1,9 +1,10 @@
 // No Stop action: neither `threads-api.ts` nor the hub API expose a way to
 // cancel a running turn yet.
 import { useCommandPaletteNavigation } from "@corbits/react-ui";
-import { ArrowUp, AudioLines, CircleNotch, Plus } from "@/lib/icons";
-import { useLayoutEffect, useRef, useState } from "react";
+import { ArrowUp, AtSign, AudioLines, CircleNotch, FlowArrow, Paperclip, Plus } from "@/lib/icons";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
+import "./composer.css";
 import { activeMention, applyMention, matchMentionQuery, type ActiveMention } from "./mentions";
 
 export type ComposerMention = {
@@ -19,7 +20,8 @@ export function Composer({
   disabled,
   mentionables = [],
   onSend,
-  onAdd,
+  onAttach,
+  onRunWorkflow,
   onVoice,
 }: {
   readonly placeholder: string;
@@ -28,12 +30,14 @@ export function Composer({
   /** Agents an `@` token can address; empty disables the popover. */
   readonly mentionables?: readonly ComposerMention[];
   readonly onSend: (text: string) => void;
-  /** Opens the attach / add actions; the `+` is hidden without it. */
-  readonly onAdd?: () => void;
+  /** The `+` menu's actions; one with no handler stays disabled. */
+  readonly onAttach?: () => void;
+  readonly onRunWorkflow?: () => void;
   /** Starts voice mode; the mic is hidden without it. */
   readonly onVoice?: () => void;
 }) {
   const [text, setText] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
   const [mention, setMention] = useState<ActiveMention | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const canSend = text.trim() !== "" && !busy && !disabled;
@@ -47,6 +51,21 @@ export function Composer({
     input.style.height = "auto";
     input.style.height = `${input.scrollHeight}px`;
   }, [text]);
+
+  // Closes on any press outside the menu.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (event: MouseEvent) => {
+      if (
+        !(event.target instanceof Element) ||
+        event.target.closest(".chat-composer-plus") === null
+      ) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [menuOpen]);
 
   const send = () => {
     const trimmed = text.trim();
@@ -76,6 +95,18 @@ export function Composer({
     onSelect: choose,
     onClose: () => setMention(null),
   });
+
+  const insertMentionTrigger = () => {
+    const input = inputRef.current;
+    const next = text === "" || text.endsWith(" ") ? `${text}@` : `${text} @`;
+    setText(next);
+    requestAnimationFrame(() => {
+      if (input === null) return;
+      input.focus();
+      input.setSelectionRange(next.length, next.length);
+      syncMention(input);
+    });
+  };
 
   const syncMention = (input: HTMLTextAreaElement) => {
     if (mentionables.length === 0) return;
@@ -110,18 +141,76 @@ export function Composer({
         </ul>
       ) : null}
       <div className="chat-composer-box">
-        {onAdd === undefined ? null : (
+        <div className="chat-composer-plus">
           <button
             type="button"
             className="chat-composer-btn"
             aria-label="Add"
             title="Add"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
             disabled={disabled}
-            onClick={onAdd}
+            onClick={() => setMenuOpen((value) => !value)}
           >
             <Plus aria-hidden="true" />
           </button>
-        )}
+          {menuOpen ? (
+            <div
+              className="chat-composer-menu"
+              role="menu"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setMenuOpen(false);
+              }}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="chat-composer-menu-item"
+                disabled={onAttach === undefined}
+                title={onAttach === undefined ? "Attachments are not available yet" : undefined}
+                onClick={() => {
+                  setMenuOpen(false);
+                  onAttach?.();
+                }}
+              >
+                <Paperclip aria-hidden="true" />
+                Attach a file
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="chat-composer-menu-item"
+                disabled={mentionables.length === 0}
+                title={mentionables.length === 0 ? "No worker is live to mention" : undefined}
+                onClick={() => {
+                  setMenuOpen(false);
+                  insertMentionTrigger();
+                }}
+              >
+                <AtSign aria-hidden="true" />
+                Mention a worker
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="chat-composer-menu-item"
+                disabled={onRunWorkflow === undefined}
+                title={
+                  onRunWorkflow === undefined
+                    ? "Running a workflow here is not available yet"
+                    : undefined
+                }
+                onClick={() => {
+                  setMenuOpen(false);
+                  onRunWorkflow?.();
+                }}
+              >
+                <FlowArrow aria-hidden="true" />
+                Run a workflow
+              </button>
+            </div>
+          ) : null}
+        </div>
         <textarea
           className="chat-composer-input"
           ref={inputRef}

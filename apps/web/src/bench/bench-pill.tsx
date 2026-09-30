@@ -2,17 +2,10 @@ import { CaretDown } from "@/lib/icons";
 import { IdentityAvatar } from "@/chat/avatar";
 import { Skeleton } from "@corbits/react-ui";
 import type { WorkerStatus } from "../worker-status";
+import "./bench-pill.css";
 
-function statusLine(status: WorkerStatus, workerName: string | undefined): string {
-  if (status.text === "Working…") {
-    return workerName === undefined ? "Working…" : `${workerName} is working…`;
-  }
-  const text = status.text === "Live" ? "Idle" : status.text;
-  return workerName === undefined ? text : `${workerName} · ${text}`;
-}
-
-/** Frosted pill centered over the thread: the bench's worker, its name and
- * live status. Toggles the bench drawer. */
+/** Frosted pill centered over the thread: the bench's worker and name, plus
+ * what the worker is doing while a turn is open. Toggles the bench drawer. */
 export function BenchPill({
   benchName,
   worker,
@@ -29,6 +22,7 @@ export function BenchPill({
   readonly open: boolean;
   readonly onToggle: () => void;
 }) {
+  const working = status.tone === "working";
   return (
     <button
       type="button"
@@ -45,7 +39,16 @@ export function BenchPill({
         <IdentityAvatar kind="agent" name={worker.name} principalId={worker.id} />
       )}
       <b>{benchName}</b>
-      <span className="bench-pill-status">{statusLine(status, worker?.name)}</span>
+      {working ? (
+        <>
+          <span className="pulse" aria-hidden="true" />
+          <span className="bench-pill-status">
+            {worker === undefined ? "Working …" : `${worker.name} is working …`}
+          </span>
+        </>
+      ) : worker === undefined ? null : (
+        <span className="bench-pill-worker">· {worker.name}</span>
+      )}
       <CaretDown size={14} aria-hidden="true" />
     </button>
   );
