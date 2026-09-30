@@ -2,43 +2,22 @@
 // from an ancestor tenant, grants never do. Booting the hub runs package
 // migrations, so the suite skips without a reachable DATABASE_URL.
 
-import { afterAll, expect, test } from "bun:test";
+import { expect, test } from "bun:test";
 import { type } from "arktype";
 import { dbGate } from "../lib/db-gate";
-import { installDisposableHubDataDir } from "../lib/disposable-hub-data-dir";
+import { bootHub } from "../lib/hub";
 
-const databaseUrl = process.env["DATABASE_URL"] ?? "";
-const describeIfDb = dbGate(databaseUrl, import.meta.path);
-
-installDisposableHubDataDir();
-process.env["CREDENTIAL_ENCRYPTION_KEY"] ??= "0".repeat(64);
-process.env["PRINCIPAL_KEY_ENCRYPTION_KEY"] ??= "1".repeat(64);
-process.env["SIDECAR_CREDENTIAL_ENCRYPTION_KEY"] ??= "2".repeat(64);
-if (databaseUrl !== "") {
-  const url = new URL(databaseUrl);
-  process.env["DB_HOST"] = url.hostname;
-  process.env["DB_PORT"] = url.port === "" ? "5432" : url.port;
-  process.env["DB_USER"] = decodeURIComponent(url.username);
-  process.env["DB_PASSWORD"] = decodeURIComponent(url.password);
-  process.env["DB_NAME"] = url.pathname.replace(/^\//, "");
-}
-
-// A hub left running keeps reconciling the shared database and fails the
-// allocations of every hub booted after it in the same process.
-const closers: (() => Promise<void>)[] = [];
-afterAll(async () => {
-  for (const close of closers) await close();
-});
+const describeIfDb = dbGate(process.env["DATABASE_URL"] ?? "", import.meta.path);
 
 const Id = type({ id: "string" });
 const GrantPage = type({ data: type({ id: "string" }).array() });
 const Evaluation = type({ effect: "string", matchingGrants: type({ id: "string" }).array() });
 
 describeIfDb("grants are explicit per tenant", () => {
+  const booted = bootHub();
+
   test("a credential resolves from a child tenant; a grant does not", async () => {
-    const { createHubServer } = await import("../../apps/hub/src/server");
-    const hub = await createHubServer();
-    closers.push(() => hub.shutdown());
+    const hub = booted();
     const origin = "http://localhost";
     const suffix = crypto.randomUUID().slice(0, 8);
 
