@@ -14,9 +14,14 @@
   margin-bottom: 24px;
 }
 
-.page-layout-head > div:first-child {
+.page-layout-head > div:not(.page-layout-actions) {
   flex: 1;
   min-width: 0;
+}
+
+.page-layout-head--hero {
+  align-items: center;
+  margin-bottom: 8px;
 }
 
 .page-layout-head h1 {

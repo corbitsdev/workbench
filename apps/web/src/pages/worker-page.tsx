@@ -2,7 +2,7 @@
 // and the workbench it lives on.
 
 import { useState } from "react";
-import { Button, Card, CardDescription, CardTitle, PageShell, Skeleton } from "@corbits/react-ui";
+import { Button, Skeleton } from "@corbits/react-ui";
 import { toast } from "@corbits/react-ui/ui/toast";
 import { reportError } from "@corbits/error-sink";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -10,9 +10,14 @@ import type { GrantEffect } from "@intx/types";
 
 import { WorkbenchAvatar } from "@/chat/avatar";
 import { isDefaultWorker, type ChatAgent } from "@/chat/threads-api";
-import { ChatCircle } from "@/lib/icons";
+import { CaretRight, ChatCircle, Hash } from "@/lib/icons";
 import { describeApiError } from "@/lib/api-query";
-import { listTopLevelRuns } from "../agents-api";
+import { ConfirmButton } from "../components/confirm-button";
+import { useAPIQuery } from "../api";
+import { useApprovalTally } from "../bench/approvals-insights";
+import { insightsTopLevelRunsPath, TopLevelRunsSchema } from "../insights-api";
+import { PageLayout } from "../shell/page-layout";
+import { useWorkerRole } from "../worker-role-query";
 import { updateGrant, type Grant } from "../settings/tenancy-api";
 import { agentSlugFromSourceAssetName, deployAgentSource } from "../agent-deploy";
 import { readAgentMcpHandles, readAgentSource } from "../agent-source-read";
@@ -29,7 +34,10 @@ import { StageTopBar } from "../shell/stage-top-bar";
 import { WORKERS_PATH_PREFIX } from "../path-ids";
 import { workbenchPath } from "../workbench-path";
 import { useBenchWorkers } from "../worker-benches";
-import { StatusPill, WorkerRole, workerStatus } from "./workers-page";
+import type { HubTenant } from "../needs-converge";
+import { StatusPill, workerStatus } from "./workers-page";
+
+import "./worker-page.css";
 
 function sourceKey(tenantId: string, agentId: string) {
   return [...tenantKeys.agents(tenantId), "source", agentId] as const;
@@ -86,11 +94,11 @@ function InstructionsCard({
   });
 
   return (
-    <Card className="p-5">
-      <CardTitle>Instructions</CardTitle>
-      <CardDescription>
+    <section className="wp-card">
+      <h2>Instructions</h2>
+      <p className="wp-sub">
         How this worker should behave. It reads these at the start of every run.
-      </CardDescription>
+      </p>
       {source.isPending ? (
         <p className="mt-3 text-[13px] text-(--ink-3)">Loading instructions…</p>
       ) : source.isError ? (
@@ -101,7 +109,7 @@ function InstructionsCard({
         <>
           <textarea
             aria-label="Instructions"
-            rows={8}
+            rows={5}
             value={value}
             readOnly={!editable}
             onChange={(event) => setDraft(event.target.value)}
@@ -131,7 +139,7 @@ function InstructionsCard({
           )}
         </>
       )}
-    </Card>
+    </section>
   );
 }
 
@@ -177,12 +185,11 @@ function PermissionsCard({
   });
 
   return (
-    <Card className="mt-4 p-5">
-      <CardTitle>Permissions</CardTitle>
-      <CardDescription>
+    <section className="wp-card">
+      <h2>Permissions</h2>
+      <p className="wp-sub">
         What it may do without asking. Workbench grants can narrow these, never widen them.
-        Permissions carry over when you save new instructions.
-      </CardDescription>
+      </p>
       {query.isPending ? (
         <p className="mt-3 text-[13px] text-(--ink-3)">Loading permissions…</p>
       ) : query.isError ? (
@@ -199,16 +206,9 @@ function PermissionsCard({
             const name = grant.resource.slice(TOOL_PREFIX.length);
             const all = query.data?.tools ?? [];
             return (
-              <div
-                key={grant.id}
-                className="grid grid-cols-[1fr_auto] items-center gap-3 border-t border-(--line) py-3 first:border-t-0 first:pt-0"
-              >
-                <b className="min-w-0 truncate font-mono text-[12.5px] font-normal">{name}</b>
-                <div
-                  role="radiogroup"
-                  aria-label={name}
-                  className="inline-flex rounded-(--r-md) bg-(--surface) p-0.5"
-                >
+              <div key={grant.id} className="wp-perm">
+                <b>{name}</b>
+                <div role="radiogroup" aria-label={name} className="wp-seg">
                   {MODES.map((mode) => {
                     const active = grant.effect === mode.effect;
                     return (
@@ -226,9 +226,7 @@ function PermissionsCard({
                               effect: mode.effect,
                             });
                         }}
-                        className={`h-[26px] rounded-(--r-sm) px-2.5 text-[12.5px] font-semibold ${
-                          active ? "bg-(--card) text-(--ink) shadow-sm" : "text-(--ink-3)"
-                        }`}
+                        className={active ? "active" : undefined}
                       >
                         {mode.label}
                       </button>
@@ -240,8 +238,29 @@ function PermissionsCard({
           })}
         </div>
       )}
-    </Card>
+    </section>
   );
+}
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** The worker's own runs, matched by address like the rest of this page. */
+function useWorkerRuns(tenantId: string, agent: ChatAgent) {
+  const runs = useAPIQuery(insightsTopLevelRunsPath(tenantId), TopLevelRunsSchema);
+  const own =
+    runs.kind === "ready"
+      ? runs.data.data
+          .filter((run) => agent.addresses.includes(run.address))
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      : null;
+  return { runs, own };
+}
+
+function approvalsLabel(tally: ReturnType<typeof useApprovalTally>): string {
+  if (tally.kind === "loading") return "…";
+  if (tally.kind === "error") return "Unavailable";
+  const { once, always, denied, waiting } = tally.counts;
+  return `${once + always + denied + waiting} asked · ${once + always} allowed`;
 }
 
 function DetailsCard({
@@ -256,34 +275,176 @@ function DetailsCard({
     queryFn: () => readAgentSource(tenantId, agent.id, agent.assetName),
   });
   const first = source.data?.declaredSources[0];
-  const runs = useQuery({
-    queryKey: [...tenantKeys.agents(tenantId), "runs", agent.id],
-    queryFn: () => listTopLevelRuns(tenantId),
-  });
-  const own = (runs.data ?? []).filter((run) => agent.addresses.includes(run.address));
-  const created = own.map((run) => Date.parse(run.createdAt)).sort((a, b) => a - b)[0];
+  const { own } = useWorkerRuns(tenantId, agent);
+  const weekStart = Date.now() - WEEK_MS;
+  const thisWeek = (own ?? []).filter((run) => Date.parse(run.createdAt) >= weekStart);
+  const tally = useApprovalTally(tenantId, thisWeek.slice(0, 50));
+  const created = (own ?? []).map((run) => Date.parse(run.createdAt)).sort((a, b) => a - b)[0];
   return (
-    <Card className="p-5">
-      <CardTitle className="text-[14px]">Details</CardTitle>
-      <dl className="mt-3 grid grid-cols-[90px_1fr] gap-y-2 text-[13.5px]">
-        <dt className="text-(--ink-3)">Model</dt>
+    <section className="wp-card">
+      <h2 className="wp-h2--small">Details</h2>
+      <dl className="wp-kv">
+        <dt>Model</dt>
         <dd>{first === undefined ? "…" : `${first.provider} · ${first.model}`}</dd>
         {created === undefined ? null : (
           <>
-            <dt className="text-(--ink-3)">Created</dt>
+            <dt>Created</dt>
             <dd>
               {new Date(created).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
             </dd>
           </>
         )}
-        {runs.data === undefined ? null : (
+        {own === null ? null : (
           <>
-            <dt className="text-(--ink-3)">Runs</dt>
-            <dd className="tabular-nums">{own.length}</dd>
+            <dt>Runs</dt>
+            <dd className="tabular-nums">{thisWeek.length} this week</dd>
+            <dt>Approvals</dt>
+            <dd className="tabular-nums">{approvalsLabel(tally)}</dd>
           </>
         )}
       </dl>
-    </Card>
+    </section>
+  );
+}
+
+function ActivityPanel({
+  tenantId,
+  agent,
+}: {
+  readonly tenantId: string;
+  readonly agent: ChatAgent;
+}) {
+  const { runs, own } = useWorkerRuns(tenantId, agent);
+  return (
+    <section className="wp-card">
+      <h2>Activity</h2>
+      <p className="wp-sub">Its most recent runs.</p>
+      {runs.kind === "loading" ? (
+        <Skeleton className="h-24 w-full" />
+      ) : own === null ? (
+        <p className="wp-empty">Couldn't load its runs.</p>
+      ) : own.length === 0 ? (
+        <p className="wp-empty">No runs yet.</p>
+      ) : (
+        <div className="wp-runs">
+          {own.slice(0, 20).map((run) => (
+            <div key={run.id} className="wp-run">
+              <b>
+                {new Date(run.createdAt).toLocaleString(undefined, {
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
+              </b>
+              <span>{run.status}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MemoryPanel() {
+  return (
+    <section className="wp-card">
+      <h2>Memory</h2>
+      <p className="wp-sub">What it has learned to remember between runs.</p>
+      <p className="wp-empty">Nothing remembered yet.</p>
+    </section>
+  );
+}
+
+function DangerCard({ name }: { readonly name: string }) {
+  return (
+    <section className="wp-card wp-danger">
+      <div>
+        <h2>Delete {name}</h2>
+        <p className="wp-sub">
+          Stops its schedules and removes it from every workbench. Its artifacts stay.
+        </p>
+      </div>
+      <div className="wp-danger-actions">
+        <ConfirmButton
+          size="sm"
+          disabled
+          title="Deleting a worker isn't available yet"
+          confirmLabel={`Delete ${name} permanently`}
+          onConfirm={() => undefined}
+        >
+          Delete worker
+        </ConfirmButton>
+      </div>
+    </section>
+  );
+}
+
+const TABS = ["Overview", "Activity", "Memory"] as const;
+type Tab = (typeof TABS)[number];
+
+function WorkerDetail({ agent, bench }: { readonly agent: ChatAgent; readonly bench: HubTenant }) {
+  const [tab, setTab] = useState<Tab>("Overview");
+  const status = workerStatus(agent);
+  const role = useWorkerRole(bench.id, agent);
+  return (
+    <PageLayout
+      title={agent.name}
+      subtitle={role}
+      leading={<WorkbenchAvatar kind="worker" name={agent.name} size="xl" status={status.tone} />}
+      actions={
+        <Link to={workbenchPath(bench.id)} className="wp-open">
+          <ChatCircle />
+          Open {bench.name}
+        </Link>
+      }
+    >
+      <nav className="wp-tabs" role="tablist" aria-label="Worker sections">
+        {TABS.map((name) => (
+          <button
+            key={name}
+            type="button"
+            role="tab"
+            aria-selected={tab === name}
+            className={tab === name ? "active" : undefined}
+            onClick={() => setTab(name)}
+          >
+            {name}
+          </button>
+        ))}
+      </nav>
+      {tab === "Activity" ? (
+        <ActivityPanel tenantId={bench.id} agent={agent} />
+      ) : tab === "Memory" ? (
+        <MemoryPanel />
+      ) : (
+        <div className="wp-grid">
+          <div className="wp-stack">
+            <InstructionsCard tenantId={bench.id} agent={agent} />
+            <PermissionsCard tenantId={bench.id} agent={agent} />
+            <DangerCard name={agent.name} />
+          </div>
+          <aside className="wp-stack">
+            <section className="wp-card">
+              <h2 className="wp-h2--small">Status</h2>
+              <div className="wp-status">
+                <StatusPill tone={status.tone} />
+                <span>{status.text}</span>
+              </div>
+            </section>
+            <DetailsCard tenantId={bench.id} agent={agent} />
+            <section className="wp-card">
+              <h2 className="wp-h2--small">Workbench</h2>
+              <Link to={workbenchPath(bench.id)} className="wp-li">
+                <Hash size={14} aria-hidden="true" />
+                <b>{bench.name}</b>
+                <CaretRight size={14} aria-hidden="true" />
+              </Link>
+            </section>
+          </aside>
+        </div>
+      )}
+    </PageLayout>
   );
 }
 
@@ -299,95 +460,24 @@ export function WorkerRoute({ agentId }: { readonly agentId: string }) {
         </p>
       ) : loading ? (
         <Skeleton className="m-7 h-40" />
+      ) : found === undefined ? (
+        <>
+          <StageTopBar
+            crumbs={[{ label: "Workers", href: WORKERS_PATH_PREFIX }, { label: "Not found" }]}
+          />
+          <p className="p-7 text-[14px] text-(--ink-3)">
+            This workbench has no worker with that id.
+          </p>
+        </>
       ) : (
-        (() => {
-          const agent = found?.agent;
-          const selectedTenantId = found?.bench.id ?? null;
-          if (agent === undefined || selectedTenantId === null) {
-            return (
-              <>
-                <StageTopBar
-                  crumbs={[{ label: "Workers", href: WORKERS_PATH_PREFIX }, { label: "Not found" }]}
-                />
-                <p className="p-7 text-[14px] text-(--ink-3)">
-                  This workbench has no worker with that id.
-                </p>
-              </>
-            );
-          }
-          const status = workerStatus(agent);
-          const agentBenches = found === undefined ? [] : [found.bench];
-          const bench = agentBenches[0];
-          return (
-            <>
-              <StageTopBar
-                crumbs={[{ label: "Workers", href: WORKERS_PATH_PREFIX }, { label: agent.name }]}
-              />
-              <div className="min-h-0 flex-1 overflow-auto">
-                <PageShell width="full" className="page-fill">
-                  <div className="mx-auto w-full max-w-4xl px-4 pb-8 sm:px-7">
-                    <div className="mb-6 flex items-center gap-4">
-                      <WorkbenchAvatar
-                        kind="worker"
-                        name={agent.name}
-                        size="xl"
-                        status={status.tone}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <h1 className="text-[24px] font-extrabold">{agent.name}</h1>
-                        <WorkerRole
-                          tenantId={selectedTenantId}
-                          agent={agent}
-                          className="mt-0.5 text-[14px] text-(--ink-2)"
-                        />
-                        <p className="mt-1 flex items-center gap-2 text-[14px] text-(--ink-2)">
-                          <StatusPill tone={status.tone} />
-                          {status.text}
-                        </p>
-                      </div>
-                      {bench === undefined ? null : (
-                        <Link
-                          to={workbenchPath(bench.id)}
-                          className="inline-flex h-9 items-center gap-2 rounded-(--r-md) bg-(--primary) px-4 text-[14px] font-bold text-(--primary-foreground)"
-                        >
-                          <ChatCircle />
-                          Open {bench.name}
-                        </Link>
-                      )}
-                    </div>
-                    <div className="grid items-start gap-6 md:grid-cols-[minmax(0,1fr)_300px]">
-                      <div>
-                        <InstructionsCard tenantId={selectedTenantId} agent={agent} />
-                        <PermissionsCard tenantId={selectedTenantId} agent={agent} />
-                      </div>
-                      <aside className="flex flex-col gap-4">
-                        <DetailsCard tenantId={selectedTenantId} agent={agent} />
-                        <Card className="p-5">
-                          <CardTitle className="text-[14px]">Workbench</CardTitle>
-                          {agentBenches.length === 0 ? (
-                            <p className="mt-2 text-[13.5px] text-(--ink-3)">
-                              Not in a workbench yet.
-                            </p>
-                          ) : (
-                            agentBenches.map((item) => (
-                              <Link
-                                key={item.id}
-                                to={workbenchPath(item.id)}
-                                className="mt-2 block text-[13.5px] font-semibold underline-offset-2 hover:underline"
-                              >
-                                {item.name}
-                              </Link>
-                            ))
-                          )}
-                        </Card>
-                      </aside>
-                    </div>
-                  </div>
-                </PageShell>
-              </div>
-            </>
-          );
-        })()
+        <>
+          <StageTopBar
+            crumbs={[{ label: "Workers", href: WORKERS_PATH_PREFIX }, { label: found.agent.name }]}
+          />
+          <div className="min-h-0 flex-1 overflow-auto">
+            <WorkerDetail agent={found.agent} bench={found.bench} />
+          </div>
+        </>
       )}
     </div>
   );

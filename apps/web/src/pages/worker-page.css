@@ -1,0 +1,230 @@
+/* Worker detail: raised panel cards, tab strip, permissions rows, danger card
+   (mockup agent.html + components.css). */
+.page-layout-head--hero .page-layout-lede {
+  margin-top: 4px;
+  font-size: 14.5px;
+}
+
+.wp-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: var(--r-md);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.wp-open svg {
+  color: var(--action);
+}
+
+.wp-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 24px 0;
+  border-bottom: 1px solid var(--line);
+}
+.wp-tabs button {
+  height: 40px;
+  padding: 0 4px;
+  margin-right: 16px;
+  border: 0;
+  background: none;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink-3);
+  box-shadow: inset 0 -2px 0 transparent;
+  transition:
+    color 120ms ease,
+    box-shadow 150ms ease-out;
+}
+.wp-tabs button:hover {
+  color: var(--ink);
+}
+.wp-tabs button.active {
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--ink);
+}
+
+.wp-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 24px;
+  align-items: start;
+}
+@media (max-width: 960px) {
+  .wp-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.wp-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.wp-card {
+  padding: 20px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--raised);
+}
+.wp-card h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 800;
+}
+.wp-card h2.wp-h2--small {
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+.wp-sub {
+  margin: 0 0 16px;
+  font-size: 13.5px;
+  color: var(--ink-3);
+}
+.wp-empty {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--ink-3);
+}
+
+.wp-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+
+.wp-kv {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 10px 16px;
+  margin: 0;
+  font-size: 13.5px;
+}
+.wp-kv dt {
+  color: var(--ink-3);
+}
+.wp-kv dd {
+  margin: 0;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.wp-perm {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.wp-perm:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.wp-perm b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+.wp-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-md);
+  background: var(--hover);
+}
+.wp-seg button {
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink-3);
+}
+.wp-seg button:hover {
+  color: var(--ink);
+}
+.wp-seg button.active {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--raised);
+}
+
+.wp-li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 6px 8px;
+  margin: 0 -8px;
+  border-radius: var(--r-md);
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 120ms ease;
+}
+.wp-li:hover {
+  background: var(--hover);
+}
+.wp-li svg {
+  flex: none;
+  color: var(--ink-3);
+}
+.wp-li b {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.wp-runs {
+  display: grid;
+}
+.wp-run {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13.5px;
+}
+.wp-run:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.wp-run span {
+  color: var(--ink-3);
+}
+
+.wp-danger {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 22%, transparent);
+}
+.wp-danger h2 {
+  font-size: 15px;
+}
+.wp-danger .wp-sub {
+  max-width: 52ch;
+  margin: 0;
+}
+.wp-danger-actions {
+  display: flex;
+  justify-content: flex-end;
+}

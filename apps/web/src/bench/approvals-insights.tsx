@@ -14,12 +14,12 @@ const ROWS = [
   ["waiting", "Waiting on you", "var(--action)"],
 ] as const;
 
-type ApprovalTally =
+export type ApprovalTally =
   | { readonly kind: "loading" }
   | { readonly kind: "error" }
   | { readonly kind: "ready"; readonly counts: ApprovalCounts };
 
-function useApprovalTally(tenantId: string, runs: readonly InsightsRun[]): ApprovalTally {
+export function useApprovalTally(tenantId: string, runs: readonly InsightsRun[]): ApprovalTally {
   const results = useQueries({
     queries: runs.map((run) =>
       apiQueryOptions(insightsRunApprovalsPath(tenantId, run.id), RunApprovalsResponse),
