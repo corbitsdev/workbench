@@ -23,6 +23,7 @@ import {
   type WorkbenchMessage,
   type WorkbenchParticipant,
 } from "@/chat/threads-api";
+import { VoiceOverlay } from "../voice/voice-overlay";
 import { BenchDrawer } from "../bench/bench-drawer";
 import { BenchPill } from "../bench/bench-pill";
 import { ArtifactsTab } from "../bench/artifacts-tab";
@@ -131,6 +132,8 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
   const [openThread, setOpenThread] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const endVoice = useCallback(() => setVoiceOpen(false), []);
 
   const tenant = useQuery({
     queryKey: workbenchKeys.tenant(workbenchTenantId),
@@ -271,6 +274,10 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                   disabled={startingAgent !== undefined}
                   mentionables={mentionables}
                   onSend={(text) => send.mutate({ content: text })}
+                  onVoice={() => {
+                    setDrawerOpen(false);
+                    setVoiceOpen(true);
+                  }}
                 />
               </PageShell>
             </div>
@@ -306,6 +313,14 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
               />
             </aside>
           )}
+          {voiceOpen ? (
+            <VoiceOverlay
+              worker={agents[0]}
+              messages={messages}
+              onSend={(text) => send.mutate({ content: text })}
+              onEnd={endVoice}
+            />
+          ) : null}
         </div>
         <BenchDrawer
           open={drawerOpen}
