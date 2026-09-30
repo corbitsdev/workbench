@@ -162,10 +162,12 @@
 }
 
 .chat-md-inline-code {
-  background: var(--muted, color-mix(in srgb, var(--foreground) 8%, transparent));
-  border-radius: var(--ui-radius-sm, 0.25rem);
-  padding: 0.05rem 0.3rem;
-  font-size: 0.85em;
+  background: var(--hover);
+  color: var(--ink);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
   /* An unbroken token (a long path, hash, URL) wraps inside the message
      column instead of pushing it wider. */
   overflow-wrap: anywhere;

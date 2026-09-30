@@ -14,7 +14,6 @@ import { useNavigate } from "../navigation";
 import { saveArtifactContent } from "./library-artifacts";
 import { APP_ROUTES, matchesRoute } from "../routes";
 import type { SessionUser } from "../session";
-import { isWorkbenchPath } from "../workbench-path";
 import { StageTopBar } from "./stage-top-bar";
 import {
   useCanvasColumnArtifact,
@@ -128,16 +127,26 @@ export function AppShell({
   // Keyed by path so any navigation closes the phone-width sidebar.
   const [sidebarOpenFor, setSidebarOpenFor] = useState<string | null>(null);
   const sidebarOpen = sidebarOpenFor === path;
-  // Desktop collapse. The chat and home screens carry no `StageTopBar`, so
-  // they always show the sidebar rather than leave no way back.
+  // Desktop collapse; Cmd/Ctrl+B and each page's toggle button flip it.
   const [collapsed, setCollapsed] = useState(false);
   const narrow = useIsNarrow();
-  const collapsible = path !== "/" && !isWorkbenchPath(path);
-  const sidebarCollapsed = collapsed && collapsible;
+  const sidebarCollapsed = collapsed;
   const toggleSidebar = () => {
     if (isNarrow()) setSidebarOpenFor(sidebarOpen ? null : path);
     else setCollapsed(!collapsed);
   };
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || event.key.toLowerCase() !== "b") {
+        return;
+      }
+      event.preventDefault();
+      if (isNarrow()) setSidebarOpenFor((current) => (current === path ? null : path));
+      else setCollapsed((current) => !current);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [path]);
   useEffect(() => {
     if (!sidebarOpen) return;
     const onKey = (event: KeyboardEvent) => {

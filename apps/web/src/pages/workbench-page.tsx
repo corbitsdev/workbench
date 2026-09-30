@@ -3,24 +3,29 @@
 
 import { Button, EmptyState, PageShell, Skeleton } from "@corbits/react-ui";
 import { toast } from "@corbits/react-ui/ui/toast";
-import { WarningCircle } from "@/lib/icons";
+import { PanelLeft, WarningCircle } from "@/lib/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 import { IdentityAvatar } from "@/chat/avatar";
 import { Composer } from "@/chat/composer";
+import { DayDivider, isSameDay } from "@/chat/day-divider";
+import { SystemLine } from "@/chat/system-line";
+import "@/chat/thread.css";
 import { Markdown } from "@/chat/markdown";
 import { MessageAttachments } from "@/chat/message-attachments";
 import { resolveMessagePackage } from "@/chat/deployable-package";
 import { stripRoster } from "@/chat/workbench-roster";
 import {
   ancestorChain,
+  listChatAgents,
   listWorkbenchParticipants,
   readWorkbench,
   resolveAvatarName,
   sameAddress,
   sendToWorkbench,
   subscribeToInbox,
+  type ChatAgent,
   type WorkbenchMessage,
   type WorkbenchParticipant,
 } from "@/chat/threads-api";
@@ -40,6 +45,8 @@ import { MembersTab } from "../bench/members-tab";
 import { ToolsTab } from "../bench/tools-tab";
 import { WorkflowsTab } from "../bench/workflows-tab";
 import { useBench } from "../bench-context";
+import { SidebarToggleContext } from "../shell/sidebar-toggle";
+import { useWorkerRole } from "../worker-role-query";
 import { createFetchStockHub } from "../needs-converge";
 import { workbenchKeys } from "../chat-path";
 import { tenantKeys } from "../query-client";
@@ -50,14 +57,22 @@ import { isClassifiedInferenceFailureText } from "@/chat/inference-failure";
 import { redeployWorkbenchAgent } from "../workbench-create";
 import { workbenchIdFromPath } from "../workbench-path";
 
-// A textarea placeholder can't ellipsize, so a long bench name is dropped.
-const PLACEHOLDER_NAME_MAX = 18;
 function messagePlaceholder(name: string | undefined): string {
-  return name !== undefined && name.length <= PLACEHOLDER_NAME_MAX ? `Message ${name}` : "Message";
+  return name === undefined ? "Message" : `Message ${name}`;
 }
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
+}
+
+function WorkerRoleText({
+  tenantId,
+  agent,
+}: {
+  readonly tenantId: string;
+  readonly agent: ChatAgent;
+}) {
+  return <span className="chat-thread-role">{useWorkerRole(tenantId, agent)}</span>;
 }
 
 function WorkbenchMessageRow({
@@ -65,6 +80,7 @@ function WorkbenchMessageRow({
   participants,
   workbenchTenantId,
   rosterReady,
+  chatAgents,
   onReply,
 }: {
   readonly message: WorkbenchMessage;
@@ -72,6 +88,7 @@ function WorkbenchMessageRow({
   readonly workbenchTenantId: string;
   /** False until the roster resolves, so a raw run id never shows as sender. */
   readonly rosterReady: boolean;
+  readonly chatAgents: readonly ChatAgent[];
   /** Undefined in the sub-thread panel, where a row is read-only context. */
   readonly onReply?: (message: WorkbenchMessage) => void;
 }) {
@@ -101,6 +118,8 @@ function WorkbenchMessageRow({
         : message.body;
   const { pkg, renderedBody } = resolveMessagePackage(message.attachments, body);
   const own = message.author === "me";
+  const chatAgent =
+    resolved?.kind === "agent" ? chatAgents.find((agent) => agent.id === resolved.id) : undefined;
   const time = new Date(message.at);
   const navigate = useNavigate();
   // The wire carries no error kind, so the existing preamble classifier decides.
@@ -138,7 +157,7 @@ function WorkbenchMessageRow({
   }
   return (
     <div className="chat-thread-message" data-author={message.author}>
-      <span className="shell-ch-avatar">
+      <span className="chat-thread-avatar">
         {rosterReady ? (
           <IdentityAvatar
             kind={kind}
@@ -152,6 +171,9 @@ function WorkbenchMessageRow({
       <div className="chat-thread-body">
         <div className="chat-thread-head">
           {rosterReady ? <b>{avatarName}</b> : <Skeleton className="h-4 w-20" />}
+          {chatAgent === undefined ? null : (
+            <WorkerRoleText tenantId={workbenchTenantId} agent={chatAgent} />
+          )}
           {Number.isNaN(time.getTime()) ? null : (
             <time dateTime={message.at}>
               {time.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
@@ -219,6 +241,12 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
     refetchInterval: (query) =>
       (query.state.data ?? []).some((p) => p.kind === "agent" && p.address === "") ? 3000 : false,
   });
+  const chatAgentsQuery = useQuery({
+    queryKey: tenantKeys.agents(workbenchTenantId),
+    queryFn: () => listChatAgents(workbenchTenantId),
+  });
+  const chatAgents = chatAgentsQuery.data ?? [];
+  const sidebar = useContext(SidebarToggleContext);
   const timeline = useQuery({
     queryKey: workbenchKeys.timeline(workbenchTenantId),
     queryFn: () => readWorkbench(workbenchTenantId),
@@ -294,6 +322,13 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
     onError: () => queryClient.setQueryData(workbenchKeys.pendingTurn(workbenchTenantId), null),
   });
 
+  const creator = roster.find((participant) => participant.kind === "person");
+  const createdLine =
+    agents[0] !== undefined && creator !== undefined ? (
+      <SystemLine>
+        <b>{agents[0].name}</b> joined · <b>{creator.name}</b> created this workbench
+      </SystemLine>
+    ) : null;
   const openedChain = openThread === null ? [] : ancestorChain(messages, openThread);
   const opened = openedChain.at(-1);
   const failure: unknown = timeline.error ?? participants.error;
@@ -321,6 +356,18 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
       ))}
       <div className="wb" data-drawer={drawerOpen ? "open" : "closed"}>
         <div className="wb-thread workbench-layout">
+          <div className="wb-corner">
+            <button
+              type="button"
+              className="wb-corner-toggle"
+              aria-label="Toggle sidebar"
+              aria-expanded={sidebar?.expanded ?? true}
+              title="Toggle sidebar (Ctrl+B)"
+              onClick={sidebar?.toggle}
+            >
+              <PanelLeft aria-hidden="true" />
+            </button>
+          </div>
           <BenchPill
             benchName={tenant.data?.name ?? "Workbench"}
             worker={agents[0]}
@@ -331,18 +378,33 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
           />
           <div className="workbench-main">
             <div className="workbench-main-scroll">
-              <PageShell width="prose" className="page-fill">
+              <div className="timeline-inner">
                 <div className="chat-thread-messages">
-                  {messages.map((message) => (
-                    <WorkbenchMessageRow
-                      key={message.id}
-                      message={message}
-                      participants={roster}
-                      workbenchTenantId={workbenchTenantId}
-                      rosterReady={participants.data !== undefined}
-                      onReply={(target) => setOpenThread(target.messageId)}
-                    />
-                  ))}
+                  {messages.map((message, index) => {
+                    const at = new Date(message.at);
+                    const previous = messages[index - 1];
+                    const previousAt = previous === undefined ? undefined : new Date(previous.at);
+                    const validAt = !Number.isNaN(at.getTime());
+                    const newDay =
+                      validAt &&
+                      (previousAt === undefined ||
+                        Number.isNaN(previousAt.getTime()) ||
+                        !isSameDay(at, previousAt));
+                    return (
+                      <Fragment key={message.id}>
+                        {newDay ? <DayDivider date={at} /> : null}
+                        {index === 0 && createdLine !== null ? createdLine : null}
+                        <WorkbenchMessageRow
+                          message={message}
+                          participants={roster}
+                          workbenchTenantId={workbenchTenantId}
+                          rosterReady={participants.data !== undefined}
+                          chatAgents={chatAgents}
+                          onReply={(target) => setOpenThread(target.messageId)}
+                        />
+                      </Fragment>
+                    );
+                  })}
                   <PendingOpeningMessage
                     workbenchTenantId={workbenchTenantId}
                     participants={roster}
@@ -352,10 +414,10 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                 {send.error === null ? null : (
                   <p className="chat-thread-error">{errorText(send.error)}</p>
                 )}
-              </PageShell>
+              </div>
             </div>
             <div className="workbench-main-composer">
-              <PageShell width="full" className="page-fill">
+              <div>
                 <ProviderSkipBanner />
                 <Composer
                   placeholder={
@@ -372,7 +434,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                     setVoiceOpen(true);
                   }}
                 />
-              </PageShell>
+              </div>
             </div>
           </div>
           {opened === undefined ? null : (
@@ -391,6 +453,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                     participants={roster}
                     workbenchTenantId={workbenchTenantId}
                     rosterReady={participants.data !== undefined}
+                    chatAgents={chatAgents}
                   />
                 ))}
               </div>
