@@ -15,8 +15,15 @@
   font-weight: 800;
 }
 
+.sb-tools {
+  gap: 10px;
+  padding: 0 20px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
 .sb-tools svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   stroke-width: 2;
 }
