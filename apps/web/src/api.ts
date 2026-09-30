@@ -86,20 +86,12 @@ export type PrincipalsPage = Paginated<Principal>;
 /** An arktype schema, seen as the validating call every `Type` provides. */
 type Validator<T> = (data: unknown) => T | ArkErrors;
 
-// Pass a module-level schema so identity stays stable. Empty paths are
-// disabled and never fetch, so a call site with an unresolved tenant
-// can't hit the network with a broken URL.
-export function useAPIQuery<T>(
-  path: string,
-  schema: Validator<T>,
-  options?: { readonly refetchInterval?: number | false },
-): APIQuery<T> {
-  const enabled = path !== "";
-  const result = useQuery({
+/** The key and fetcher `useAPIQuery` runs, for callers that batch reads with
+ * `useQueries` and must share the same cache entry. */
+export function apiQueryOptions<T>(path: string, schema: Validator<T>) {
+  return {
     queryKey: pathToQueryKey(path),
-    enabled,
-    ...(options?.refetchInterval === undefined ? {} : { refetchInterval: options.refetchInterval }),
-    queryFn: async () => {
+    queryFn: async (): Promise<T> => {
       const response = await fetch(path, {
         headers: { accept: "application/json" },
       });
@@ -115,6 +107,21 @@ export function useAPIQuery<T>(
       }
       return parsed;
     },
+  };
+}
+
+// Pass a module-level schema so identity stays stable. Empty paths are
+// disabled and never fetch, so a call site with an unresolved tenant
+// can't hit the network with a broken URL.
+export function useAPIQuery<T>(
+  path: string,
+  schema: Validator<T>,
+  options?: { readonly refetchInterval?: number | false },
+): APIQuery<T> {
+  const result = useQuery({
+    ...apiQueryOptions(path, schema),
+    enabled: path !== "",
+    ...(options?.refetchInterval === undefined ? {} : { refetchInterval: options.refetchInterval }),
   });
   return toAPIQuery(result);
 }
