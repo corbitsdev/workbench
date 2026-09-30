@@ -6,22 +6,31 @@
 export const NEW_WORKBENCH_TITLE = "New Workbench";
 
 /** Sidebar-friendly cap — long enough for a goal phrase, short enough to scan. */
-export const AUTO_WORKBENCH_TITLE_MAX = 48;
+export const AUTO_WORKBENCH_TITLE_MAX = 40;
 
-// Truncates at a word boundary when the cut would land mid-word past
-// halfway, appending an ellipsis.
+const LEADING_FILLER =
+  /^(?:(?:hey|hi|hello|so|ok|okay)[,\s]+)?(?:(?:can|could|would|will)\s+you\s+|please\s+|pls\s+|i(?:'d| would)? (?:like|want|need) (?:you )?to\s+)+(?:please\s+)?/iu;
+
+// First sentence or clause, filler stripped, first letter capitalised, cut at
+// a word boundary with an ellipsis when it still exceeds the cap.
 export function titleFromFirstMessage(
   message: string,
   maxLength: number = AUTO_WORKBENCH_TITLE_MAX,
 ): string | undefined {
   const collapsed = message.trim().replace(/\s+/g, " ");
-  if (collapsed.length === 0) return undefined;
-  if (collapsed.length <= maxLength) return collapsed;
+  const clause = (collapsed.split(/[.!?:;]+(?:\s|$)|\s[-—–]\s/u)[0] ?? "").replace(
+    LEADING_FILLER,
+    "",
+  );
+  const cleaned = clause.replace(/[\s.,;:!?]+$/u, "");
+  if (cleaned.length === 0) return undefined;
+  const title = cleaned.charAt(0).toLocaleUpperCase() + cleaned.slice(1);
+  if (title.length <= maxLength) return title;
 
-  const sliced = collapsed.slice(0, maxLength);
+  const sliced = title.slice(0, maxLength);
   const lastSpace = sliced.lastIndexOf(" ");
   const cut = lastSpace > Math.floor(maxLength / 2) ? sliced.slice(0, lastSpace) : sliced;
-  return `${cut.replace(/[.,;:!?]+$/u, "")}…`;
+  return `${cut.replace(/[\s.,;:!?]+$/u, "")}…`;
 }
 
 // `undefined` unless the workbench is still the generic placeholder, so
