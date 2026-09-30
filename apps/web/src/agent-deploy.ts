@@ -108,13 +108,13 @@ async function renderAgentSourceTree(
     readonly mcpServers: readonly McpServerDeployment[];
   },
 ): Promise<Record<string, string>> {
-  const { MYRA_BUNDLE_BUILD_EXPORT, MYRA_DIRECTORS_BUNDLE, MYRA_WORKFLOW_BUNDLE } =
+  const { WORKER_BUNDLE_BUILD_EXPORT, WORKER_DIRECTORS_BUNDLE, WORKER_WORKFLOW_BUNDLE } =
     await import("@corbits/worker/bundle");
   return renderBundledWorkflowSourceTree({
     packageName,
-    bundle: MYRA_WORKFLOW_BUNDLE,
-    directorsBundle: MYRA_DIRECTORS_BUNDLE,
-    buildExport: MYRA_BUNDLE_BUILD_EXPORT,
+    bundle: WORKER_WORKFLOW_BUNDLE,
+    directorsBundle: WORKER_DIRECTORS_BUNDLE,
+    buildExport: WORKER_BUNDLE_BUILD_EXPORT,
     buildInput: {
       workflowId: args.slug,
       triggerAddress: args.triggerAddress,

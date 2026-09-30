@@ -1,9 +1,9 @@
 // Builds and publishes Myra's deployable definition entirely over stock
 // routes, ending with a `WorkflowDeployInput` pinned to the pushed commit.
-import { ASSISTANT_SYSTEM_PROMPT } from "@corbits/worker/prompt";
+import { WORKER_SYSTEM_PROMPT } from "@corbits/worker/prompt";
 import {
-  ASSISTANT_STEP_ID,
-  ASSISTANT_WORKFLOW_ID,
+  WORKER_STEP_ID,
+  WORKER_WORKFLOW_ID,
   artifactToolsCredentialBinding,
   artifactToolsCredentialUseRequirement,
   mcpServerCredentialBinding,
@@ -96,13 +96,13 @@ export function buildMyraDefinitionJson(
   mcpServers: readonly McpServerDeployment[],
 ): unknown {
   return {
-    id: ASSISTANT_WORKFLOW_ID,
+    id: WORKER_WORKFLOW_ID,
     // Resolved at deploy into the `hub` handle the artifact and memory tools
     // use, and granted to the run on the deployer's authority at its first
     // trigger. One credential, one binding and one requirement per package.
     credentialBindings: [
-      artifactToolsCredentialBinding(ASSISTANT_WORKFLOW_ID),
-      memoryToolsCredentialBinding(ASSISTANT_WORKFLOW_ID),
+      artifactToolsCredentialBinding(WORKER_WORKFLOW_ID),
+      memoryToolsCredentialBinding(WORKER_WORKFLOW_ID),
       ...mcpServers.map((server) => mcpServerCredentialBinding(server)),
     ],
     grantRequirements: [
@@ -114,15 +114,15 @@ export function buildMyraDefinitionJson(
     // actually reached at her run address, minted at deploy time.
     triggers: [{ type: "mail", to: triggerAddress }],
     steps: {
-      [ASSISTANT_STEP_ID]: {
+      [WORKER_STEP_ID]: {
         kind: "step",
-        id: ASSISTANT_STEP_ID,
+        id: WORKER_STEP_ID,
         agent: {
-          id: ASSISTANT_STEP_ID,
+          id: WORKER_STEP_ID,
           description:
-            "A general-purpose assistant that answers questions, drafts " +
-            "text, and reasons through problems for the team",
-          systemPrompt: ASSISTANT_SYSTEM_PROMPT,
+            "A co-worker that lives in one workbench: answers questions, " +
+            "drafts text, and gets things done for the team",
+          systemPrompt: WORKER_SYSTEM_PROMPT,
           toolFactories: [],
           capabilities: [],
           // The probe approves exactly these `(provider, model)` pairs, so
@@ -137,7 +137,7 @@ export function buildMyraDefinitionJson(
         input: { from: "trigger.payload" },
       },
     },
-    stepOrder: [ASSISTANT_STEP_ID],
+    stepOrder: [WORKER_STEP_ID],
   };
 }
 
@@ -194,18 +194,18 @@ export async function pushMyraSource(
   const triggerAddress = `assistant@${tenantDomain}`;
   // Half a megabyte of bundled entry text, needed only during setup — kept
   // out of the app's entry chunk the same way the git client is.
-  const { MYRA_BUNDLE_BUILD_EXPORT, MYRA_DIRECTORS_BUNDLE, MYRA_WORKFLOW_BUNDLE } =
+  const { WORKER_BUNDLE_BUILD_EXPORT, WORKER_DIRECTORS_BUNDLE, WORKER_WORKFLOW_BUNDLE } =
     await import("@corbits/worker/bundle");
   const tree = renderBundledWorkflowSourceTree({
     packageName: MYRA_SOURCE_CONFIG.packageName,
-    bundle: MYRA_WORKFLOW_BUNDLE,
-    directorsBundle: MYRA_DIRECTORS_BUNDLE,
-    buildExport: MYRA_BUNDLE_BUILD_EXPORT,
+    bundle: WORKER_WORKFLOW_BUNDLE,
+    directorsBundle: WORKER_DIRECTORS_BUNDLE,
+    buildExport: WORKER_BUNDLE_BUILD_EXPORT,
     buildInput: {
-      workflowId: ASSISTANT_WORKFLOW_ID,
+      workflowId: WORKER_WORKFLOW_ID,
       triggerAddress,
       inferencePreferences: declaredSources.map((source) => ({ ...source })),
-      systemPrompt: ASSISTANT_SYSTEM_PROMPT,
+      systemPrompt: WORKER_SYSTEM_PROMPT,
       hubCredentialId,
       mcpServers,
     },
@@ -282,7 +282,7 @@ export async function deployMyraSource(
   // Minted before the push: the definition binds this credential by name
   // and requires its use by id, so it must exist before the source does.
   const hubCredentialId = await ensureAgentHubCredential(
-    { tenantId: args.tenantId, definitionId: ASSISTANT_WORKFLOW_ID, assetId },
+    { tenantId: args.tenantId, definitionId: WORKER_WORKFLOW_ID, assetId },
     fetchImpl,
   );
   // The catalogs come out of the stored credentials, so a redeploy never

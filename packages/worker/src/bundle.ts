@@ -5,11 +5,11 @@
 import bundleText from "../bundle/workflow-bundle.js?raw";
 import directorsText from "../bundle/directors-bundle.js?raw";
 
-/** One self-contained ESM module exporting `MYRA_BUNDLE_BUILD_EXPORT`. */
-export const MYRA_WORKFLOW_BUNDLE: string = bundleText;
+/** One self-contained ESM module exporting `WORKER_BUNDLE_BUILD_EXPORT`. */
+export const WORKER_WORKFLOW_BUNDLE: string = bundleText;
 
 /** One self-contained ESM module exporting the definition's directors. */
-export const MYRA_DIRECTORS_BUNDLE: string = directorsText;
+export const WORKER_DIRECTORS_BUNDLE: string = directorsText;
 
 /** The bundle export the rendered entry calls with per-deploy values. */
-export const MYRA_BUNDLE_BUILD_EXPORT = "buildMyraWorkflow";
+export const WORKER_BUNDLE_BUILD_EXPORT = "buildWorkerWorkflow";

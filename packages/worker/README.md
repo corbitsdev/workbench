@@ -1,6 +1,6 @@
 # @corbits/worker
 
-Mail-triggered conversational workflow with a general-purpose assistant agent
+Mail-triggered conversational workflow for a bench worker
 
 ## Deploy from the npm registry
 

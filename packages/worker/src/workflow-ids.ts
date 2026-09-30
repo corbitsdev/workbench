@@ -1,4 +1,4 @@
-// The workflow/step ids for Myra's mail-triggered assistant definition, and
+// The workflow/step ids for the worker's mail-triggered definition, and
 // the hub-credential facts a deployer and the definition must agree on.
 // Split from the prompt so the prompt module stays prompt-only, and kept
 // free of the runtime so a browser can import it.
@@ -7,8 +7,8 @@ import type { McpTool } from "@corbits/mcp";
 
 export type { McpTool };
 
-export const ASSISTANT_WORKFLOW_ID = "wf_assistant";
-export const ASSISTANT_STEP_ID = "assistant";
+export const WORKER_WORKFLOW_ID = "wf_worker";
+export const WORKER_STEP_ID = "worker";
 
 /** The tool packages the hub credential is bound to; also the consumers the
  * credential-use grants are conditioned on. One credential per agent serves
