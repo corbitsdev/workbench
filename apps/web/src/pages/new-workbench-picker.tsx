@@ -1,14 +1,13 @@
 // A new workbench starts from one message: creating it deploys its agent and
 // posts the message so the worker starts.
 
-import { Button } from "@corbits/react-ui";
 import { toast } from "@corbits/react-ui/ui/toast";
 import { WorkbenchLoadingState } from "@/chat";
-import { useState } from "react";
+import { Composer } from "@/chat/composer";
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { reportError } from "@corbits/error-sink";
 
-import { Microphone, Paperclip } from "@/lib/icons";
 import { useBench } from "../bench-context";
 import { workbenchKeys } from "../chat-path";
 import { NEW_WORKBENCH_TITLE, titleFromFirstMessage } from "@/auto-workbench-title";
@@ -36,7 +35,16 @@ export function NewWorkbenchPickerRoute() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { selectedTenantId } = useBench();
-  const [prompt, setPrompt] = useState("");
+
+  // Autofocus keeps the field quiet; the ring appears once Tab is used.
+  const [keyboard, setKeyboard] = useState(false);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Tab") setKeyboard(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const create = useMutation({
     mutationFn: ({
@@ -74,16 +82,15 @@ export function NewWorkbenchPickerRoute() {
     },
   });
 
-  function submit() {
-    const trimmed = prompt.trim();
-    if (trimmed === "" || selectedTenantId === null || create.isPending) return;
-    create.mutate({ benchTenantId: selectedTenantId, openingMessage: trimmed });
+  function submit(text: string) {
+    if (selectedTenantId === null || create.isPending) return;
+    create.mutate({ benchTenantId: selectedTenantId, openingMessage: text });
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar crumbs={[{ label: "New" }]} />
-      <div className="new-wrap">
+      <div className="new-wrap" data-keyboard={keyboard ? "" : undefined}>
         {create.isPending ? (
           // `delayMs={0}`: a genuine wait the instant the person sends.
           <WorkbenchLoadingState delayMs={0} title="Setting up your workbench…" />
@@ -91,59 +98,15 @@ export function NewWorkbenchPickerRoute() {
           <>
             <ProviderSkipBanner />
             <h1 className="new-title">What should we work on?</h1>
-            <form
-              className="new-composer"
-              onSubmit={(event) => {
-                event.preventDefault();
-                submit();
-              }}
-            >
-              <textarea
-                className="new-composer-input"
-                aria-label="What should we work on?"
-                placeholder="Describe the job — your co-worker sets up the rest"
-                value={prompt}
-                rows={1}
-                autoFocus
-                onChange={(event) => setPrompt(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    submit();
-                  }
-                }}
-              />
-              <div className="new-composer-row">
-                {/* Attach: no stock attachment path exists on the new-workbench message. */}
-                <button
-                  type="button"
-                  className="new-icon-btn"
-                  aria-label="Attach"
-                  title="Attachments arrive once a workbench exists"
-                  disabled
-                >
-                  <Paperclip />
-                </button>
-                {/* Dictate: voice mode belongs to an open workbench, so it is unavailable here. */}
-                <button
-                  type="button"
-                  className="new-icon-btn"
-                  aria-label="Dictate"
-                  title="Voice starts inside a workbench"
-                  disabled
-                >
-                  <Microphone />
-                </button>
-                <span className="new-composer-spacer" />
-                <Button
-                  type="submit"
-                  aria-label="Start this workbench"
-                  disabled={prompt.trim() === "" || selectedTenantId === null}
-                >
-                  Start
-                </Button>
-              </div>
-            </form>
+            <Composer
+              placeholder="Describe the job — your co-worker sets up the rest"
+              busy={false}
+              disabled={selectedTenantId === null}
+              autoFocus
+              sendLabel="Start this workbench"
+              voiceUnavailable="Voice starts inside a workbench"
+              onSend={submit}
+            />
             <p className="new-hint">
               No templates. Your co-worker asks what it needs, connects tools with you, and suggests
               skills and workflows as you go.
