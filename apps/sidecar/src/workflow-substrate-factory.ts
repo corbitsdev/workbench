@@ -842,6 +842,10 @@ export function createSidecarRunChild(deps: SidecarRunChildDeps): RunChildWorkfl
       childRunId,
       parentRunId,
       onEvent,
+      // Terminal: the caller awaits this child's terminal rather than driving
+      // it across parks, and no signal can be addressed to a child run, so a
+      // park inside it has nothing that could answer it.
+      hasUpstreamSignalResolver: false,
       ...(credentialMaterial !== undefined ? { materialCell: credentialMaterial } : {}),
     });
     try {
@@ -918,7 +922,14 @@ export function createSidecarSpawnSuspendableChild(deps: SidecarRunChildDeps): R
       childRunId,
       parentRunId,
       onEvent,
-      // A grandchild spawned from the body inherits this through the recursive spawnChild.
+      // The run's live credential-material cell so the body's inference resolves
+      // its source secret against the parent's current delivery; a grandchild
+      // spawned from the body inherits it through the recursive spawnChild.
+      //
+      // Park-aware: the container drives this body across its parks and relays
+      // a decision back down onto the body's own channel, so a park here is
+      // answerable even though the body run carries no address of its own.
+      hasUpstreamSignalResolver: true,
       ...(credentialMaterial !== undefined ? { materialCell: credentialMaterial } : {}),
     });
 
@@ -1001,6 +1012,14 @@ async function buildChildRunEnv(args: {
   onEvent: (event: InferenceEvent) => void;
   /** Absent when a non-sidecar executor carries no credential material, leaving the child's inference reader unset. */
   materialCell?: CredentialMaterialCell;
+  /**
+   * Whether a park in this child can be answered from outside it. The two
+   * seams that share this builder differ precisely here, so neither gets a
+   * default: a suspendable body is driven across its parks by a container
+   * that relays a decision back down, while a terminal child has no address
+   * and no relay above it.
+   */
+  hasUpstreamSignalResolver: boolean;
 }): Promise<{
   env: WorkflowRuntimeEnv;
   signalChannel: ReturnType<typeof createWorkflowHostSignalChannel>;
@@ -1165,6 +1184,7 @@ async function buildChildRunEnv(args: {
     clock,
     newId,
     drain,
+    hasUpstreamSignalResolver: args.hasUpstreamSignalResolver,
     ...(loopFns !== undefined ? { loopFns } : {}),
   };
   // Assigned after the env literal since the iteration host closes over env.

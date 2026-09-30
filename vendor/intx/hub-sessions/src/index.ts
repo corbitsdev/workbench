@@ -5,6 +5,7 @@ export {
 } from "./agent-repo";
 export {
   createSessionService,
+  recoverSenderDeploy,
   SessionLaunchError,
   bridgeOrchestratorDeployContent,
   deployCodeSourcedWorkflow,
@@ -40,10 +41,12 @@ export {
   type OAuthLoginGateOutcome,
   type OAuthLoginRequestOutcome,
   DEFAULT_OAUTH_LOGIN_TIMEOUT_MS,
+  type AllocatedSenderDeployAttempt,
   type SidecarAuthIdentity,
   type SidecarAuthenticator,
   type AllocatedSidecarTarget,
   type SidecarAllocationRouter,
+  SidecarIdentityValidationError,
   createSidecarCredentialResolver,
   createSidecarTokenAuthenticator,
   type CreateSidecarTokenAuthenticatorDeps,

@@ -33,6 +33,6 @@
     "typescript": "catalog:"
   },
   "peerDependencies": {
-    "@intx/log": "0.3.0"
+    "@intx/log": "0.4.0"
   }
 }

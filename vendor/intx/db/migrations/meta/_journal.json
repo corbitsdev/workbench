@@ -680,6 +680,13 @@
       "when": 1789100000002,
       "tag": "0097_sidecar_destroy_failed",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1789466440782,
+      "tag": "0098_sidecar_initialization",
+      "breakpoints": true
     }
   ]
 }
