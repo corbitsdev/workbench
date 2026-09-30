@@ -4,19 +4,12 @@ import {
   RichEmptyState,
   SelectionCheckbox,
   Skeleton,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
   artifactKindLabel,
   formatRelativeTime,
   useListSelection,
 } from "@corbits/react-ui";
-import { Menu, MenuContent, MenuItem, MenuTrigger } from "@corbits/react-ui/ui/menu";
 import { toast } from "@corbits/react-ui/ui/toast";
-import type { SelectionCheckboxState, UseListSelectionResult } from "@corbits/react-ui";
+import type { UseListSelectionResult } from "@corbits/react-ui";
 import {
   ArtifactRenderer,
   artifactMatchesLibraryKindSegment,
@@ -28,16 +21,9 @@ import {
   sortArtifacts,
   workflowRunIdFromSource,
 } from "@/library";
-import type { ArtifactSort, ArtifactSummary } from "@/library";
+import type { ArtifactSummary } from "@/library";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  ArrowsDownUp,
-  ArrowSquareOut,
-  FileText,
-  LinkSimple as LinkIcon,
-  Stack,
-  X,
-} from "@/lib/icons";
+import { ArrowSquareOut, LinkSimple as LinkIcon, Stack, X } from "@/lib/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { describeApiError, ListSkeleton, QueryView, SignedOutNotice } from "@/lib/api-query";
@@ -51,7 +37,7 @@ import {
 } from "../api";
 import { isAdditiveSelectClick, isRowActivationKey } from "../activatable-row";
 import { useBench } from "../bench-context";
-import "./library-page.css";
+import { ListCard, ListFilter } from "./library-list";
 import { readLastWorkbenchId } from "../last-workbench";
 import { consumePendingLibraryUpload, LIBRARY_UPLOAD_EVENT } from "../library-upload";
 import { resolveLibraryWorkbenchScope } from "../library-workbench-scope";
@@ -74,11 +60,6 @@ import {
 import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
 
-const SORT_LABEL: Record<ArtifactSort, string> = {
-  newest: "Newest first",
-  oldest: "Oldest first",
-};
-
 function ArtifactRows({
   artifacts,
   now,
@@ -92,9 +73,6 @@ function ArtifactRows({
   readonly onSelect: (id: string) => void;
   readonly selection: UseListSelectionResult<string>;
 }) {
-  const allSelected = artifacts.length > 0 && selection.selectedCount === artifacts.length;
-  const headerChecked: SelectionCheckboxState =
-    selection.selectedCount === 0 ? false : allSelected ? true : "indeterminate";
   // `useListSelection` hands back ids in toggle order, not row order — a
   // bottom-up shift-select would otherwise copy links out of visible order.
   const visibleOrder = useMemo(
@@ -103,78 +81,66 @@ function ArtifactRows({
   );
 
   return (
-    <Table aria-label="Artifacts">
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-10">
-            <SelectionCheckbox
-              checked={headerChecked}
-              onToggle={() => (allSelected ? selection.clear() : selection.selectAll())}
-              rowLabel="all artifacts"
-              ariaLabel="Select all artifacts"
-              className="opacity-100"
-            />
-          </TableHead>
-          <TableHead>Title</TableHead>
-          <TableHead>Kind</TableHead>
-          <TableHead>Updated</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {artifacts.map((artifact) => {
-          const isSelected = selection.isSelected(artifact.id);
-          const selectionIds =
-            isSelected && selection.selectedCount > 1
-              ? [...selection.selectedIds].sort(
-                  (a, b) => (visibleOrder.get(a) ?? 0) - (visibleOrder.get(b) ?? 0),
-                )
-              : [artifact.id];
-          return (
-            <TableRow
-              key={artifact.id}
-              data-state={selectedId === artifact.id ? "selected" : undefined}
-              data-ctx-artifact={artifact.id}
-              data-ctx-artifact-selected-ids={selectionIds.join(",")}
-              className="group cursor-pointer"
-              role="button"
-              tabIndex={0}
-              onClick={(event: ReactMouseEvent) => {
-                if (event.shiftKey || isAdditiveSelectClick(event)) {
-                  selection.toggle(artifact.id, { shiftKey: event.shiftKey });
-                  return;
-                }
-                onSelect(artifact.id);
-              }}
-              onKeyDown={(event) => {
-                if (!isRowActivationKey(event.key)) return;
-                event.preventDefault();
-                onSelect(artifact.id);
-              }}
-            >
-              <TableCell onClick={(event) => event.stopPropagation()}>
-                <SelectionCheckbox
-                  checked={isSelected}
-                  onToggle={(modifiers) => selection.toggle(artifact.id, modifiers)}
-                  rowLabel={artifact.title}
-                />
-              </TableCell>
-              <TableCell className="font-medium">
-                <span className="library-row-title">
-                  <FileText aria-hidden="true" className="library-row-icon" />
-                  {artifact.title}
-                </span>
-              </TableCell>
-              <TableCell className="text-muted-foreground">
-                {artifactKindLabel(artifact.kind)}
-              </TableCell>
-              <TableCell className="text-muted-foreground">
-                {formatRelativeTime(artifact.updatedAt ?? artifact.createdAt, now)}
-              </TableCell>
-            </TableRow>
-          );
-        })}
-      </TableBody>
-    </Table>
+    <ListCard
+      label="Artifacts"
+      columns="minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 0.8fr) auto"
+      heads={["Name", "From", "Updated", ""]}
+    >
+      {artifacts.map((artifact) => {
+        const isSelected = selection.isSelected(artifact.id);
+        const selectionIds =
+          isSelected && selection.selectedCount > 1
+            ? [...selection.selectedIds].sort(
+                (a, b) => (visibleOrder.get(a) ?? 0) - (visibleOrder.get(b) ?? 0),
+              )
+            : [artifact.id];
+        return (
+          <li
+            key={artifact.id}
+            className="lib-row"
+            data-link
+            data-state={selectedId === artifact.id ? "selected" : undefined}
+            data-ctx-artifact={artifact.id}
+            data-ctx-artifact-selected-ids={selectionIds.join(",")}
+            role="button"
+            tabIndex={0}
+            onClick={(event: ReactMouseEvent) => {
+              if (event.shiftKey || isAdditiveSelectClick(event)) {
+                selection.toggle(artifact.id, { shiftKey: event.shiftKey });
+                return;
+              }
+              onSelect(artifact.id);
+            }}
+            onKeyDown={(event) => {
+              if (!isRowActivationKey(event.key)) return;
+              event.preventDefault();
+              onSelect(artifact.id);
+            }}
+          >
+            <span className="lib-cell lib-name">{artifact.title}</span>
+            <span className="lib-cell lib-cell--soft">{artifact.from ?? "—"}</span>
+            <span className="lib-cell">
+              {formatRelativeTime(artifact.updatedAt ?? artifact.createdAt, now)}
+            </span>
+            <span className="lib-cell lib-cell--end" onClick={(event) => event.stopPropagation()}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => onSelect(artifact.id)}
+              >
+                Preview
+              </Button>
+              <SelectionCheckbox
+                checked={isSelected}
+                onToggle={(modifiers) => selection.toggle(artifact.id, modifiers)}
+                rowLabel={artifact.title}
+              />
+            </span>
+          </li>
+        );
+      })}
+    </ListCard>
   );
 }
 
@@ -276,8 +242,6 @@ function PreviewPane({
   );
 }
 
-// Every control lives in `StageTopBar`'s action slot (DESIGN.md -> Pages
-// & Routing) — a page body never floats its own.
 export function LibraryPage({
   artifacts,
   now,
@@ -292,9 +256,6 @@ export function LibraryPage({
   previewLoading = false,
   previewError = null,
   tenantId = null,
-  workbenchScope = null,
-  scope = "all",
-  onScopeChange,
 }: {
   readonly artifacts: readonly ArtifactSummary[];
   readonly now?: number;
@@ -312,18 +273,8 @@ export function LibraryPage({
    * new tab" / iframe affordance is simply absent without one (a
    * standalone render with no bench tenant, e.g. these page tests). */
   readonly tenantId?: string | null;
-  /** The workbench the person just came from, if any — drives the
-   * "This workbench" pill. `null` when Artifacts was reached with no workbench
-   * in view, in which case the lens has nothing to offer and stays hidden. */
-  readonly workbenchScope?: { readonly title: string } | null;
-  /** Which lens is active: this one workbench's files, or every workbench
-   * this bench owns. Uncontrolled callers (tests, standalone renders) get
-   * "all" and no toggle, same as every other optional-controlled prop here. */
-  readonly scope?: "workbench" | "all";
-  readonly onScopeChange?: (scope: "workbench" | "all") => void;
 }) {
   const [localQuery, setLocalQuery] = useState("");
-  const [sort, setSort] = useState<ArtifactSort>("newest");
   const [localSelected, setLocalSelected] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -336,9 +287,9 @@ export function LibraryPage({
     () =>
       sortArtifacts(
         onQueryChange === undefined ? filterArtifacts(artifacts, activeQuery) : artifacts,
-        sort,
+        "newest",
       ),
-    [artifacts, activeQuery, sort, onQueryChange],
+    [artifacts, activeQuery, onQueryChange],
   );
 
   const visibleIds = useMemo(() => visible.map((artifact) => artifact.id), [visible]);
@@ -384,92 +335,14 @@ export function LibraryPage({
               : `${artifacts.length} artifacts`
             : artifactKindLabel(selectedSummary.kind)
         }
-        filter={{
-          label: "Filter artifacts",
-          placeholder: "Filter by name",
-          value: activeQuery,
-          onChange: setActiveQuery,
-        }}
         actions={
-          <>
-            {selectedSummary !== null ? (
-              // An action, not a filter. Used to say bare "All", which read
-              // as a third scope option next to "All workbenches".
-              <Button variant="ghost" size="sm" onClick={() => select(null)}>
-                Back to artifacts
-              </Button>
-            ) : null}
-            {workbenchScope !== null && onScopeChange !== undefined ? (
-              // Below lg the segmented group is hidden; the overflow menu
-              // in this same slot is the way to reach All workbenches.
-              <>
-                <div
-                  role="group"
-                  aria-label="Artifacts scope"
-                  className="hidden items-center gap-0.5 rounded-md border border-border p-0.5 lg:flex"
-                >
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={scope === "workbench" ? "outline" : "ghost"}
-                    aria-pressed={scope === "workbench"}
-                    onClick={() => onScopeChange("workbench")}
-                  >
-                    {workbenchScope.title}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={scope === "all" ? "outline" : "ghost"}
-                    aria-pressed={scope === "all"}
-                    onClick={() => onScopeChange("all")}
-                  >
-                    All workbenches
-                  </Button>
-                </div>
-                <div className="lg:hidden">
-                  <Menu>
-                    <MenuTrigger asChild>
-                      <Button type="button" size="sm" variant="ghost" aria-label="Artifacts scope">
-                        {scope === "all" ? "All workbenches" : workbenchScope.title}
-                      </Button>
-                    </MenuTrigger>
-                    <MenuContent align="end">
-                      <MenuItem onSelect={() => onScopeChange("workbench")}>
-                        {workbenchScope.title}
-                      </MenuItem>
-                      <MenuItem onSelect={() => onScopeChange("all")}>All workbenches</MenuItem>
-                    </MenuContent>
-                  </Menu>
-                </div>
-              </>
-            ) : null}
-            <Menu>
-              <MenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  aria-label={SORT_LABEL[sort]}
-                  title={SORT_LABEL[sort]}
-                >
-                  <ArrowsDownUp />
-                </Button>
-              </MenuTrigger>
-              <MenuContent align="end">
-                {(Object.keys(SORT_LABEL) as ArtifactSort[]).map((option) => (
-                  <MenuItem key={option} onSelect={() => setSort(option)}>
-                    {SORT_LABEL[option]}
-                  </MenuItem>
-                ))}
-              </MenuContent>
-            </Menu>
-            {onUpload !== undefined ? (
-              <Button size="sm" disabled={uploading === true} onClick={openPicker}>
-                {uploading === true ? "Uploading…" : "Upload"}
-              </Button>
-            ) : null}
-          </>
+          selectedSummary !== null ? (
+            // An action, not a filter. Used to say bare "All", which read
+            // as a third scope option next to "All workbenches".
+            <Button variant="ghost" size="sm" onClick={() => select(null)}>
+              Back to artifacts
+            </Button>
+          ) : undefined
         }
       />
       {onUpload !== undefined ? (
@@ -497,6 +370,7 @@ export function LibraryPage({
       <div className="flex min-h-0 flex-1">
         <div className="min-h-0 min-w-0 flex-1 overflow-auto">
           <PageLayout title="Artifacts" subtitle="Everything your workers made. Yours to keep.">
+            <ListFilter label="Filter artifacts" value={activeQuery} onChange={setActiveQuery} />
             {artifacts.length === 0 ? (
               <RichEmptyState
                 icon={<Stack />}
@@ -586,10 +460,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
     activity.kind === "ready"
       ? resolveLibraryWorkbenchScope(activity.workbenches, lastWorkbenchId)
       : null;
-  const [scopeOverride, setScopeOverride] = useState<"workbench" | "all" | null>(null);
-  const scope = scopeOverride ?? (workbenchScope !== null ? "workbench" : "all");
-  const scopeTenantId =
-    scope === "workbench" && workbenchScope !== null ? workbenchScope.tenantId : selectedTenantId;
+  const scopeTenantId = workbenchScope !== null ? workbenchScope.tenantId : selectedTenantId;
 
   const listPath =
     scopeTenantId === null
@@ -675,9 +546,6 @@ export function LibraryRoute({ path }: { readonly path: string }) {
           <LibraryPage
             artifacts={artifacts}
             tenantId={scopeTenantId}
-            workbenchScope={workbenchScope}
-            scope={scope}
-            onScopeChange={setScopeOverride}
             uploading={uploading}
             uploadError={uploadError}
             query={searchQuery}

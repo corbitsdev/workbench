@@ -8,13 +8,15 @@ import { ApprovalRow } from "@/chat/approval-row";
 import { IdentityAvatar } from "@/chat/avatar";
 import type { WorkbenchParticipant } from "@/chat/threads-api";
 import { libraryArtifactPath } from "@/library";
-import { FileText, FlowArrow } from "@/lib/icons";
+import { FileText, FlowArrow, Lightning } from "@/lib/icons";
 import { Link } from "@/navigation";
-import { ARTIFACTS_PATH_PREFIX, WORKFLOWS_PATH_PREFIX } from "@/path-ids";
+import { ARTIFACTS_PATH_PREFIX, SKILLS_PATH_PREFIX, WORKFLOWS_PATH_PREFIX } from "@/path-ids";
 import { tenantKeys } from "@/query-client";
 import { routineDetailPath } from "@/global-routines";
 import { scheduleSentence } from "@/pages/routines-page";
 import { listScheduledWorkflows } from "@/routines-api";
+import { skillDisplayName } from "@/skill-display-name";
+import { listSkills } from "@/skills-api";
 import { WorkbenchSchedulesPanel } from "../pages/workbench-schedules-panel";
 import { usePendingApprovals } from "../pending-approvals";
 import { benchLink } from "../shell/page-crumbs";
@@ -149,6 +151,12 @@ export function InformationTab({
           .slice(0, 2)
       : [];
 
+  const skills = useQuery({
+    queryKey: tenantKeys.skills(workbenchTenantId),
+    queryFn: () => listSkills(workbenchTenantId),
+  });
+  const shownSkills = (skills.data ?? []).slice(0, 2);
+
   return (
     <>
       <AboutSection workbenchTenantId={workbenchTenantId} />
@@ -234,6 +242,30 @@ export function InformationTab({
                 <span>{artifact.kind}</span>
               </span>
               <span className="drawer-li-m">{formatRelativeTime(artifact.updatedAt)}</span>
+            </Link>
+          ))}
+        </div>
+      </Section>
+
+      <Section
+        title="Skills"
+        action={{ to: benchLink(SKILLS_PATH_PREFIX, workbenchTenantId), label: "View all" }}
+      >
+        {skills.isLoading ? <Skeleton className="h-10 w-full" /> : null}
+        {skills.isSuccess && shownSkills.length === 0 ? (
+          <p className="workbench-info-empty-note">No skills here yet.</p>
+        ) : null}
+        <div className="drawer-list">
+          {shownSkills.map((skill) => (
+            <Link
+              key={skill.assetId}
+              to={`${SKILLS_PATH_PREFIX}/${encodeURIComponent(skill.name)}`}
+              className="drawer-li"
+            >
+              <Lightning size={16} aria-hidden="true" />
+              <span className="drawer-li-t">
+                <b>{skillDisplayName(skill)}</b>
+              </span>
             </Link>
           ))}
         </div>

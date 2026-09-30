@@ -13,6 +13,7 @@ export const ArtifactSummary = type({
   kind: "string",
   createdAt: "string",
   "updatedAt?": "string | null",
+  "from?": "string | null",
 });
 
 export type ArtifactSummary = typeof ArtifactSummary.infer;

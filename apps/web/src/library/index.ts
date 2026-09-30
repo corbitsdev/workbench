@@ -9,7 +9,7 @@ export {
   libraryArtifactIdFromPath,
 } from "./kind-filter";
 export type { LibraryKindSegment } from "./kind-filter";
-export { workflowRunIdFromSource } from "./provenance";
+export { artifactFromLabel, workflowRunIdFromSource } from "./provenance";
 export {
   ARTIFACT_RENDERER_KINDS,
   isTextDecodableMediaType,
