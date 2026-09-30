@@ -12,8 +12,9 @@
       try {
         var t = localStorage.getItem("corbits-theme:last");
         var r = document.documentElement;
-        if (t === "dark" || t === "canvas") r.setAttribute("data-theme", t);
-        if (t === "dark") r.classList.add("dark");
+        if (t !== "dark" && t !== "canvas") t = "light";
+        r.setAttribute("data-theme", t);
+        r.classList.add(t === "dark" ? "dark" : "light");
         r.style.colorScheme = t === "dark" ? "dark" : "light";
       } catch (e) {}
     </script>

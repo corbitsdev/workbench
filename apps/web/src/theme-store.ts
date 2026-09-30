@@ -1,5 +1,6 @@
 // The theme lives outside React: `data-theme` on <html> is the one switch,
-// and this store is its only writer. Light is the absence of the attribute.
+// and this store is its only writer. Light is explicit too: react-ui's
+// `prefers-color-scheme: dark` block only skips roots carrying `.light`.
 
 import { reportError } from "@corbits/error-sink";
 import { useSyncExternalStore } from "react";
@@ -31,10 +32,10 @@ function readStored(key: string): Theme {
 
 function apply(theme: Theme) {
   const root = document.documentElement;
-  if (theme === "light") root.removeAttribute("data-theme");
-  else root.setAttribute("data-theme", theme);
-  // react-ui's `dark:` variant keys off the class.
+  root.setAttribute("data-theme", theme);
+  // react-ui's `dark:` variant keys off `.dark`; its OS-dark block excludes `.light`.
   root.classList.toggle("dark", theme === "dark");
+  root.classList.toggle("light", theme !== "dark");
   root.style.colorScheme = theme === "dark" ? "dark" : "light";
 }
 
