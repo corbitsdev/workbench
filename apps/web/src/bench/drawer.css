@@ -74,3 +74,9 @@
 .drawer-grant-mode[data-effect="deny"] {
   color: var(--ink-2);
 }
+.drawer .bi-stat {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
