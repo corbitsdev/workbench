@@ -52,6 +52,21 @@ export async function migrateHub(
   config: HubMigrateConfig,
   db: Parameters<typeof runArtifactMigrations>[0],
 ): Promise<void> {
+  // Concurrent boots against one database (parallel e2e suites, rolling
+  // deploys) would race on the one-shot platform SQL's CREATE TYPE. The
+  // transaction-scoped advisory lock serializes whole migrations.
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(${MIGRATE_LOCK_KEY})`);
+    await applyMigrations(config, db);
+  });
+}
+
+const MIGRATE_LOCK_KEY = 7_460_391_205;
+
+async function applyMigrations(
+  config: HubMigrateConfig,
+  db: Parameters<typeof runArtifactMigrations>[0],
+): Promise<void> {
   const databaseUrl = databaseUrlFrom(config);
   const schema = config.schema ?? "public";
 
