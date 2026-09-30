@@ -1,3 +1,45 @@
 /* Reserved stylesheet entry for `@corbits/bench-ui/styles.css`. The
    switcher / create / members layout glue that lived here was deleted with
    those unused components; apps/web still imports this path. */
+
+.bench-tab-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bench-tab-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 10%, transparent);
+}
+.bench-tab-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.bench-tab-text > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bench-tab-tile {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+.bench-tab-mono {
+  font-family: var(--font-mono, "Space Mono", monospace);
+  font-size: 0.8rem;
+}
+.bench-tab-link {
+  font-size: 0.8rem;
+  text-decoration: underline;
+}
