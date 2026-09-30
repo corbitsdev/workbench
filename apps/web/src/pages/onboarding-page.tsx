@@ -1,38 +1,25 @@
-// A gap the install loop can't cross renders here with a retry, never a
-// silent "ready".
+// A gap the setup can't cross renders here with a retry. Setup ends at a
+// connected model; the first workbench is created from the new-workbench
+// prompt, and its worker is the first worker.
 import { Button, EmptyState } from "@corbits/react-ui";
 import { WarningCircle } from "@/lib/icons";
 import { WorkbenchLoadingState } from "@/chat";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import { ensurePrimaryTenant, runPortableClientBootstrap } from "../client-bootstrap";
+import { ensurePrimaryTenant } from "../client-bootstrap";
 import { createFetchStockHub, findOwnedTenants } from "../needs-converge";
-import { deployWorkerSource } from "../worker-deploy";
 import { useNavigate } from "../navigation";
 import { NEW_WORKBENCH_PATH } from "../routes";
 import { triggerFirstLoginProvisioning } from "../onboarding";
 import { setProviderSkipped } from "../provider-skip";
 import { OnboardingLayout } from "../onboarding/onboarding-layout";
-import {
-  ProviderConnectStep,
-  resolveExistingOffering,
-  type ExistingOffering,
-} from "../onboarding/provider-connect-step";
-import type { WorkflowDeployInput } from "../needs-list";
+import { ProviderConnectStep, resolveExistingOffering } from "../onboarding/provider-connect-step";
 import type { SessionUser } from "../session";
 
 type GateState =
   | { readonly phase: "checking" }
   | { readonly phase: "resolving-tenant" }
   | { readonly phase: "provider-setup"; readonly tenantId: string }
-  | { readonly phase: "publishing-worker" }
-  | { readonly phase: "installing"; readonly workerDeploy: WorkflowDeployInput }
-  | { readonly phase: "ready" }
-  | {
-      readonly phase: "setup-pending";
-      readonly message: string;
-      readonly refId?: string;
-    }
   | {
       readonly phase: "error";
       readonly message: string;
@@ -42,7 +29,6 @@ type GateState =
 export function OnboardingPage({ user }: { readonly user: SessionUser }) {
   const navigate = useNavigate();
   const [state, setState] = useState<GateState>({ phase: "checking" });
-  const installRef = useRef<ReturnType<typeof runPortableClientBootstrap> | null>(null);
 
   // Remembered so a reload lands in the shell instead of back here.
   function skipForNow() {
@@ -50,9 +36,9 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     navigate(NEW_WORKBENCH_PATH);
   }
 
-  // One status read per landing (plus each manual recheck): a hub that
-  // already has tenants means setup is done; an empty hub starts the
-  // converge loop immediately rather than showing a dead-end panel.
+  // One status read per landing (plus each manual recheck): a workspace
+  // with a connected model means setup is done; otherwise the workspace is
+  // ensured and the provider step starts.
   const checkStatus = useCallback(() => {
     setState({ phase: "checking" });
     void triggerFirstLoginProvisioning().then((result) => {
@@ -77,8 +63,8 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     checkStatus();
   }, [checkStatus]);
 
-  // A separate phase from "installing" because a credential connect
-  // needs a tenant id to write against.
+  // A separate phase because a credential connect needs a tenant id to
+  // write against.
   useEffect(() => {
     if (state.phase !== "resolving-tenant") return;
     let cancelled = false;
@@ -100,8 +86,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
           (existing) => {
             if (cancelled) return;
             if (existing !== null) {
-              setState({ phase: "publishing-worker" });
-              void publishAndInstall(primary.id, primary.domain, existing);
+              navigate(NEW_WORKBENCH_PATH);
               return;
             }
             setState({ phase: "provider-setup", tenantId: primary.id });
@@ -127,70 +112,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     return () => {
       cancelled = true;
     };
-    // `publishAndInstall` is defined below and stable across renders (it
-    // closes over nothing but `setState`), so it is intentionally left
-    // out of this effect's dependency list.
-  }, [state.phase, user]);
-
-  // Shared by both the already-resolved-offering path and the
-  // operator-connected path.
-  function publishAndInstall(
-    tenantId: string,
-    tenantDomain: string,
-    offering: ExistingOffering,
-  ): Promise<void> {
-    return deployWorkerSource({
-      tenantId,
-      tenantDomain,
-      sourceOfferingIds: offering.sourceOfferingIds,
-      defaultSourceOfferingId: offering.defaultSourceOfferingId,
-      declaredSources: offering.declaredSources,
-    }).then(
-      (workerDeploy) => setState({ phase: "installing", workerDeploy }),
-      (error: unknown) => {
-        setState({
-          phase: "error",
-          message:
-            error instanceof Error ? error.message : "Publishing your worker's source hit a snag.",
-        });
-      },
-    );
-  }
-
-  // Step 4: the installer itself, run once a `workerDeploy` is in hand. A
-  // converged install hands off to the shell; a stock capability gap or
-  // a hard failure surfaces here instead of retrying silently forever.
-  useEffect(() => {
-    if (state.phase !== "installing") return;
-    let cancelled = false;
-    // StrictMode re-runs this effect once; the converge deploys Worker, so a
-    // second concurrent run would deploy her twice. Reuse the in-flight one.
-    installRef.current ??= runPortableClientBootstrap(user, {
-      workerDeploy: state.workerDeploy,
-    });
-    void installRef.current.then(
-      (result) => {
-        if (cancelled) return;
-        if (result.kind === "ready") {
-          setState({ phase: "ready" });
-        } else if (result.code === "stock-capability-missing") {
-          setState({ phase: "setup-pending", message: result.gap });
-        } else {
-          setState({ phase: "error", message: result.message });
-        }
-      },
-      (error: unknown) => {
-        if (cancelled) return;
-        setState({
-          phase: "error",
-          message: error instanceof Error ? error.message : "Setting up your workbench hit a snag.",
-        });
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [state, user, navigate]);
+  }, [state.phase, user, navigate]);
 
   if (state.phase === "checking" || state.phase === "resolving-tenant") {
     return (
@@ -218,85 +140,10 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
           <div className="onboarding-content">
             <ProviderConnectStep
               tenantId={state.tenantId}
-              onConnected={(offering) => {
-                const tenantId = state.tenantId;
-                setState({ phase: "publishing-worker" });
-                // The tenant's domain never changes mid-flow — re-derive
-                // it fresh rather than threading it through state, since
-                // `resolving-tenant` already looked the tenant up once.
-                void findOwnedTenants(createFetchStockHub()).then((owned) => {
-                  const primary = owned.find((t) => t.id === tenantId);
-                  if (primary === undefined) {
-                    setState({
-                      phase: "error",
-                      message: "Your primary workbench disappeared mid-setup — please retry.",
-                    });
-                    return;
-                  }
-                  void publishAndInstall(tenantId, primary.domain, offering);
-                });
-              }}
+              onConnected={() => navigate(NEW_WORKBENCH_PATH)}
               onError={(message) => setState({ phase: "error", message })}
               onSkip={skipForNow}
             />
-          </div>
-        </div>
-      </OnboardingLayout>
-    );
-  }
-
-  if (state.phase === "publishing-worker" || state.phase === "installing") {
-    return (
-      <OnboardingLayout step={2}>
-        <div className="onboarding-phase onboarding-phase--loading" key="installing">
-          <WorkbenchLoadingState
-            delayMs={0}
-            title={
-              state.phase === "publishing-worker"
-                ? "Connecting your model…"
-                : "Getting your worker ready…"
-            }
-          />
-        </div>
-      </OnboardingLayout>
-    );
-  }
-
-  if (state.phase === "ready") {
-    return (
-      <OnboardingLayout step={3}>
-        <div className="onboarding-phase" key="ready">
-          <h1 className="onboarding-title">Your worker is ready</h1>
-          <p className="onboarding-subtitle">
-            Describe the job and your co-worker sets up the rest.
-          </p>
-          <div className="onboarding-content">
-            <div className="onboarding-actions">
-              <Button variant="primary" onClick={() => navigate("/")}>
-                Start your first workbench
-              </Button>
-            </div>
-          </div>
-        </div>
-      </OnboardingLayout>
-    );
-  }
-
-  if (state.phase === "setup-pending") {
-    return (
-      <OnboardingLayout step={2}>
-        <div className="onboarding-phase" key="setup-pending">
-          <h1 className="onboarding-title">Set up your workbench</h1>
-          <p className="onboarding-subtitle">{state.message}</p>
-          <div className="onboarding-content">
-            <div className="onboarding-actions">
-              <Button variant="primary" onClick={checkStatus}>
-                Check again
-              </Button>
-              <Button variant="ghost" onClick={skipForNow}>
-                Skip for now
-              </Button>
-            </div>
           </div>
         </div>
       </OnboardingLayout>

@@ -1,26 +1,12 @@
 // Uses only stock routes — no workbench server proxies, tables, or mounts.
-// Persisted child tenant ids let a reinstall reclaim by id, never by slug.
 
-import { WORKFLOW_CATALOG } from "@corbits/workflows/catalog";
+import { findOwnedTenants, type StockHub } from "./needs-converge";
 
-import type { ClientLogger } from "@/lib/client-log";
-
-import {
-  buildNeedsList,
-  childTenantStore,
-  type StringStorage,
-  type WorkflowDeployInput,
-} from "./needs-list";
-import {
-  convergeNeedsList,
-  createFetchStockHub,
-  findOwnedTenants,
-  StockHubCapabilityError,
-  StockHubRequestError,
-  type PrimaryThread,
-  type StockHub,
-  type StockHubCapability,
-} from "./needs-converge";
+export type ClientBootstrapAccount = {
+  readonly id: string;
+  readonly name: string;
+  readonly email: string;
+};
 
 /** Derives a stable, readable slug for the primary tenant this account is
  * about to mint — never random, so a retry after a dropped response
@@ -34,8 +20,8 @@ function primaryTenantSlug(account: ClientBootstrapAccount): string {
   return base !== undefined && base.length > 0 ? base : `home-${account.id}`;
 }
 
-/** The "0→1" ruling's execution — never hub boot, never a CLI. Never
- * mints a second root: an account that already owns one is left alone. */
+/** Never hub boot, never a CLI. Never mints a second root: an account that
+ * already owns one is left alone. */
 export async function ensurePrimaryTenant(
   account: ClientBootstrapAccount,
   hub: StockHub,
@@ -45,185 +31,5 @@ export async function ensurePrimaryTenant(
   await hub.createTenant({
     name: `${account.name}'s Workbench`,
     slug: primaryTenantSlug(account),
-  });
-}
-
-// Resolved from the catalog at runtime, never hardcoded at the call site.
-export function resolveWorkerDefinitionRefId(): string | undefined {
-  return WORKFLOW_CATALOG.find((entry) => entry.displayName === "Worker")?.assetName;
-}
-
-export type ClientBootstrapAccount = {
-  readonly id: string;
-  readonly name: string;
-  readonly email: string;
-};
-
-export type ClientBootstrapDeps = {
-  readonly hub: StockHub;
-  readonly storage: StringStorage;
-  /** The hub origin this browser talks to — scopes persisted ids per hub. */
-  readonly hubScope: string;
-  /** Override for the catalog-resolved Worker definition refId. */
-  readonly workerDefinitionRefId?: string;
-  /** Exact stock deployment inputs for Worker when she is absent. Caller
-   * config only — never synthesized here. */
-  readonly workerDeploy?: WorkflowDeployInput;
-};
-
-export type ClientBootstrapResult =
-  | {
-      readonly kind: "ready";
-      readonly primaryTenantId: string;
-      readonly createdTenantIds: readonly string[];
-      readonly primaryThreads: readonly PrimaryThread[];
-    }
-  | {
-      readonly kind: "error";
-      readonly code: "stock-capability-missing";
-      readonly capability: StockHubCapability;
-      readonly message: string;
-      /** What stock Interchange cannot do yet, in operator language. */
-      readonly gap: string;
-    }
-  | {
-      readonly kind: "error";
-      readonly code: "stock-hub-request-failed";
-      readonly operation: string;
-      readonly status: number | undefined;
-      readonly message: string;
-    }
-  | {
-      readonly kind: "error";
-      readonly code: "client-config-missing";
-      readonly message: string;
-    };
-
-/** Operator-language note per missing stock capability — the reason a
- * convergence stops, and what has to change upstream before it can
- * proceed. Surfaced alongside the typed error, never a silent skip. */
-export const UPSTREAM_GAP_NOTES: Record<StockHubCapability, string> = {
-  "primary-tenant-bootstrap":
-    "Sign-in is expected to leave exactly one owned top-level home behind, but this session shows zero or several.",
-  "deploy-workflow-inputs":
-    "The worker is absent and the client was not given the exact stock source and offering ids — supply workerDeploy from client config.",
-  "project-workflow-principal":
-    "Stock Interchange cannot carry a workflow identity into a child workbench by refId, so workbench member setup waits on an upstream capability.",
-  "principal-roles":
-    "The stock member invite route cannot assign the requested child-workbench roles.",
-  "agent-mailbox-reads":
-    "Stock Interchange exposes no per-agent mailbox search, so participant-filtered thread derivation waits on a stock search route.",
-  "thread-fork-context":
-    "Stock Interchange exposes no full thread read, so sub-thread fork context waits on a stock thread route.",
-};
-
-export async function bootstrapClientSession(
-  account: ClientBootstrapAccount,
-  deps: ClientBootstrapDeps,
-): Promise<ClientBootstrapResult> {
-  const workerDefinitionRefId = deps.workerDefinitionRefId ?? resolveWorkerDefinitionRefId();
-  if (workerDefinitionRefId === undefined) {
-    return {
-      kind: "error",
-      code: "client-config-missing",
-      message:
-        "The client catalog names no worker workflow entry, so the bootstrap cannot identify the default worker.",
-    };
-  }
-  const manifest = buildNeedsList({
-    account: { id: account.id, name: account.name, email: account.email },
-    workerDefinitionRefId,
-    ...(deps.workerDeploy === undefined ? {} : { workerDeploy: deps.workerDeploy }),
-  });
-  const store = childTenantStore(deps.storage, deps.hubScope, account.id);
-  try {
-    // The common case never pays for a primary-tenant existence probe;
-    // only the first-signup gap triggers the mint-then-retry below.
-    const report = await convergeNeedsList(manifest, deps.hub, store).catch(
-      async (cause: unknown) => {
-        if (
-          !(cause instanceof StockHubCapabilityError) ||
-          cause.capability !== "primary-tenant-bootstrap"
-        ) {
-          throw cause;
-        }
-        await ensurePrimaryTenant(account, deps.hub);
-        return convergeNeedsList(manifest, deps.hub, store);
-      },
-    );
-    return {
-      kind: "ready",
-      primaryTenantId: report.primaryTenantId,
-      createdTenantIds: report.createdTenantIds,
-      primaryThreads: report.primaryThreads,
-    };
-  } catch (cause) {
-    if (cause instanceof StockHubCapabilityError) {
-      return {
-        kind: "error",
-        code: "stock-capability-missing",
-        capability: cause.capability,
-        message: cause.message,
-        gap: UPSTREAM_GAP_NOTES[cause.capability],
-      };
-    }
-    if (cause instanceof StockHubRequestError) {
-      return {
-        kind: "error",
-        code: "stock-hub-request-failed",
-        operation: cause.operation,
-        status: cause.status,
-        message: cause.message,
-      };
-    }
-    throw cause;
-  }
-}
-
-// A converged lane logs at info, any failure at warn — never shown,
-// never gating the shell.
-export function logBootstrapResult(log: ClientLogger, result: ClientBootstrapResult): void {
-  if (result.kind === "ready") {
-    log.info("Portable client bootstrap converged", {
-      primaryTenantId: result.primaryTenantId,
-      createdTenantIds: [...result.createdTenantIds],
-    });
-  } else if (result.code === "stock-capability-missing") {
-    log.warn("Portable client bootstrap waiting on stock capability", {
-      capability: result.capability,
-      gap: result.gap,
-    });
-  } else {
-    log.warn("Portable client bootstrap failed", {
-      message: result.message,
-    });
-  }
-}
-
-/** The thrown twin of logBootstrapResult — a bootstrap that rejects (rather
- * than returning a typed error) is logged, never surfaced. */
-export function logBootstrapThrown(log: ClientLogger, error: unknown): void {
-  log.warn("Portable client bootstrap threw", {
-    message: error instanceof Error ? error.message : String(error),
-  });
-}
-
-// Both bootstrap entry points call this one helper so production ports
-// can never drift between them.
-export function runPortableClientBootstrap(
-  account: ClientBootstrapAccount,
-  overrides?: {
-    readonly workerDefinitionRefId?: string;
-    readonly workerDeploy?: WorkflowDeployInput;
-  },
-): Promise<ClientBootstrapResult> {
-  return bootstrapClientSession(account, {
-    hub: createFetchStockHub(),
-    storage: localStorage,
-    hubScope: window.location.origin,
-    ...(overrides?.workerDefinitionRefId === undefined
-      ? {}
-      : { workerDefinitionRefId: overrides.workerDefinitionRefId }),
-    ...(overrides?.workerDeploy === undefined ? {} : { workerDeploy: overrides.workerDeploy }),
   });
 }

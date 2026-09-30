@@ -32,9 +32,9 @@ import {
   type ModelResponse,
 } from "@/settings/inference";
 import { redeployWorkerForModelChange } from "@/settings/worker-model-redeploy";
+import { isDefaultWorker, listChatAgents } from "@/chat/threads-api";
+import { listWorkbenchTenants } from "@/chat/workbench-tenants";
 import { tenantKeys } from "@/query-client";
-import { finishDeferredWorkerSetup } from "@/deferred-worker-setup";
-import { useSessionUser } from "@/navigation";
 import {
   deleteCredential,
   listCredentials,
@@ -91,7 +91,6 @@ type CredentialsData = {
 
 export function CredentialsSection({ tenantId }: { readonly tenantId: string | null }) {
   const queryClient = useQueryClient();
-  const user = useSessionUser();
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<Credential | null>(null);
   const [loginId, setLoginId] = useState<string | null>(null);
@@ -135,8 +134,6 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
 
   function reload() {
     if (tenantId === null) return;
-    // A provider connected after a skipped onboarding finishes Worker's deploy.
-    if (user !== undefined) void finishDeferredWorkerSetup(user);
     void queryClient.invalidateQueries({
       queryKey: tenantKeys.credentials(tenantId),
     });
@@ -217,17 +214,22 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
           input.model,
         );
         if (newOffering.id !== offering.id) {
-          // Worker's own deployed run pins the old offering id — moving her onto
+          // Each bench's worker run pins the old offering id — moving it onto
           // the new one first, then retiring the old one, is the only order
           // that never leaves a live run pointed at a dead offering. A failed
-          // redeploy throws here and both offerings are left in place.
-          await redeployWorkerForModelChange({
-            tenantId,
-            oldOfferingId: offering.id,
-            newOfferingId: newOffering.id,
-            provider: provider.plugin,
-            newCanonicalName: input.model,
-          });
+          // redeploy throws here and both offerings are left in place. The
+          // workspace itself runs no worker.
+          for (const bench of await listWorkbenchTenants(tenantId)) {
+            const worker = (await listChatAgents(bench.id)).find(isDefaultWorker);
+            if (worker === undefined) continue;
+            await redeployWorkerForModelChange({
+              tenantId: bench.id,
+              oldOfferingId: offering.id,
+              newOfferingId: newOffering.id,
+              provider: provider.plugin,
+              newCanonicalName: input.model,
+            });
+          }
           await deleteOwnOffering(tenantId, offering.id);
         }
       }

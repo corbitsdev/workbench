@@ -243,7 +243,7 @@ export async function pushWorkerSource(
 
 /** The pure mapping this module exists to get right: the operator's
  * offering pick plus the commit just pushed, turned into the exact
- * `WorkflowDeployInput` `convergeNeedsList` needs. */
+ * `WorkflowDeployInput` the stock deploy route needs. */
 export function buildWorkerDeployInput(args: {
   assetId: string;
   commitSha: string;
@@ -271,7 +271,7 @@ export function buildWorkerDeployInput(args: {
 }
 
 /** Orchestrates the steps above and returns the `workerDeploy` input
- * ready to hand to `bootstrapClientSession`/`convergeNeedsList`. */
+ * ready to hand to the stock deploy route. */
 export async function deployWorkerSource(
   args: {
     tenantId: string;

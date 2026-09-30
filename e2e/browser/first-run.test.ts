@@ -37,7 +37,6 @@ async function signUp(page: Page, origin: string): Promise<void> {
   await page.waitForSelector("input[type=password]");
   await page.type("input[type=password]", "sk-ant-placeholder");
   await clickText(page, "button", "Connect");
-  await clickText(page, "button", "Start your first workbench");
 }
 
 async function createBench(page: Page, message: string): Promise<string> {
@@ -72,7 +71,13 @@ async function runFlow(page: Page, origin: string): Promise<void> {
   const children = tenants.filter((t) => t.parentId === workspace?.id);
   expect(children.map((t) => t.id).sort()).toEqual([...ids].sort());
 
-  // (b) each bench deploys exactly one agent (one definition asset).
+  // (b) the workspace runs no worker; each bench deploys exactly one agent
+  // (one definition asset).
+  const workspaceDeployments = await hubJson<unknown[]>(
+    page,
+    `/api/tenants/${workspace?.id}/workflows/deployments`,
+  );
+  expect(workspaceDeployments).toHaveLength(0);
   for (const id of ids) {
     const deployments = await hubJson<{ definitionAssetId: string }[]>(
       page,
@@ -81,16 +86,15 @@ async function runFlow(page: Page, origin: string): Promise<void> {
     expect(new Set(deployments.map((d) => d.definitionAssetId)).size).toBe(1);
   }
 
-  // (c) sidebar: three bench rows with short titles, plus the worker group.
+  // (c) sidebar: three bench rows with short titles.
   await page.goto(`${origin}/w/${ids[0]}`, { waitUntil: "networkidle0" });
-  await waitForText(page, "Workers");
+  await waitForText(page, "Workbenches");
   const rows = (await page.evaluate(
     `Array.from(document.querySelectorAll(".panel-stack-group")).map((g) => ({ label: g.querySelector(".shell-panel-section-label")?.textContent, names: Array.from(g.querySelectorAll(".shell-ch-name")).map((n) => n.textContent) }))`,
   )) as { label: string; names: string[] }[];
   const benches = rows.find((g) => g.label === "Workbenches")?.names ?? [];
   expect(benches).toHaveLength(3);
   for (const name of benches) expect(name.length).toBeLessThanOrEqual(40);
-  expect(rows.find((g) => g.label === "Workers")?.names.length).toBeGreaterThanOrEqual(1);
 
   // (d) no bench shows another's opening message.
   for (const [i, id] of ids.entries()) {

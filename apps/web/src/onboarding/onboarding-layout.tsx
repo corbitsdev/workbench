@@ -1,17 +1,17 @@
 import { CorbitsMark } from "@corbits/react-ui";
 import type { ReactNode } from "react";
 
-const STEP_LABELS = ["Workspace", "Model", "Worker"] as const;
+const STEP_LABELS = ["Workspace", "Model"] as const;
 
 /**
  * Single centered column with a step progress bar, matching the onboarding
- * mockup. `step` is the index of the current step (0-2; 3 = all done).
+ * mockup. `step` is the index of the current step (0-1; 2 = all done).
  */
 export function OnboardingLayout({
   step,
   children,
 }: {
-  readonly step: 0 | 1 | 2 | 3;
+  readonly step: 0 | 1 | 2;
   readonly children: ReactNode;
 }) {
   return (

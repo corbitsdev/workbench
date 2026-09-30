@@ -34,14 +34,6 @@ matches the local part case-insensitively, so both forms reach the same
 inbox: threads written before this keep their mixed-case addresses, new
 mail carries the lowercase one, and nothing is migrated.
 
-## Primary-thread root resolution
-
-`readHubSnapshot`'s caller resolves a workbench's primary-thread root from
-the recorded `primaryThreadMessageId`, falling back to `mail[0]` only for
-mail sent before that id existed. The mailbox list is assumed oldest-first;
-if the hub ever returns newest-first or unordered rows the fallback
-mistargets, so the recorded id stays authoritative.
-
 ## Sub-thread fork replay
 
 `forkSubThread` treats a fork as already sent when parent + subject +
