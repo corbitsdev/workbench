@@ -1,15 +1,24 @@
-// One worker: its instructions (editable), its model, and the workbench it
-// lives on. Permissions and delete arrive with their own screens.
+// One worker: its instructions (editable), its model, its tool permissions,
+// and the workbench it lives on.
 
 import { useState } from "react";
 import { Button, Card, CardDescription, CardTitle, PageShell, toast } from "@corbits/react-ui";
 import { reportError } from "@corbits/error-sink";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { GrantEffect } from "@intx/types";
 
 import { WorkbenchAvatar } from "@/chat/avatar";
 import { isMyraAgent, listChatAgents, type ChatAgent } from "@/chat/threads-api";
 import { ChatCircle } from "@/lib/icons";
 import { QueryView, describeApiError } from "@/lib/api-query";
+import { listTopLevelRuns } from "../agents-api";
+import {
+  createGrant,
+  listGrants,
+  listPrincipals,
+  revokeGrant,
+  type Grant,
+} from "../settings/tenancy-api";
 import { agentSlugFromSourceAssetName, deployAgentSource } from "../agent-deploy";
 import { readAgentMcpHandles, readAgentSource } from "../agent-source-read";
 import { useBench } from "../bench-context";
@@ -118,6 +127,136 @@ function InstructionsCard({
   );
 }
 
+const MODES: readonly { readonly effect: GrantEffect; readonly label: string }[] = [
+  { effect: "allow", label: "Allow" },
+  { effect: "ask", label: "Ask" },
+  { effect: "deny", label: "Deny" },
+];
+
+const TOOL_PREFIX = "tool:";
+
+/** The worker's live run principal: runtime grants belong to it, and it only
+ * exists once the worker has been triggered. */
+async function readWorkerToolGrants(tenantId: string, agent: ChatAgent) {
+  if (agent.liveAddress === null) return null;
+  const [runs, principals] = await Promise.all([
+    listTopLevelRuns(tenantId),
+    listPrincipals(tenantId),
+  ]);
+  const run = runs.find((candidate) => candidate.address === agent.liveAddress);
+  const principal = principals.find(
+    (candidate) => candidate.kind === "workflow" && candidate.refId === run?.id,
+  );
+  if (principal === undefined) return null;
+  const grants = await listGrants(tenantId, { principalId: principal.id });
+  return {
+    principalId: principal.id,
+    tools: grants
+      .filter((grant) => grant.resource.startsWith(TOOL_PREFIX) && grant.action === "invoke")
+      .sort((a, b) => a.resource.localeCompare(b.resource)),
+  };
+}
+
+function PermissionsCard({
+  tenantId,
+  agent,
+}: {
+  readonly tenantId: string;
+  readonly agent: ChatAgent;
+}) {
+  const queryClient = useQueryClient();
+  const key = [...tenantKeys.grants(tenantId), "worker", agent.id] as const;
+  const query = useQuery({ queryKey: key, queryFn: () => readWorkerToolGrants(tenantId, agent) });
+
+  // Create the new grant before revoking the old one so a failure never
+  // leaves the tool ungoverned.
+  const setMode = useMutation({
+    mutationFn: async (input: {
+      readonly principalId: string;
+      readonly grant: Grant;
+      readonly effect: GrantEffect;
+    }) => {
+      await createGrant(tenantId, {
+        principalId: input.principalId,
+        resource: input.grant.resource,
+        action: "invoke",
+        effect: input.effect,
+        origin: "creator",
+      });
+      await revokeGrant(tenantId, input.grant.id);
+    },
+    onSuccess: (_data, input) => {
+      toast(`${input.grant.resource.slice(TOOL_PREFIX.length)}: ${input.effect}`);
+    },
+    onError: (cause) => {
+      reportError(cause, { operation: "worker_permission_set", tenantId });
+      toast(describeApiError(cause, "change this permission"));
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
+  });
+
+  return (
+    <Card className="mt-4 p-5">
+      <CardTitle>Permissions</CardTitle>
+      <CardDescription>
+        What it may do without asking. Workbench grants can narrow these, never widen them.
+      </CardDescription>
+      {query.isPending ? (
+        <p className="mt-3 text-[13px] text-(--ink-3)">Loading permissions…</p>
+      ) : query.isError ? (
+        <p role="alert" className="mt-3 text-[13px] text-(--danger-ink)">
+          {describeApiError(query.error, "load these permissions")}
+        </p>
+      ) : query.data === null || query.data.tools.length === 0 ? (
+        <p className="mt-3 text-[13px] text-(--ink-3)">
+          Permissions appear here once this worker has started its first run.
+        </p>
+      ) : (
+        <div className="mt-3">
+          {query.data.tools.map((grant) => {
+            const name = grant.resource.slice(TOOL_PREFIX.length);
+            const principalId = query.data?.principalId ?? "";
+            return (
+              <div
+                key={grant.id}
+                className="grid grid-cols-[1fr_auto] items-center gap-3 border-t border-(--line) py-3 first:border-t-0 first:pt-0"
+              >
+                <b className="min-w-0 truncate font-mono text-[12.5px] font-normal">{name}</b>
+                <div
+                  role="radiogroup"
+                  aria-label={name}
+                  className="inline-flex rounded-(--r-md) bg-(--surface) p-0.5"
+                >
+                  {MODES.map((mode) => {
+                    const active = grant.effect === mode.effect;
+                    return (
+                      <button
+                        key={mode.effect}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        disabled={setMode.isPending}
+                        onClick={() => {
+                          if (!active) setMode.mutate({ principalId, grant, effect: mode.effect });
+                        }}
+                        className={`h-[26px] rounded-(--r-sm) px-2.5 text-[12.5px] font-semibold ${
+                          active ? "bg-(--card) text-(--ink) shadow-sm" : "text-(--ink-3)"
+                        }`}
+                      >
+                        {mode.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function DetailsCard({
   tenantId,
   agent,
@@ -201,7 +340,10 @@ export function WorkerRoute({ agentId }: { readonly agentId: string }) {
                       </Link>
                     </div>
                     <div className="grid items-start gap-6 md:grid-cols-[minmax(0,1fr)_300px]">
-                      <InstructionsCard tenantId={selectedTenantId} agent={agent} />
+                      <div>
+                        <InstructionsCard tenantId={selectedTenantId} agent={agent} />
+                        <PermissionsCard tenantId={selectedTenantId} agent={agent} />
+                      </div>
                       <aside className="flex flex-col gap-4">
                         <DetailsCard tenantId={selectedTenantId} agent={agent} />
                         <Card className="p-5">
