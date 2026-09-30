@@ -2,7 +2,7 @@
 // from an ancestor tenant, grants never do. Booting the hub runs package
 // migrations, so the suite skips without a reachable DATABASE_URL.
 
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { type } from "arktype";
 import { dbGate } from "../lib/db-gate";
 import { installDisposableHubDataDir } from "../lib/disposable-hub-data-dir";
@@ -23,6 +23,13 @@ if (databaseUrl !== "") {
   process.env["DB_NAME"] = url.pathname.replace(/^\//, "");
 }
 
+// A hub left running keeps reconciling the shared database and fails the
+// allocations of every hub booted after it in the same process.
+const closers: (() => Promise<void>)[] = [];
+afterAll(async () => {
+  for (const close of closers) await close();
+});
+
 const Id = type({ id: "string" });
 const GrantPage = type({ data: type({ id: "string" }).array() });
 const Evaluation = type({ effect: "string", matchingGrants: type({ id: "string" }).array() });
@@ -31,6 +38,7 @@ describeIfDb("grants are explicit per tenant", () => {
   test("a credential resolves from a child tenant; a grant does not", async () => {
     const { createHubServer } = await import("../../apps/hub/src/server");
     const hub = await createHubServer();
+    closers.push(() => hub.shutdown());
     const origin = "http://localhost";
     const suffix = crypto.randomUUID().slice(0, 8);
 
