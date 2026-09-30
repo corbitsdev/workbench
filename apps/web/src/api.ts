@@ -152,12 +152,15 @@ async function postJSON<T>(path: string, schema: Validator<T>, body: unknown): P
   return parsed;
 }
 
-/** Approves a pending approval. Scope is always "once": the hub rejects
- * "always" with a 400 (see `vendor/intx/hub-api/src/routes/approvals.ts`),
- * so this surface never offers it. */
-export function approveApproval(tenantId: string, approvalId: string): Promise<Approval> {
+/** Approves a pending approval. Scope "always" is the stock standing
+ * approval: the run's grant for this tool becomes allow. */
+export function approveApproval(
+  tenantId: string,
+  approvalId: string,
+  scope: "once" | "always" = "once",
+): Promise<Approval> {
   return postJSON(`/api/tenants/${tenantId}/approvals/${approvalId}/approve`, ApprovalResponse, {
-    scope: "once",
+    scope,
   });
 }
 
