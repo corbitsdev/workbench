@@ -1,19 +1,4 @@
-import {
-  Badge,
-  Button,
-  PageShell,
-  RichEmptyState,
-  RunNowButton,
-  Skeleton,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@corbits/react-ui";
-import type { BadgeTone } from "@corbits/react-ui";
-import { WorkflowRunResponse, paginatedSchema } from "@intx/types";
+import { Button, PageShell, RichEmptyState, RunNowButton, Skeleton } from "@corbits/react-ui";
 import { type } from "arktype";
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -24,91 +9,98 @@ import type { GlobalRoutineRow } from "../global-routines";
 import { Link } from "../navigation";
 import { WORKFLOWS_PATH_PREFIX } from "../path-ids";
 import { StageTopBar } from "../shell/stage-top-bar";
+import { RoutinePill, formatWhen, routineState, useRoutineRuns } from "./routine-ui";
+import type { RunRow } from "./routine-ui";
 import { scheduleSentence } from "./routines-page";
-
-const RunsPageSchema = paginatedSchema(WorkflowRunResponse);
-type RunRow = typeof WorkflowRunResponse.infer;
 
 const RunEventSchema = type({ seq: "number", type: "string", body: "Record<string, unknown>" });
 const RunEventsSchema = type({ runId: "string", events: RunEventSchema.array() });
 type RunEvent = typeof RunEventSchema.infer;
 
-function runsPath(tenantId: string, definitionId: string): string {
-  return `/api/tenants/${tenantId}/workflows/runs?definitionId=${encodeURIComponent(definitionId)}&limit=100`;
-}
-
 function runEventsPath(tenantId: string, runId: string): string {
   return `/api/tenants/${tenantId}/workflows/runs/${encodeURIComponent(runId)}/events`;
 }
 
-const RUN_STATUS_TONE_BY_STATUS: Readonly<Record<RunRow["status"], BadgeTone>> = {
-  deployed: "success",
-  running: "info",
-  updating: "info",
-  error: "danger",
-  stopped: "neutral",
-};
+function runTone(status: RunRow["status"]): "live" | "failed" | "info" | "idle" {
+  if (status === "error") return "failed";
+  if (status === "running" || status === "updating") return "info";
+  return status === "deployed" ? "live" : "idle";
+}
 
-/** A run's event log, fetched on selection. Rendered inline under the runs
- * table rather than a separate route — a definition rarely has enough runs
- * to need one. */
-function RunEventsPanel({
+function runLabel(status: RunRow["status"]): string {
+  if (status === "error") return "failed";
+  return status === "deployed" ? "ok" : status;
+}
+
+/** The run's own failure text: the newest error-ish event's message. */
+function failureMessage(events: readonly RunEvent[]): string | null {
+  for (const event of events.toReversed()) {
+    if (!/error|fail/i.test(event.type)) continue;
+    const { message, error } = event.body;
+    if (typeof message === "string") return message;
+    if (typeof error === "string") return error;
+    return event.type;
+  }
+  return null;
+}
+
+function RunDetail({
   tenantId,
-  runId,
+  run,
+  onRetry,
 }: {
   readonly tenantId: string;
-  readonly runId: string;
+  readonly run: RunRow;
+  readonly onRetry: () => Promise<void>;
 }) {
-  const eventsQuery = useAPIQuery(runEventsPath(tenantId, runId), RunEventsSchema);
-  if (eventsQuery.kind === "loading") return <Skeleton className="h-24 w-full" />;
+  const eventsQuery = useAPIQuery(runEventsPath(tenantId, run.id), RunEventsSchema);
+  if (eventsQuery.kind === "loading") return <Skeleton className="h-16 w-full" />;
   if (eventsQuery.kind === "error") {
     return <RichEmptyState title="Couldn't load events" description={eventsQuery.message} />;
   }
   if (eventsQuery.kind === "unauthenticated") return null;
-  const events: readonly RunEvent[] = eventsQuery.data.events;
-  if (events.length === 0) {
-    return (
-      <RichEmptyState
-        title="No events yet"
-        description="This run hasn't committed any events to its log."
-      />
-    );
-  }
+  const events = eventsQuery.data.events;
+  const failure = run.status === "error" ? failureMessage(events) : null;
   return (
-    <Table aria-label={`Events for run ${runId}`}>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Seq</TableHead>
-          <TableHead>Type</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {events.map((event) => (
-          <TableRow key={event.seq}>
-            <TableCell>{event.seq}</TableCell>
-            <TableCell>{event.type}</TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <div className="routine-run-detail">
+      {run.status === "error" ? (
+        <>
+          <p className="routine-error">{failure ?? "The run failed without reporting an error."}</p>
+          <div>
+            <RunNowButton variant="outline" size="sm" label="Retry" onRun={onRetry} />
+          </div>
+        </>
+      ) : null}
+      {events.length === 0 ? (
+        <span className="routine-meta">No events committed to this run's log.</span>
+      ) : (
+        <ul className="routine-events" aria-label={`Events for run ${run.id}`}>
+          {events.map((event) => (
+            <li key={event.seq}>
+              {String(event.seq)} {event.type}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
-/** Runs for this definition, newest first (the listing's own order), with a
- * click-to-expand event log per run. */
 function RoutineRunsSection({
   tenantId,
   definitionId,
+  onRetry,
 }: {
   readonly tenantId: string;
   readonly definitionId: string;
+  readonly onRetry: () => Promise<void>;
 }) {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const runsQuery = useAPIQuery(runsPath(tenantId, definitionId), RunsPageSchema);
+  const runsQuery = useRoutineRuns(tenantId, definitionId, 100);
 
   return (
-    <section className="flex flex-col gap-3">
-      <h2 className="m-0 text-sm font-semibold">Runs</h2>
+    <section className="routine-sec">
+      <h2>Recent runs</h2>
       {runsQuery.kind === "loading" ? <Skeleton className="h-24 w-full" /> : null}
       {runsQuery.kind === "error" ? (
         <RichEmptyState title="Couldn't load runs" description={runsQuery.message} />
@@ -117,41 +109,29 @@ function RoutineRunsSection({
         <RichEmptyState title="No runs yet" description="This workflow hasn't run yet." />
       ) : null}
       {runsQuery.kind === "ready" && runsQuery.data.data.length > 0 ? (
-        <Table aria-label="Runs">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Status</TableHead>
-              <TableHead>Started</TableHead>
-              <TableHead>Ended</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {runsQuery.data.data.map((run) => (
-              <>
-                <TableRow
-                  key={run.id}
-                  role="button"
-                  tabIndex={0}
-                  className="cursor-pointer"
-                  onClick={() => setSelectedRunId(selectedRunId === run.id ? null : run.id)}
-                >
-                  <TableCell>
-                    <Badge tone={RUN_STATUS_TONE_BY_STATUS[run.status]}>{run.status}</Badge>
-                  </TableCell>
-                  <TableCell>{run.createdAt}</TableCell>
-                  <TableCell>{run.endedAt ?? "—"}</TableCell>
-                </TableRow>
-                {selectedRunId === run.id ? (
-                  <TableRow key={`${run.id}-events`}>
-                    <TableCell colSpan={3}>
-                      <RunEventsPanel tenantId={tenantId} runId={run.id} />
-                    </TableCell>
-                  </TableRow>
-                ) : null}
-              </>
-            ))}
-          </TableBody>
-        </Table>
+        <div className="routine-rows">
+          {runsQuery.data.data.map((run) => (
+            <div key={run.id} className="routine-run">
+              <button
+                type="button"
+                className="routine-run-summary"
+                aria-expanded={selectedRunId === run.id}
+                onClick={() => setSelectedRunId(selectedRunId === run.id ? null : run.id)}
+              >
+                <span>{formatWhen(run.createdAt)}</span>
+                <span className="routine-meta">
+                  {run.endedAt === null || run.endedAt === undefined
+                    ? "In progress"
+                    : `Ended ${formatWhen(run.endedAt)}`}
+                </span>
+                <RoutinePill tone={runTone(run.status)}>{runLabel(run.status)}</RoutinePill>
+              </button>
+              {selectedRunId === run.id ? (
+                <RunDetail tenantId={tenantId} run={run} onRetry={onRetry} />
+              ) : null}
+            </div>
+          ))}
+        </div>
       ) : null}
     </section>
   );
@@ -194,6 +174,9 @@ export function RoutineDetailPage({
 }) {
   const enabled = row.definition.status === "deployed";
   const sentence = scheduleSentence(row.definition.schedule);
+  const runs = useRoutineRuns(row.tenantId, row.definition.definitionId, 1);
+  const lastRun = runs.kind === "ready" ? runs.data.data[0] : undefined;
+  const state = routineState(row, lastRun);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <StageTopBar
@@ -201,7 +184,6 @@ export function RoutineDetailPage({
           { label: "Workflows", href: WORKFLOWS_PATH_PREFIX },
           { label: row.definition.name },
         ]}
-        subtitle={sentence}
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -217,13 +199,24 @@ export function RoutineDetailPage({
         }
       />
       <PageShell>
-        <div className="flex flex-col gap-6">
-          <div>
-            <h1 className="m-0 text-xl font-semibold">{row.definition.name}</h1>
-            <p className="mt-2 text-sm text-[var(--ui-fg-muted)]">{row.tenantName}</p>
-            <p className="mt-4 text-lg">{sentence}</p>
+        <div className="routines-page">
+          <div className="routine-head">
+            <h1>{row.definition.name}</h1>
+            <RoutinePill tone={state.tone}>{state.label}</RoutinePill>
           </div>
-          <RoutineRunsSection tenantId={row.tenantId} definitionId={row.definition.definitionId} />
+          <dl className="routine-kv">
+            <dt>Schedule</dt>
+            <dd>{sentence}</dd>
+            <dt>Workbench</dt>
+            <dd>{row.tenantName}</dd>
+            <dt>Last run</dt>
+            <dd>{runs.kind === "ready" ? formatWhen(lastRun?.createdAt) : "…"}</dd>
+          </dl>
+          <RoutineRunsSection
+            tenantId={row.tenantId}
+            definitionId={row.definition.definitionId}
+            onRetry={onRunNow}
+          />
         </div>
       </PageShell>
     </div>
