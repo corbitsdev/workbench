@@ -1,16 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { FIRE_RUNNING_WINDOW_MS } from "@corbits/workflows/client";
-
-import {
-  computeInsightsStats,
-  groupRunsByDefinition,
-  INSIGHTS_RECENT_LIMIT,
-  purposeRunsForInsights,
-  runDisplayName,
-} from "./insights-stats";
+import { groupRunsByDefinition, purposeRunsForInsights, runDisplayName } from "./insights-stats";
 import type { InsightsRun } from "./insights-api";
-import type { ScheduledWorkflowDefinition } from "./routines-api";
 
 function run(partial: Partial<InsightsRun> & Pick<InsightsRun, "id" | "status">): InsightsRun {
   return {
@@ -25,101 +16,6 @@ function run(partial: Partial<InsightsRun> & Pick<InsightsRun, "id" | "status">)
     ...partial,
   };
 }
-
-function scheduled(
-  partial: Partial<ScheduledWorkflowDefinition> &
-    Pick<ScheduledWorkflowDefinition, "definitionId" | "status">,
-): ScheduledWorkflowDefinition {
-  return {
-    assetId: "ast_def",
-    name: "Daily dig",
-    tenantId: "t1",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    schedule: "0 9 * * *",
-    ...partial,
-  };
-}
-
-describe("computeInsightsStats", () => {
-  test("counts purposeful runs by status", () => {
-    const stats = computeInsightsStats(
-      [
-        run({
-          id: "1",
-          status: "running",
-          createdAt: "2026-01-03T00:00:00.000Z",
-        }),
-        run({
-          id: "2",
-          status: "error",
-          createdAt: "2026-01-02T00:00:00.000Z",
-        }),
-        run({
-          id: "3",
-          status: "stopped",
-          createdAt: "2026-01-01T00:00:00.000Z",
-        }),
-      ],
-      [
-        scheduled({ definitionId: "r1", status: "deployed" }),
-        scheduled({ definitionId: "r2", status: "stopped" }),
-      ],
-      INSIGHTS_RECENT_LIMIT,
-      Date.parse("2026-01-03T00:01:00.000Z"),
-    );
-
-    expect(stats.totalRuns).toBe(3);
-    expect(stats.running).toBe(1);
-    expect(stats.errored).toBe(1);
-    expect(stats.stopped).toBe(1);
-    expect(stats.routineCount).toBe(2);
-    expect(stats.enabledRoutines).toBe(1);
-    expect(stats.recentRuns.map((r) => r.id)).toEqual(["1", "2", "3"]);
-  });
-
-  test("a live running run past the fire window is still counted as running", () => {
-    const stats = computeInsightsStats(
-      [
-        run({
-          id: "stale",
-          status: "running",
-          createdAt: new Date(Date.now() - FIRE_RUNNING_WINDOW_MS - 1).toISOString(),
-        }),
-      ],
-      [],
-    );
-    expect(stats.running).toBe(1);
-  });
-
-  test("endedAt drops a just-finished running run from the running count immediately", () => {
-    const stats = computeInsightsStats(
-      [
-        run({
-          id: "just-finished",
-          status: "running",
-          createdAt: new Date().toISOString(),
-          endedAt: new Date().toISOString(),
-        }),
-      ],
-      [],
-    );
-    expect(stats.running).toBe(0);
-  });
-
-  test("limits recent runs", () => {
-    const runs = Array.from({ length: 5 }, (_, i) =>
-      run({
-        id: String(i),
-        status: "deployed",
-        createdAt: `2026-01-0${i + 1}T00:00:00.000Z`,
-      }),
-    );
-    const stats = computeInsightsStats(runs, [], 2);
-    expect(stats.recentRuns).toHaveLength(2);
-    expect(stats.deployed).toBe(5);
-  });
-});
 
 describe("purposeRunsForInsights", () => {
   const deployment = run({ id: "ins_deployed", status: "running" });

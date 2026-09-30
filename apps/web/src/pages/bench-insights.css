@@ -1,0 +1,20 @@
+.bi-head {
+  margin-bottom: 1rem;
+}
+.bi-head h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+.bi-head p {
+  margin: 0.25rem 0 0;
+  color: var(--muted-foreground);
+}
+.bi-other {
+  background: var(--muted-foreground);
+  opacity: 0.55;
+}
+.bi-legend .bi-other {
+  width: 10px;
+  height: 10px;
+}
