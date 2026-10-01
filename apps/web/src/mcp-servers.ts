@@ -174,7 +174,7 @@ export async function listMcpServers(
 
 /** A provider row per server, pinned to that server's origin so the resolved
  * handle can only ever reach the host it was added for. */
-async function ensureMcpProvider(
+export async function ensureMcpProvider(
   tenantId: string,
   handle: string,
   url: string,
@@ -296,30 +296,135 @@ export async function addMcpServer(
     },
     fetchImpl,
   );
+  return recordCatalog(
+    {
+      tenantId: input.tenantId,
+      credentialId,
+      providerId,
+      handle: input.handle,
+      name: input.name,
+      url: input.url,
+      auth,
+      existingMetadata: {},
+    },
+    fetchImpl,
+  );
+}
+
+/** Reads the catalog with the stored credential and writes it onto that
+ * credential's metadata beside whatever the credential already carries (an
+ * OAuth login keeps its client id and token URL there). The credential is
+ * dropped if either step fails, so a failed add leaves nothing behind. */
+async function recordCatalog(
+  args: {
+    readonly tenantId: string;
+    readonly credentialId: string;
+    readonly providerId: string;
+    readonly handle: string;
+    readonly name: string;
+    readonly url: string;
+    readonly auth: McpAuthKind;
+    readonly existingMetadata: Record<string, unknown>;
+  },
+  fetchImpl: typeof fetch,
+): Promise<McpServer> {
+  const { tenantId, credentialId, providerId, handle, name, url, auth } = args;
   let tools: readonly McpTool[];
   try {
-    tools = await discoverMcpCatalog(
-      { tenantId: input.tenantId, url: input.url, credentialId },
-      fetchImpl,
-    );
+    tools = await discoverMcpCatalog({ tenantId, url, credentialId }, fetchImpl);
   } catch (cause) {
-    await deleteCredential(input.tenantId, credentialId, fetchImpl);
+    await deleteCredential(tenantId, credentialId, fetchImpl);
     throw cause;
   }
-  const mcp = { handle: input.handle, name: input.name, url: input.url, auth, tools };
+  const mcp = { handle, name, url, auth, tools };
   const patched = await fetchImpl(
-    tenantPath(input.tenantId, `/credentials/${encodeURIComponent(credentialId)}`),
+    tenantPath(tenantId, `/credentials/${encodeURIComponent(credentialId)}`),
     {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ metadata: { mcp } }),
+      body: JSON.stringify({ metadata: { ...args.existingMetadata, mcp } }),
     },
   );
   if (!patched.ok) {
-    await deleteCredential(input.tenantId, credentialId, fetchImpl);
-    throw new McpServerError(`recording the ${input.handle} server's tools failed`);
+    await deleteCredential(tenantId, credentialId, fetchImpl);
+    throw new McpServerError(`recording the ${handle} server's tools failed`);
   }
   return { credentialId, providerId, ...mcp };
+}
+
+const LoginStarted = type({ loginId: "string", authorizeUrl: "string" });
+const LoginStatus = type({
+  status: "'pending' | 'completed' | 'failed' | 'cancelled'",
+  "credentialId?": "string",
+  "message?": "string",
+});
+export type McpLoginStatus = typeof LoginStatus.infer;
+
+export type McpSignInInput = {
+  readonly tenantId: string;
+  readonly handle: string;
+  readonly name: string;
+  readonly url: string;
+};
+
+/** Starts the hub-side OAuth login for a server: the provider row first (the
+ * login stores its credential on it), then the authorize URL to open. */
+export async function startMcpSignIn(
+  input: McpSignInInput,
+  fetchImpl: typeof fetch = fetch,
+): Promise<{
+  readonly loginId: string;
+  readonly authorizeUrl: string;
+  readonly providerId: string;
+}> {
+  const providerId = await ensureMcpProvider(input.tenantId, input.handle, input.url, fetchImpl);
+  const started = await fetchImpl(tenantPath(input.tenantId, "/oauth-logins"), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      resourceUrl: input.url,
+      providerId,
+      credentialName: mcpCredentialName(input.handle),
+    }),
+  });
+  if (!started.ok) {
+    throw new McpServerError(`starting the ${input.name} sign-in failed`);
+  }
+  return { ...(await readJson(started, LoginStarted, "the sign-in")), providerId };
+}
+
+export async function readMcpSignIn(
+  tenantId: string,
+  loginId: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<McpLoginStatus> {
+  const response = await fetchImpl(
+    tenantPath(tenantId, `/oauth-logins/${encodeURIComponent(loginId)}`),
+  );
+  if (!response.ok) {
+    throw new McpServerError("checking the sign-in failed");
+  }
+  return readJson(response, LoginStatus, "the sign-in status");
+}
+
+/** Finishes a completed sign-in: the login already stored an `oauth_token`
+ * credential, so this only reads the server's catalog with it and records the
+ * catalog beside the credential's OAuth metadata. */
+export async function addSignedInMcpServer(
+  input: McpSignInInput & { readonly credentialId: string; readonly providerId: string },
+  fetchImpl: typeof fetch = fetch,
+): Promise<McpServer> {
+  const credential = (await listCredentials(input.tenantId, fetchImpl)).find(
+    (row) => row.id === input.credentialId,
+  );
+  return recordCatalog(
+    {
+      ...input,
+      auth: "oauth",
+      existingMetadata: credential?.metadata ?? {},
+    },
+    fetchImpl,
+  );
 }
 
 /** Drops a server and the provider row that existed only for it. */

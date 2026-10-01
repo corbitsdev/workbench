@@ -98,7 +98,10 @@
   gap: 8px;
 }
 
-.tool-add-submit {
+.tool-add-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   align-self: flex-start;
 }
 
