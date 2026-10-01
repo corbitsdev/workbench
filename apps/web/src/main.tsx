@@ -4,7 +4,7 @@
 
 import "@corbits/react-ui/styles.css";
 import "./app.css";
-import "./tailwind.css";
+import "./components/page-parts.css";
 import "./theme-tokens.css";
 
 import { StrictMode } from "react";

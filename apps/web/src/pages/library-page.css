@@ -1,0 +1,109 @@
+.lib-source {
+  margin-top: 0.125rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.lib-source-link {
+  color: var(--muted-foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.lib-source-link:hover {
+  color: var(--foreground);
+}
+
+.lib-preview {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--card);
+}
+
+.lib-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+}
+
+.lib-preview-titles {
+  min-width: 0;
+}
+
+.lib-preview-title,
+.lib-preview-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lib-preview-title {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 600;
+}
+
+.lib-preview-meta {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--muted-foreground);
+}
+
+.lib-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.lib-preview-body {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: 1rem;
+}
+
+.lib-error {
+  padding: 0.5rem 1rem 0;
+}
+
+@media (min-width: 640px) {
+  .lib-error {
+    padding-inline: 1.75rem;
+  }
+}
+
+.lib-split {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+}
+
+.lib-list-pane {
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.lib-preview-pane {
+  display: none;
+  width: min(28rem, 40%);
+  flex-shrink: 0;
+}
+
+@media (min-width: 768px) {
+  .lib-preview-pane {
+    display: flex;
+    flex-direction: column;
+  }
+}

@@ -38,7 +38,7 @@ export function InsightsTab({ workbenchTenantId }: { readonly workbenchTenantId:
     ),
   });
 
-  if (runs.kind === "loading") return <Skeleton className="h-32 w-full" />;
+  if (runs.kind === "loading") return <Skeleton className="skeleton-panel-sm" />;
   if (runs.kind !== "ready") {
     return (
       <RichEmptyState

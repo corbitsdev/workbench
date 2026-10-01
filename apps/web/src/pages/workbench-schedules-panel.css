@@ -1,0 +1,12 @@
+.workbench-info-schedule-actions {
+  margin-top: 0.25rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.workbench-info-schedule-form {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}

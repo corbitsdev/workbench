@@ -24,6 +24,7 @@ import { CreateAgentPanel } from "./create-agent-panel";
 import { WORKERS_PATH_PREFIX } from "../path-ids";
 import { NEW_WORKBENCH_PATH } from "../routes";
 import { useWorkerRole } from "../worker-role-query";
+import "./workers-page.css";
 
 export type WorkerTone = "working" | "ready" | "idle";
 
@@ -64,15 +65,8 @@ export function WorkerRole({
 
 export function StatusPill({ tone }: { readonly tone: WorkerTone }) {
   return (
-    <span
-      className={`inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[12px] font-bold ${
-        tone === "idle" ? "bg-(--hover) text-(--ink-3)" : "bg-(--attention-wash) text-(--ink)"
-      }`}
-    >
-      <span
-        aria-hidden
-        className={`size-1.5 rounded-full ${tone === "idle" ? "bg-(--ink-3)" : "bg-(--action)"}`}
-      />
+    <span className={tone === "idle" ? "worker-pill worker-pill-idle" : "worker-pill"}>
+      <span aria-hidden className="worker-pill-dot" />
       {PILL_LABEL[tone]}
     </span>
   );
@@ -84,9 +78,6 @@ const FILTERS: readonly (readonly [WorkerTone | "all", string])[] = [
   ["ready", "Needs you"],
   ["idle", "Idle"],
 ];
-
-const ROW_GRID =
-  "grid items-center gap-4 md:grid-cols-[minmax(200px,1.2fr)_minmax(220px,1.6fr)_minmax(140px,1fr)_64px]";
 
 export function WorkersRosterList({ workers }: { readonly workers: readonly BenchWorker[] }) {
   const [filter, setFilter] = useState<WorkerTone | "all">("all");
@@ -122,12 +113,8 @@ export function WorkersRosterList({ workers }: { readonly workers: readonly Benc
   );
   return (
     <div>
-      <div className="mb-3 flex flex-col items-stretch gap-3 min-[601px]:flex-row min-[601px]:items-center">
-        <div
-          role="tablist"
-          aria-label="Filter by status"
-          className="bi-seg max-w-full overflow-x-auto whitespace-nowrap [&_button]:shrink-0"
-        >
+      <div className="roster-toolbar">
+        <div role="tablist" aria-label="Filter by status" className="bi-seg roster-filter">
           {FILTERS.map(([key, label]) => (
             <button
               key={key}
@@ -138,65 +125,56 @@ export function WorkersRosterList({ workers }: { readonly workers: readonly Benc
               onClick={() => setFilter(key)}
             >
               {label}{" "}
-              <span className="tabular-nums opacity-60">
+              <span className="roster-filter-count">
                 {rows.filter((row) => key === "all" || row.status.tone === key).length}
               </span>
             </button>
           ))}
         </div>
-        <span className="hidden flex-1 min-[601px]:block" />
+        <span className="roster-toolbar-spacer" />
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Filter workers"
           aria-label="Filter workers"
-          className="h-8 w-full min-[601px]:w-60 rounded-(--r-md) border border-(--line) bg-(--card) px-3 text-[13px]"
+          className="roster-search"
         />
       </div>
-      <div className={`${ROW_GRID} hidden px-4 pb-2 text-[12px] font-bold text-(--ink-3) md:grid`}>
+      <div className="roster-row roster-head">
         <span>Worker</span>
         <span>Right now</span>
         <span>Workbench</span>
-        <span className="text-right">Active</span>
+        <span className="roster-cell-end">Active</span>
       </div>
       {shown.length === 0 ? (
-        <p className="py-12 text-center text-[14px] text-(--ink-3)">
-          No workers match “{query.trim()}”.
-        </p>
+        <p className="roster-empty">No workers match “{query.trim()}”.</p>
       ) : (
-        <ul className="overflow-hidden rounded-(--r-lg) bg-(--surface) shadow-(--raised)">
+        <ul className="roster-list">
           {shown.map(({ agent, bench, status }) => (
-            <li
-              key={agent.id}
-              className={`${ROW_GRID} relative min-h-[66px] border-t border-(--line) px-4 py-2 transition-colors first:border-t-0 hover:bg-(--surface-sunk)`}
-            >
+            <li key={agent.id} className="roster-row roster-item">
               <Link
                 to={workerPath(agent.id)}
                 aria-label={agent.name}
-                className="absolute inset-0"
+                className="roster-item-link"
               />
-              <span className="flex min-w-0 items-center gap-3">
+              <span className="roster-worker">
                 <WorkbenchAvatar kind="worker" name={agent.name} size="lg" status={status.tone} />
-                <span className="min-w-0">
-                  <span className="block text-[14.5px] font-extrabold">{agent.name}</span>
-                  <WorkerRole
-                    tenantId={bench.id}
-                    agent={agent}
-                    className="truncate text-[12.5px] text-(--ink-3)"
-                  />
+                <span className="roster-worker-text">
+                  <span className="roster-worker-name">{agent.name}</span>
+                  <WorkerRole tenantId={bench.id} agent={agent} className="roster-worker-role" />
                 </span>
               </span>
-              <span className="flex min-w-0 items-center gap-2.5 text-[13.5px]">
+              <span className="roster-status">
                 <StatusPill tone={status.tone} />
-                <span className="truncate">
+                <span className="roster-status-text">
                   {status.text}
-                  <span className="text-(--ink-3)"> · {bench.name}</span>
+                  <span className="roster-status-bench"> · {bench.name}</span>
                 </span>
                 {status.tone === "ready" ? (
                   <Button
                     variant="outline"
                     size="sm"
-                    className="relative"
+                    className="roster-restart"
                     disabled={restart.isPending}
                     onClick={() => restart.mutate({ agent, bench })}
                   >
@@ -206,13 +184,13 @@ export function WorkersRosterList({ workers }: { readonly workers: readonly Benc
                   </Button>
                 ) : null}
               </span>
-              <span className="flex min-w-0">
-                <span className="inline-flex h-6 max-w-full items-center gap-1 rounded-(--r-sm) bg-(--hover) pr-2 pl-1.5 text-[12.5px] font-semibold text-(--ink-2)">
-                  <Hash className="size-3.5 shrink-0" />
-                  <span className="truncate">{bench.name}</span>
+              <span className="roster-bench-cell">
+                <span className="roster-bench-chip">
+                  <Hash className="roster-bench-icon" />
+                  <span className="roster-ellipsis">{bench.name}</span>
                 </span>
               </span>
-              <span className="text-right text-[12.5px] text-(--ink-3)">
+              <span className="roster-cell-end roster-active">
                 {agent.liveAddress === null ? "" : "Now"}
               </span>
             </li>
@@ -233,9 +211,9 @@ export function WorkersRoute() {
   const [createBench, setCreateBench] = useState<HubTenant | null>(null);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="page-frame">
       <StageTopBar crumbs={[{ label: "Workers" }]} />
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="page-scroll-auto">
         <PageLayout
           title="Workers"
           subtitle="Each worker picks a name, keeps its memory, and asks before it writes anywhere."
@@ -276,11 +254,11 @@ export function WorkersRoute() {
           ) : (
             <>
               {error !== undefined ? (
-                <p role="alert" className="py-12 text-center text-[14px] text-(--danger-ink)">
+                <p role="alert" className="roster-empty roster-empty-error">
                   {error}
                 </p>
               ) : loading ? (
-                <Skeleton className="h-40 w-full" />
+                <Skeleton className="skeleton-panel" />
               ) : (
                 <WorkersRosterList workers={workers} />
               )}

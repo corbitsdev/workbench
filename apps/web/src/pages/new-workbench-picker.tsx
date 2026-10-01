@@ -88,7 +88,7 @@ export function NewWorkbenchPickerRoute() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="page-frame">
       <StageTopBar crumbs={[{ label: "New" }]} />
       <div className="new-wrap" data-keyboard={keyboard ? "" : undefined}>
         {create.isPending ? (

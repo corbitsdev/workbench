@@ -27,10 +27,10 @@ const TONE_BY_COLOR: Record<AvatarColor, AvatarTone> = {
 };
 
 export const avatarColorClass: Record<AvatarColor, string> = {
-  "--avatar-1": "bg-(--avatar-1) text-black",
-  "--avatar-2": "bg-(--avatar-2) text-black",
-  "--avatar-3": "bg-(--avatar-3) text-black",
-  "--avatar-4": "bg-(--avatar-4) text-black",
+  "--avatar-1": "avatar-fill-1",
+  "--avatar-2": "avatar-fill-2",
+  "--avatar-3": "avatar-fill-3",
+  "--avatar-4": "avatar-fill-4",
 };
 
 const WORKER_HUES = ["orange", "blue", "green"] as const;

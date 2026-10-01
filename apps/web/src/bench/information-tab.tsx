@@ -247,7 +247,7 @@ export function InformationTab({
       ) : null}
 
       <Section title="Needs you">
-        {approvalsQuery.kind === "loading" ? <Skeleton className="h-16 w-full" /> : null}
+        {approvalsQuery.kind === "loading" ? <Skeleton className="skeleton-card" /> : null}
         {approvalsQuery.kind === "error" ? (
           <p className="workbench-info-empty-note">{approvalsQuery.message}</p>
         ) : null}
@@ -283,7 +283,7 @@ export function InformationTab({
         title="Active workflows"
         action={{ to: benchLink(WORKFLOWS_PATH_PREFIX, workbenchTenantId), label: "View all" }}
       >
-        {flows.isLoading ? <Skeleton className="h-10 w-full" /> : null}
+        {flows.isLoading ? <Skeleton className="skeleton-row" /> : null}
         {flows.isSuccess && liveFlows.length === 0 ? (
           <p className="workbench-info-empty-note">No workflows are running here.</p>
         ) : null}
@@ -308,7 +308,7 @@ export function InformationTab({
         title="Latest artifacts"
         action={{ to: benchLink(ARTIFACTS_PATH_PREFIX, workbenchTenantId), label: "View all" }}
       >
-        {artifacts.kind === "loading" ? <Skeleton className="h-10 w-full" /> : null}
+        {artifacts.kind === "loading" ? <Skeleton className="skeleton-row" /> : null}
         {artifacts.kind === "ready" && latest.length === 0 ? (
           <p className="workbench-info-empty-note">Nothing saved here yet.</p>
         ) : null}
@@ -334,7 +334,7 @@ export function InformationTab({
         title="Skills"
         action={{ to: benchLink(SKILLS_PATH_PREFIX, workbenchTenantId), label: "View all" }}
       >
-        {skills.isLoading ? <Skeleton className="h-10 w-full" /> : null}
+        {skills.isLoading ? <Skeleton className="skeleton-row" /> : null}
         {skills.isSuccess && shownSkills.length === 0 ? (
           <p className="workbench-info-empty-note">No skills here yet.</p>
         ) : null}

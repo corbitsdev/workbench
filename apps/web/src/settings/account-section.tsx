@@ -73,7 +73,7 @@ export function AccountSectionView({
     <SettingsGroup title={SETTINGS_STRINGS.accountSectionTitle}>
       <SettingsRow
         title={
-          <span className="flex items-center gap-2">
+          <span className="inline-row">
             {fill.kind === "image" ? (
               <img
                 className="settings-account-avatar-image"

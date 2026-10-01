@@ -3,6 +3,7 @@
 
 import { CsvTable } from "@corbits/react-ui";
 import { FileDashed } from "@/lib/icons";
+import "./artifact-renderer.css";
 import type { ArtifactRendererKind } from "./renderer-kind";
 
 export type ArtifactRenderProps = {
@@ -76,19 +77,19 @@ function DocRenderer({
   const lines = parseDocLines(content);
   const HeadingTag = ["h1", "h2", "h3"] as const;
   return (
-    <div className="flex flex-col gap-2 text-sm leading-relaxed text-foreground">
+    <div className="artifact-doc">
       {lines.map((line, index) => {
         if (line.kind === "heading") {
           const Tag = HeadingTag[line.level - 1] ?? "h3";
           return (
-            <Tag key={index} className="font-semibold leading-snug">
+            <Tag key={index} className="artifact-doc-heading">
               {line.text}
             </Tag>
           );
         }
         if (line.kind === "bullet") {
           return (
-            <ul key={index} className="list-disc pl-5">
+            <ul key={index} className="artifact-doc-bullets">
               <li>{line.text}</li>
             </ul>
           );
@@ -143,9 +144,9 @@ function PdfRenderer({
     );
   }
   return (
-    <div className="rounded-[var(--ui-radius-md)] border border-border bg-card p-6 shadow-sm">
-      <h3 className="mb-3 text-sm font-semibold">{title}</h3>
-      <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{content}</p>
+    <div className="artifact-pdf">
+      <h3 className="artifact-pdf-title">{title}</h3>
+      <p className="artifact-pdf-text">{content}</p>
     </div>
   );
 }
@@ -170,19 +171,19 @@ function HtmlPreviewRenderer({
       title={`${title} preview`}
       src={previewSrc}
       sandbox="allow-scripts"
-      className="h-full min-h-[24rem] w-full border-0"
+      className="artifact-html-frame"
     />
   );
 }
 
 function EmptyContent({ message }: { readonly message: string }) {
-  return <p className="text-sm text-muted-foreground">{message}</p>;
+  return <p className="page-note">{message}</p>;
 }
 
 function UnsupportedRenderer({ unavailableReason }: { readonly unavailableReason?: string }) {
   return (
-    <div className="flex flex-col items-center gap-2 py-8 text-center text-sm text-muted-foreground">
-      <FileDashed className="size-6" aria-hidden="true" />
+    <div className="artifact-unsupported">
+      <FileDashed className="icon-sm" aria-hidden="true" />
       <p>{unavailableReason ?? "No inline preview for this artifact."}</p>
     </div>
   );

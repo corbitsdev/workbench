@@ -19,6 +19,7 @@ import { ApiQueryError } from "@/lib/api-query";
 import type { DeployedAgent } from "../agent-deploy";
 import { useDeployAgentMutation } from "../agents-api";
 import { useMcpServers } from "../tools/mcp-servers-query";
+import "./create-agent-panel.css";
 
 function submitErrorFromCause(
   cause: unknown,
@@ -124,12 +125,12 @@ export function CreateAgentPanel({
         </DialogHeader>
         <DialogBody>
           {submitError !== null && (
-            <p className="mb-3 text-sm text-destructive" role="alert">
+            <p className="page-error-inline" role="alert">
               {submitError.message}
               {submitError.refId !== undefined ? (
                 <>
                   <br />
-                  <span className="text-xs">Reference: {submitError.refId}</span>
+                  <span className="page-meta-plain">Reference: {submitError.refId}</span>
                 </>
               ) : null}
             </p>
@@ -149,7 +150,7 @@ export function CreateAgentPanel({
             <span>System prompt</span>
             <Textarea
               id="create-agent-system-prompt"
-              className="bg-background font-mono text-[0.8125rem]"
+              className="code-textarea code-textarea-canvas"
               value={systemPrompt}
               onChange={(event) => setSystemPrompt(event.target.value)}
               placeholder="You are..."
@@ -158,38 +159,38 @@ export function CreateAgentPanel({
             />
           </label>
 
-          <div className="mt-3 flex flex-col gap-2">
+          <div className="create-agent-servers">
             <fieldset disabled={deploy.isPending}>
               <legend className="create-agent-quiet-field">
                 <span>MCP servers</span>
               </legend>
-              <p className="text-xs text-muted-foreground">
+              <p className="page-meta">
                 The workspace catalog — checked servers are bound into this agent like your
                 worker&apos;s Exa, ask-gated except read-only tools.
               </p>
               {catalog.kind === "loading" ? (
-                <p className="text-xs text-muted-foreground">Loading workspace servers…</p>
+                <p className="page-meta">Loading workspace servers…</p>
               ) : catalog.kind === "ready" && catalog.data.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
+                <p className="page-meta">
                   No MCP servers in this workspace yet — add them on the Tools page.
                 </p>
               ) : catalog.kind === "ready" ? (
-                <ul className="mt-1 flex flex-col gap-1">
+                <ul className="create-agent-server-list">
                   {catalog.data.map((server) => (
-                    <li key={server.credentialId} className="flex items-center gap-2">
+                    <li key={server.credentialId} className="inline-row">
                       <SelectionCheckbox
                         checked={selectedHandles.includes(server.handle)}
                         onToggle={() => toggleHandle(server.handle)}
                         rowLabel={server.name}
                         ariaLabel={`Bind the ${server.name} MCP server`}
                       />
-                      <span className="text-sm">{server.name}</span>
-                      <span className="text-xs text-muted-foreground">{server.handle}</span>
+                      <span className="create-agent-server-name">{server.name}</span>
+                      <span className="page-meta">{server.handle}</span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p className="text-xs text-muted-foreground">
+                <p className="page-meta">
                   Couldn&apos;t load the workspace catalog — the agent will deploy without MCP
                   servers.
                 </p>

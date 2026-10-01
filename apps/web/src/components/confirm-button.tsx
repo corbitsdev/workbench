@@ -21,7 +21,7 @@ export function ConfirmButton({ onConfirm, children, confirmLabel, ...props }: C
   return (
     <span
       ref={rootRef}
-      className="inline-flex items-center gap-1"
+      className="inline-actions"
       onKeyDown={(e) => {
         if (e.key === "Escape") setArmed(false);
       }}

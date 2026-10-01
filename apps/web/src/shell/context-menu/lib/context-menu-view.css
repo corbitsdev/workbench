@@ -1,0 +1,8 @@
+.context-menu-danger {
+  color: var(--destructive);
+}
+
+.context-menu-danger[data-highlighted] {
+  background: color-mix(in oklab, var(--destructive) 10%, transparent);
+  color: var(--destructive);
+}

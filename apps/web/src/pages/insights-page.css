@@ -1,0 +1,22 @@
+.insights-stat-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  border-radius: calc(var(--radius) + 2px);
+  border: 1px solid var(--border);
+  background: var(--card);
+  padding: 1rem;
+}
+
+.insights-stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.insights-link-button {
+  font-weight: 600;
+  color: var(--primary-emphasis);
+}

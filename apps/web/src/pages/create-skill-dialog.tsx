@@ -123,12 +123,12 @@ export function CreateSkillDialog({
         </DialogHeader>
         <DialogBody>
           {serverError !== null && (
-            <p className="mb-3 text-sm text-destructive" role="alert">
+            <p className="page-error-inline" role="alert">
               {serverError}
             </p>
           )}
           {showIssues && issues.length > 0 && (
-            <ul className="mb-3 list-inside list-disc text-sm text-destructive" role="alert">
+            <ul className="page-error-inline page-error-list" role="alert">
               {issues.map((issue) => (
                 <li key={issue}>{issue}</li>
               ))}

@@ -33,7 +33,7 @@ export function BenchPill({
     >
       {worker === undefined ? (
         rosterReady ? null : (
-          <Skeleton className="size-6 rounded-full" />
+          <Skeleton className="skeleton-avatar" />
         )
       ) : (
         <IdentityAvatar kind="agent" name={worker.name} principalId={worker.id} />

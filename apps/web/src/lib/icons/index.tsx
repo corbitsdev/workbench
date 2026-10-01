@@ -88,7 +88,7 @@ export {
 } from "lucide-react";
 
 /** Wraps a subtree so every icon under it defaults to a 2px stroke without
- * repeating it at each call site (the `1em` default size is `tailwind.css`).
+ * repeating it at each call site (the `1em` default size is `page-parts.css`).
  * Mounted once at each app's root (see `apps/web/src/app.tsx`). */
 export function BoldIconProvider({ children }: { children: ReactNode }) {
   return <LucideProvider strokeWidth={2}>{children}</LucideProvider>;

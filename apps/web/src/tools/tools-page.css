@@ -97,3 +97,28 @@
   display: flex;
   gap: 8px;
 }
+
+.tool-add-submit {
+  align-self: flex-start;
+}
+
+.tool-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.tools-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.tools-cell-name {
+  font-weight: 500;
+}
+
+.tools-cell-soft {
+  color: var(--muted-foreground);
+}

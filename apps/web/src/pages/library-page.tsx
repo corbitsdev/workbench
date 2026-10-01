@@ -59,6 +59,7 @@ import {
 } from "../shell/library-artifacts";
 import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
+import "./library-page.css";
 
 function ArtifactRows({
   artifacts,
@@ -150,11 +151,8 @@ function ProvenanceLine({ source }: { readonly source: Record<string, unknown> }
   const runId = workflowRunIdFromSource(source);
   if (runId === null) return null;
   return (
-    <p className="mt-0.5 truncate text-xs">
-      <Link
-        to={`/insights/runs/${encodeURIComponent(runId)}`}
-        className="text-muted-foreground underline underline-offset-2 hover:text-foreground"
-      >
+    <p className="lib-source">
+      <Link to={`/insights/runs/${encodeURIComponent(runId)}`} className="lib-source-link">
         Produced by workflow run
       </Link>
     </p>
@@ -189,19 +187,19 @@ function PreviewPane({
     uploadMimeType !== null &&
     !isTextDecodableMediaType(uploadMimeType);
   return (
-    <aside className="flex h-full min-h-0 min-w-0 flex-col border-l border-border bg-card">
-      <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold">{detail?.title ?? "Preview"}</p>
+    <aside className="lib-preview">
+      <div className="lib-preview-head">
+        <div className="lib-preview-titles">
+          <p className="lib-preview-title">{detail?.title ?? "Preview"}</p>
           {detail !== null ? (
-            <p className="truncate text-xs text-muted-foreground">
+            <p className="lib-preview-meta">
               {artifactKindLabel(detail.kind)}
               {` · Version ${detail.version}`}
             </p>
           ) : null}
           {detail !== null ? <ProvenanceLine source={detail.source} /> : null}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="lib-preview-actions">
           {previewSrc !== undefined ? (
             <Button variant="ghost" size="sm" asChild>
               <a href={previewSrc} target="_blank" rel="noreferrer">
@@ -221,10 +219,10 @@ function PreviewPane({
           </Button>
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto p-4">
-        {loading ? <Skeleton className="h-40 w-full" /> : null}
+      <div className="lib-preview-body">
+        {loading ? <Skeleton className="skeleton-panel" /> : null}
         {error !== null ? (
-          <p className="text-sm text-destructive" role="alert">
+          <p className="page-error" role="alert">
             {error}
           </p>
         ) : null}
@@ -316,7 +314,7 @@ export function LibraryPage({
       : (artifacts.find((artifact) => artifact.id === activeSelected) ?? null);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="page-frame">
       <StageTopBar
         crumbs={
           selectedSummary === null
@@ -350,7 +348,7 @@ export function LibraryPage({
           ref={fileInputRef}
           type="file"
           multiple
-          className="sr-only"
+          className="visually-hidden"
           tabIndex={-1}
           aria-hidden="true"
           onChange={(event) => {
@@ -363,12 +361,12 @@ export function LibraryPage({
         />
       ) : null}
       {uploadError !== undefined && uploadError !== null ? (
-        <p className="px-4 pt-2 text-sm text-destructive sm:px-7" role="alert">
+        <p className="page-error lib-error" role="alert">
           {uploadError}
         </p>
       ) : null}
-      <div className="flex min-h-0 flex-1">
-        <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+      <div className="lib-split">
+        <div className="lib-list-pane">
           <PageLayout title="Artifacts" subtitle="Everything your workers made. Yours to keep.">
             <ListFilter label="Filter artifacts" value={activeQuery} onChange={setActiveQuery} />
             {artifacts.length === 0 ? (
@@ -397,7 +395,7 @@ export function LibraryPage({
           </PageLayout>
         </div>
         {activeSelected !== null ? (
-          <div className="hidden w-[min(28rem,40%)] shrink-0 md:flex md:flex-col">
+          <div className="lib-preview-pane">
             <PreviewPane
               tenantId={tenantId}
               detail={preview}
@@ -487,7 +485,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
 
   if (selectedTenantId === null) {
     return (
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="page-frame">
         <StageTopBar crumbs={[{ label: "Artifacts" }]} />
         <PageLayout title="Artifacts" subtitle="Everything your workers made. Yours to keep.">
           <RichEmptyState
@@ -502,7 +500,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
 
   if (page.kind === "error" && isArtifactsUnavailableStatus(page.status)) {
     return (
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="page-frame">
         <StageTopBar crumbs={[{ label: "Artifacts" }]} />
         <PageLayout title="Artifacts" subtitle="Everything your workers made. Yours to keep.">
           <RichEmptyState
@@ -517,7 +515,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
 
   if (page.kind !== "ready") {
     return (
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="page-frame">
         <StageTopBar crumbs={[{ label: "Artifacts" }]} />
         <PageLayout title="Artifacts" subtitle="Everything your workers made. Yours to keep.">
           {page.kind === "loading" ? (

@@ -21,7 +21,7 @@ export function ArtifactsTab({ workbenchTenantId }: { readonly workbenchTenantId
         <h3>Files saved here</h3>
         <Link to={benchLink(ARTIFACTS_PATH_PREFIX, workbenchTenantId)}>Open all</Link>
       </div>
-      {page.kind === "loading" ? <Skeleton className="h-16 w-full" /> : null}
+      {page.kind === "loading" ? <Skeleton className="skeleton-card" /> : null}
       {page.kind === "error" ? <p className="workbench-info-empty-note">{page.message}</p> : null}
       {page.kind === "ready" && rows.length === 0 ? (
         <p className="workbench-info-empty-note">Nothing saved here yet.</p>
