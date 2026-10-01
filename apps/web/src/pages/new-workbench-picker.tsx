@@ -107,10 +107,6 @@ export function NewWorkbenchPickerRoute() {
               voiceUnavailable="Voice starts inside a workbench"
               onSend={submit}
             />
-            <p className="new-hint">
-              No templates. Your co-worker asks what it needs, connects tools with you, and suggests
-              skills and workflows as you go.
-            </p>
           </>
         )}
       </div>

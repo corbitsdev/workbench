@@ -2118,7 +2118,7 @@ a.drawer-li:hover,
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 8px 0;
+  padding: 8px 0 0;
   margin-top: 6px;
   border-top: 1px solid var(--line);
   position: relative;
@@ -2138,34 +2138,40 @@ a.drawer-li:hover,
 .sb-profile:hover {
   background: var(--hover);
 }
+/* A tonal pill one step off the canvas: no ring, no shadow, content leads. */
 .sb-tools {
   flex: 1;
   height: 36px;
+  padding: 0 14px;
   border: 0;
-  border-radius: var(--r-md);
-  background: var(--surface);
-  box-shadow: var(--raised);
+  border-radius: 10px;
+  background: var(--hover);
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: 10px;
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--ink);
   cursor: pointer;
   transition:
-    box-shadow 150ms ease-out,
+    background-color 120ms ease,
     transform 160ms var(--ease-out);
 }
+.sb-tools svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2;
+}
 .sb-tools:hover {
-  box-shadow: var(--raised-hover);
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
 }
 .sb-tools:active {
   transform: scale(0.97);
 }
 .sb-tools[data-active="true"] {
-  box-shadow: 0 0 0 1.5px var(--ink);
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
 }
 .sb-profile:focus-visible,
 .sb-tools:focus-visible,
