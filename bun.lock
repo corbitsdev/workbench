@@ -86,7 +86,7 @@
       },
       "dependencies": {
         "@corbits/credential-header": "^0.1.0",
-        "@corbits/credential-mcp": "github:corbitsdev/corbits-credential-mcp#fb9ec3a6754348cd33c388c70c0830b8844c83de",
+        "@corbits/credential-mcp": "^0.1.0",
         "@intx/agent": "workspace:*",
         "@intx/authz": "0.4.0",
         "@intx/crypto": "0.4.0",
@@ -119,7 +119,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@corbits/approvals": "workspace:*",
-        "@corbits/credential-mcp": "github:corbitsdev/corbits-credential-mcp#fb9ec3a6754348cd33c388c70c0830b8844c83de",
+        "@corbits/credential-mcp": "^0.1.0",
         "@corbits/error-sink": "workspace:*",
         "@corbits/mcp": "^0.3.0",
         "@corbits/react-ui": "0.3.0",
@@ -637,7 +637,7 @@
 
     "@corbits/credential-http": ["@corbits/credential-http@0.1.0", "", { "peerDependencies": { "@intx/harness": "^0.4.0", "@intx/types": "^0.4.0" } }, "sha512-/I4lKk9u3DhPhrBvMNRHFdpzHTwbfGwt/P6yGELby8YQ1qPxmhCQoZYyOqMWl4ONbiShMUHJrkAFi0EtzzgpyQ=="],
 
-    "@corbits/credential-mcp": ["@corbits/credential-mcp@github:corbitsdev/corbits-credential-mcp#fb9ec3a", { "peerDependencies": { "@intx/harness": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-credential-mcp-fb9ec3a", "sha512-Co4jR+L3pfBbVYY7I6jRftoHeSb5+LCxzEEaAhVLYA3aY2PrPHZV37+DWxj3fcK/KdzboqbT3XSnqU8DyHRU9Q=="],
+    "@corbits/credential-mcp": ["@corbits/credential-mcp@0.1.0", "", { "peerDependencies": { "@intx/harness": ">=0.4.0", "@intx/types": ">=0.4.0" } }, "sha512-QVetVsrFHXzAoJGMASpdScHxtz7jshpn4Xg0ZtThifORYSG2DIg0SxmpJD/S8KUYEHx1jRrMiK5ncinJHg+i2Q=="],
 
     "@corbits/cron": ["@corbits/cron@0.2.1", "", { "dependencies": { "arktype": "^2.2.3" }, "peerDependencies": { "@intx/db": "^0.4.0", "@intx/hub-api": "^0.4.0", "drizzle-orm": "^0.45.3", "hono": "^4.13.8", "postgres": "^3.4.9" } }, "sha512-eJm1nD9YSf9ehgkpE+1+9oiVfhZFfgb+Ck3jeHw2koTIeh9cwQ5eoLXigHlmDN+hAqqGeE+v/GBaHOuDy6uYbQ=="],
 
