@@ -68,7 +68,9 @@ import {
   type WorkflowMemoryEnv,
 } from "@corbits/memory";
 import {
+  createOAuthLoginStore,
   createOAuthTokenRefresher,
+  mountOAuthCallback,
   mountOAuthLogin,
   type OAuthLoginProviders,
 } from "@corbits/oauth-core/hub";
@@ -738,6 +740,12 @@ export async function createHubServer({
     app.route("/api/workflow-memory", workflowMemoryApi);
   }
 
+  const hubPublicUrl = process.env["HUB_PUBLIC_URL"] ?? `http://127.0.0.1:${String(port)}`;
+  // A loopback hub is local development, where MCP servers may be plain-http
+  // loopback too; a public hub keeps discovery https-only.
+  const hubHost = new URL(hubPublicUrl).hostname;
+  const localDevHub = hubHost === "localhost" || hubHost.startsWith("127.") || hubHost === "[::1]";
+
   {
     // "Continue with Codex"/"Continue with xAI": the whole loopback PKCE
     // flow runs here, so the verifier and the callback listener never
@@ -769,7 +777,17 @@ export async function createHubServer({
         refresh: (refreshSecret: string, now: number) => refreshXaiTokens(refreshSecret, now),
       },
     };
+    // Resource-URL logins (MCP servers) redirect back to a hub-root route
+    // outside any tenant; it shares the login store with the tenant routes.
+    const oauthLoginStore = createOAuthLoginStore();
+    // The mount takes a plain Hono, so it rides its own router on the root.
+    const oauthCallbackApi = new Hono();
+    mountOAuthCallback(oauthCallbackApi, { store: oauthLoginStore, path: "/api/oauth/callback" });
+    app.route("/", oauthCallbackApi);
     mountOAuthLogin(oauthLoginApi, {
+      store: oauthLoginStore,
+      callbackUrl: `${hubPublicUrl.replace(/\/+$/, "")}/api/oauth/callback`,
+      clientName: "Workbench",
       db,
       cipher: credentialCipher,
       requireGrant: requireGrant("credential:*", "create"),
@@ -815,6 +833,7 @@ export async function createHubServer({
     // catalog can be read is here, with the secret decrypted in-process.
     const mcpApi = new Hono<TenantEnv>();
     mountMcpDiscovery(mcpApi, {
+      allowLoopback: localDevHub,
       db,
       cipher: credentialCipher,
       requireGrant: createRequireGrant({

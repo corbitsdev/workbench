@@ -4,6 +4,7 @@
 // workbench Worker carries, so every write ends in a redeploy of each Worker
 // whose binding list changed, and the page says how many.
 
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { reportError } from "@corbits/error-sink";
 
@@ -14,11 +15,15 @@ import { listWorkbenchTenants } from "../chat/workbench-tenants";
 import { readAgentMcpHandles } from "../agent-source-read";
 import {
   addMcpServer,
+  addSignedInMcpServer,
   listMcpServers,
+  readMcpSignIn,
+  startMcpSignIn,
   removeMcpServer,
   resolveWorkspaceTenantId,
   type AddMcpServerInput,
   type McpServer,
+  type McpSignInInput,
 } from "../mcp-servers";
 import { redeployWorkbenchAgent } from "../workbench-create";
 
@@ -194,6 +199,80 @@ export function useAddMcpServer(tenantId: string | null) {
     },
     onSettled: invalidate,
   });
+}
+
+type PendingSignIn = McpSignInInput & {
+  readonly workspaceTenantId: string;
+  readonly loginId: string;
+  readonly providerId: string;
+};
+
+/** Signs in to an OAuth server through the hub: the hub runs the login and
+ * stores the `oauth_token` credential, this polls it once a second and, on
+ * completion, records the catalog and redeploys exactly like a token add. */
+export function useSignInMcpServer(
+  tenantId: string | null,
+  handlers: {
+    readonly onConnected: (result: AddMcpServerResult) => void;
+    readonly onFailed: (cause: unknown) => void;
+  },
+) {
+  const invalidate = useInvalidateTools(tenantId);
+  const [pending, setPending] = useState<PendingSignIn | null>(null);
+
+  const start = useMutation({
+    mutationFn: async (input: Omit<McpSignInInput, "tenantId">) => {
+      const workspaceTenantId = await resolveWorkspaceTenantId(tenantId as string);
+      const login = await startMcpSignIn({ tenantId: workspaceTenantId, ...input });
+      // `noopener` makes window.open return null, so a blocked popup is not detectable here.
+      window.open(login.authorizeUrl, "_blank", "noopener");
+      return { ...input, ...login, workspaceTenantId, tenantId: workspaceTenantId };
+    },
+    onSuccess: (login) => {
+      setPending(login);
+    },
+    onError: handlers.onFailed,
+  });
+
+  useQuery({
+    queryKey: ["tenant", tenantId ?? "none", "tools", "mcp-sign-in", pending?.loginId ?? "none"],
+    enabled: pending !== null,
+    retry: false,
+    refetchOnWindowFocus: false,
+    staleTime: Infinity,
+    refetchInterval: (query) => (query.state.data === "done" ? false : 1000),
+    queryFn: async () => {
+      const login = pending as PendingSignIn;
+      try {
+        const status = await readMcpSignIn(login.workspaceTenantId, login.loginId);
+        if (status.status === "pending") return "pending";
+        if (status.status === "completed" && status.credentialId !== undefined) {
+          const server = await addSignedInMcpServer({
+            ...login,
+            tenantId: login.workspaceTenantId,
+            credentialId: status.credentialId,
+          });
+          const redeployed = await redeployWorkspaceWorkers(login.workspaceTenantId);
+          setPending(null);
+          await invalidate();
+          handlers.onConnected({ server, ...redeployed });
+          return "done";
+        }
+        throw new Error(status.message ?? `the sign-in ${status.status}`);
+      } catch (cause) {
+        setPending(null);
+        await invalidate();
+        handlers.onFailed(cause);
+        return "done";
+      }
+    },
+  });
+
+  return {
+    start,
+    waitingHandle: pending?.handle ?? null,
+    busy: start.isPending || pending !== null,
+  };
 }
 
 export type RemoveMcpServerResult = {

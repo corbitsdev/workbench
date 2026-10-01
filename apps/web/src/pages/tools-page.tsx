@@ -30,6 +30,7 @@ import {
   useAddMcpServer,
   useMcpServers,
   useRemoveMcpServer,
+  useSignInMcpServer,
   type McpServerRow,
 } from "../tools/mcp-servers-query";
 import { useDeployedToolPackages } from "../tools/deployed-tool-packages";
@@ -117,13 +118,13 @@ function AvailableTile({
   entry,
   onConnect,
   busy,
+  waiting,
 }: {
   readonly entry: McpCatalogEntry;
-  readonly onConnect: (token?: string) => void;
+  readonly onConnect: () => void;
   readonly busy: boolean;
+  readonly waiting: boolean;
 }) {
-  const [asking, setAsking] = useState(false);
-  const [token, setToken] = useState("");
   const keyless = entry.auth === "none";
 
   return (
@@ -133,79 +134,51 @@ function AvailableTile({
       desc={toolHost(entry.url)}
       official
     >
-      {asking ? (
-        <form
-          className="tool-tile-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            onConnect(token);
-            setAsking(false);
-            setToken("");
-          }}
-        >
-          <Input
-            aria-label={`${entry.name} token`}
-            type="password"
-            placeholder="Bearer token"
-            value={token}
-            onChange={(event) => {
-              setToken(event.target.value);
-            }}
-          />
-          <div className="tool-tile-form-actions">
-            <Button size="sm" variant="outline" type="submit" disabled={busy || token === ""}>
-              Connect
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              type="button"
-              onClick={() => {
-                setAsking(false);
-              }}
-            >
-              Cancel
-            </Button>
-          </div>
-        </form>
-      ) : (
-        <div className="tool-tile-foot">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => {
-              if (keyless) onConnect();
-              else setAsking(true);
-            }}
-          >
-            Connect
-          </Button>
-          <span className="tool-tile-hint">{keyless ? "No key needed" : "Token"}</span>
-        </div>
-      )}
+      <div className="tool-tile-foot">
+        <Button size="sm" variant="outline" disabled={busy} onClick={onConnect}>
+          {keyless ? "Connect" : "Sign in"}
+        </Button>
+        <span className="tool-tile-hint">
+          {waiting ? "Waiting for sign-in…" : keyless ? "No key needed" : "OAuth"}
+        </span>
+      </div>
     </ToolTile>
   );
 }
 
 function AddByUrl({
   onAdd,
+  onSignIn,
   adding,
+  waiting,
 }: {
   readonly onAdd: (input: { url: string; name: string; handle: string; token?: string }) => void;
+  readonly onSignIn: (input: { url: string; name: string; handle: string }) => void;
   readonly adding: boolean;
+  readonly waiting: boolean;
 }) {
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
 
-  function submit() {
-    let handle: string;
+  function parsedHandle(): string | null {
     try {
-      handle = handleFromUrl(url);
+      return handleFromUrl(url);
     } catch {
       toast("That doesn't look like a server URL.");
-      return;
+      return null;
     }
+  }
+
+  function signIn() {
+    const handle = parsedHandle();
+    if (handle === null) return;
+    onSignIn({ url, handle, name: handle });
+    setUrl("");
+  }
+
+  function submit() {
+    const handle = parsedHandle();
+    if (handle === null) return;
     onAdd({
       url,
       handle,
@@ -239,14 +212,17 @@ function AddByUrl({
           setToken(event.target.value);
         }}
       />
-      <Button
-        size="sm"
-        className="tool-add-submit"
-        disabled={adding || url === ""}
-        onClick={submit}
-      >
-        Add
-      </Button>
+      <div className="tool-add-actions">
+        <Button size="sm" disabled={adding || url === ""} onClick={submit}>
+          Add
+        </Button>
+        {token === "" ? (
+          <Button size="sm" variant="outline" disabled={adding || url === ""} onClick={signIn}>
+            Sign in
+          </Button>
+        ) : null}
+        {waiting ? <span className="tool-tile-hint">Waiting for sign-in…</span> : null}
+      </div>
     </Card>
   );
 }
@@ -257,6 +233,14 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
   const serversQuery = useMcpServers(tenantId);
   const add = useAddMcpServer(tenantId);
   const remove = useRemoveMcpServer(tenantId);
+  const signIn = useSignInMcpServer(tenantId, {
+    onConnected: (result) => {
+      toast(`${result.server.name} connected — ${describeRedeployResult(result)}`);
+    },
+    onFailed: (cause: unknown) => {
+      toast(describeApiError(cause, "signing in to this server"));
+    },
+  });
   const [filter, setFilter] = useState("");
   const crumbs = [{ label: "Tools" }];
   const needle = filter.trim().toLocaleLowerCase();
@@ -351,18 +335,23 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
                     <AvailableTile
                       key={entry.handle}
                       entry={entry}
-                      busy={add.isPending}
-                      onConnect={(token) => {
-                        addServer({
-                          url: entry.url,
-                          name: entry.name,
-                          handle: entry.handle,
-                          ...(token === undefined ? {} : { token }),
-                        });
+                      busy={add.isPending || signIn.busy}
+                      waiting={signIn.waitingHandle === entry.handle}
+                      onConnect={() => {
+                        const server = { url: entry.url, name: entry.name, handle: entry.handle };
+                        if (entry.auth === "oauth") signIn.start.mutate(server);
+                        else addServer(server);
                       }}
                     />
                   ))}
-                  <AddByUrl onAdd={addServer} adding={add.isPending} />
+                  <AddByUrl
+                    onAdd={addServer}
+                    onSignIn={(server) => {
+                      signIn.start.mutate(server);
+                    }}
+                    adding={add.isPending || signIn.busy}
+                    waiting={signIn.waitingHandle !== null}
+                  />
                 </div>
               </Section>
             </>

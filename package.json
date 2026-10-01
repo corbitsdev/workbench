@@ -105,7 +105,7 @@
     "better-auth": "1.6.29",
     "hono": "4.13.3",
     "@intx/mailbox": "workspace:*",
-    "@corbits/oauth-core": "github:corbitsdev/corbits-oauth-core#3028f8604155eee63f5a1711f0d4022d7984e3f7",
+    "@corbits/oauth-core": "^0.3.0",
     "@corbits/openai-responses": "github:corbitsdev/corbits-openai-responses#7efe0006da9d94ac9037c1389f23d3d6163df4a5"
   }
 }
