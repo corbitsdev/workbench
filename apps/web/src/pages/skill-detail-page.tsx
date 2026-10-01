@@ -24,6 +24,7 @@ import { skillDisplayName } from "../skill-display-name";
 import { readSkillSource, writeSkillSource } from "../skill-source";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { loadSkill, type SkillSummary } from "../skills-api";
+import "./skill-detail-page.css";
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
@@ -75,9 +76,9 @@ export function SkillDetailPage({
 
   function frame(body: ReactNode) {
     return (
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="page-frame">
         <StageTopBar crumbs={crumbs} />
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="page-scroll">
           <PageShell width="full" className="page-fill">
             {body}
           </PageShell>
@@ -87,9 +88,7 @@ export function SkillDetailPage({
   }
 
   if (tenantId === null) {
-    return frame(
-      <p className="text-sm text-muted-foreground">Pick a workbench to see this skill.</p>,
-    );
+    return frame(<p className="page-note">Pick a workbench to see this skill.</p>);
   }
 
   if (state.status === "missing") {
@@ -121,12 +120,10 @@ export function SkillDetailPage({
   const { skill } = state;
 
   return frame(
-    <div className="flex flex-col gap-6">
-      <header className="min-w-0">
-        <h1 className="truncate text-lg font-semibold tracking-tight">{skillDisplayName(skill)}</h1>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Updated {formatRelativeTime(skill.updatedAtIso, now)}
-        </p>
+    <div className="skill-detail">
+      <header className="skill-detail-head">
+        <h1 className="skill-detail-title">{skillDisplayName(skill)}</h1>
+        <p className="skill-detail-meta">Updated {formatRelativeTime(skill.updatedAtIso, now)}</p>
       </header>
 
       <SkillSourceEditor tenantId={tenantId} skill={skill} />
@@ -176,7 +173,7 @@ function SkillSourceEditor({
   return (
     <Section title="SKILL.md" description="This skill's instructions, read from its own repo.">
       {source.data === undefined ? (
-        <Textarea value="" disabled className="min-h-[320px] font-mono text-[0.8125rem]" />
+        <Textarea value="" disabled className="code-textarea code-textarea-tall" />
       ) : (
         <SkillDraftEditor
           key={source.data}
@@ -205,11 +202,11 @@ function SkillDraftEditor({
   const dirty = draft !== initial;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="skill-detail-editor">
       <Textarea
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
-        className="min-h-[320px] font-mono text-[0.8125rem]"
+        className="code-textarea code-textarea-tall"
         placeholder="# Skill instructions"
       />
       <div>

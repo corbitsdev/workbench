@@ -82,7 +82,7 @@ function RunDetail({
   readonly onRetry: () => Promise<void>;
 }) {
   const eventsQuery = useAPIQuery(runEventsPath(tenantId, run.id), RunEventsSchema);
-  if (eventsQuery.kind === "loading") return <Skeleton className="h-16 w-full" />;
+  if (eventsQuery.kind === "loading") return <Skeleton className="skeleton-card" />;
   if (eventsQuery.kind === "error") {
     return <RichEmptyState title="Couldn't load events" description={eventsQuery.message} />;
   }
@@ -129,7 +129,7 @@ function RoutineRunsSection({
   return (
     <section className="routine-sec">
       <h2>Recent runs</h2>
-      {runsQuery.kind === "loading" ? <Skeleton className="h-24 w-full" /> : null}
+      {runsQuery.kind === "loading" ? <Skeleton className="skeleton-card-lg" /> : null}
       {runsQuery.kind === "error" ? (
         <RichEmptyState title="Couldn't load runs" description={runsQuery.message} />
       ) : null}
@@ -178,11 +178,11 @@ function RoutineNotice({
 }) {
   const navigate = useNavigate();
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="page-frame">
       <StageTopBar
         crumbs={[{ label: "Workflows", href: WORKFLOWS_PATH_PREFIX }, { label: title }]}
       />
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="page-scroll">
         <PageLayout title={title}>
           <RichEmptyState
             icon={<Clock />}
@@ -212,14 +212,14 @@ export function RoutineDetailPage({
   const description = useRoutineDescription(row.tenantId, row.definition.name);
   const paused = state.label === "paused";
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="page-frame">
       <StageTopBar
         crumbs={[
           { label: "Workflows", href: WORKFLOWS_PATH_PREFIX },
           { label: row.definition.name },
         ]}
       />
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="page-scroll">
         <PageLayout
           title={row.definition.name}
           subtitle={

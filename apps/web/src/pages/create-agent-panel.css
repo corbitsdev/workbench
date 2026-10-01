@@ -1,0 +1,18 @@
+.create-agent-servers {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.create-agent-server-list {
+  margin-top: 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.create-agent-server-name {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}

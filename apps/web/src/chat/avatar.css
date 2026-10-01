@@ -17,6 +17,23 @@
   color: var(--canvas);
 }
 
+.avatar-fill-1 {
+  background: var(--avatar-1);
+  color: black;
+}
+.avatar-fill-2 {
+  background: var(--avatar-2);
+  color: black;
+}
+.avatar-fill-3 {
+  background: var(--avatar-3);
+  color: black;
+}
+.avatar-fill-4 {
+  background: var(--avatar-4);
+  color: black;
+}
+
 /* The status dot is the only round non-initials child. */
 .wb-av > span.rounded-full {
   width: 8px;

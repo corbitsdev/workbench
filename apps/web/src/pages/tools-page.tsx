@@ -217,7 +217,7 @@ function AddByUrl({
   }
 
   return (
-    <Card className="flex flex-col gap-3 p-4">
+    <Card className="tool-card">
       <div>
         <CardTitle>Add a server by URL</CardTitle>
         <CardDescription>Any MCP server that speaks streamable HTTP.</CardDescription>
@@ -239,7 +239,12 @@ function AddByUrl({
           setToken(event.target.value);
         }}
       />
-      <Button size="sm" className="self-start" disabled={adding || url === ""} onClick={submit}>
+      <Button
+        size="sm"
+        className="tool-add-submit"
+        disabled={adding || url === ""}
+        onClick={submit}
+      >
         Add
       </Button>
     </Card>
@@ -260,9 +265,9 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
 
   function stage(body: React.ReactNode) {
     return (
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="page-frame">
         <StageTopBar crumbs={crumbs} />
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="page-scroll">
           <PageLayout
             title="Tools"
             subtitle="Official servers first. Secrets never touch your workers."
@@ -275,9 +280,7 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
   }
 
   if (tenantId === null) {
-    return stage(
-      <p className="text-sm text-muted-foreground">Pick a workbench to see its tools.</p>,
-    );
+    return stage(<p className="page-note">Pick a workbench to see its tools.</p>);
   }
 
   function addServer(input: { url: string; name: string; handle: string; token?: string }) {
@@ -292,7 +295,7 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
   }
 
   return stage(
-    <div className="flex flex-col gap-8">
+    <div className="tools-sections">
       <Input
         className="tools-filter"
         aria-label="Filter tools"
@@ -316,7 +319,7 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
                 description="The workspace catalog, shared by every workbench: a server's tools reach the agents whose definitions bind it."
               >
                 {connected.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Nothing connected yet.</p>
+                  <p className="page-note">Nothing connected yet.</p>
                 ) : (
                   <div className="tools-grid">
                     {connected.map((server) => (
@@ -391,9 +394,9 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
                 <TableBody>
                   {toolPackages.map((tool) => (
                     <TableRow key={tool.name}>
-                      <TableCell className="font-medium">{tool.name}</TableCell>
-                      <TableCell className="text-muted-foreground">{tool.version ?? "—"}</TableCell>
-                      <TableCell className="text-muted-foreground">
+                      <TableCell className="tools-cell-name">{tool.name}</TableCell>
+                      <TableCell className="tools-cell-soft">{tool.version ?? "—"}</TableCell>
+                      <TableCell className="tools-cell-soft">
                         {tool.agentNames.join(", ")}
                       </TableCell>
                     </TableRow>

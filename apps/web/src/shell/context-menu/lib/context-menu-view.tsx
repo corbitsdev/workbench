@@ -8,6 +8,7 @@ import {
 } from "@corbits/react-ui/ui/menu";
 
 import { restoreFocus } from "./focus-restore";
+import "./context-menu-view.css";
 import type { ContextMenu } from "./menu";
 
 // Uses react-ui's Radix-backed `Menu`, not a hand-rolled popover: it
@@ -60,11 +61,7 @@ export function ContextMenuView({
             <MenuItem
               key={entry.id}
               onSelect={entry.onSelect}
-              className={
-                entry.danger === true
-                  ? "text-destructive data-[highlighted]:bg-destructive/10 data-[highlighted]:text-destructive"
-                  : undefined
-              }
+              className={entry.danger === true ? "context-menu-danger" : undefined}
             >
               {entry.icon}
               <span>{entry.label}</span>

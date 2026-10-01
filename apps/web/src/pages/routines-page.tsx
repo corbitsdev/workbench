@@ -136,9 +136,9 @@ export function RoutinesRoute() {
   const rows = routinesQuery.kind === "ready" ? routinesQuery.data : [];
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="page-frame">
       <StageTopBar crumbs={[{ label: "Workflows" }]} />
-      <div className="stage-content flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="stage-content page-scroll-column">
         {routinesQuery.kind === "loading" ? (
           <WorkflowsLayout>
             <EmptyState icon={<Clock />} title="Loading workflows…" />

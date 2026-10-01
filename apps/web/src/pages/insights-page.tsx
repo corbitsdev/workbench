@@ -55,6 +55,7 @@ import { INSIGHTS_PATH_PREFIX, INSIGHTS_RUNS_PATH } from "../path-ids";
 import { benchLink, useFromBench } from "../shell/page-crumbs";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { useTenantQuery } from "../routines-api";
+import "./insights-page.css";
 
 export function formatWhen(iso: string): string {
   const date = new Date(iso);
@@ -108,11 +109,9 @@ function InsightsStat({
 }) {
   if (loading === true) {
     return (
-      <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-card p-4">
-        <span className="text-[10px] font-semibold tracking-[0.12em] uppercase text-muted-foreground">
-          {label}
-        </span>
-        <Skeleton className="h-[26px] w-16" />
+      <div className="insights-stat-loading">
+        <span className="insights-stat-label">{label}</span>
+        <Skeleton className="skeleton-stat" />
       </div>
     );
   }
@@ -217,16 +216,16 @@ export function InsightsRunsHistory({
   const purpose = purposeRunsForInsights(runs);
   const groups = groupRunsByDefinition(purpose);
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="page-frame">
       <StageTopBar
         crumbs={[{ label: "Insights", href: INSIGHTS_PATH_PREFIX }, { label: "Run history" }]}
         subtitle={`${purpose.length} runs`}
       />
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="page-scroll">
         <PageShell width="full" className="page-fill">
           <div className="insights-layout">
             {loading ? (
-              <Skeleton className="h-40 w-full" />
+              <Skeleton className="skeleton-panel" />
             ) : groups.length === 0 ? (
               <RichEmptyState
                 icon={<ChartBar />}
@@ -271,7 +270,7 @@ function RunFailureDetail({
   const events = useAPIQuery(insightsRunEventsPath(tenantId, runId), RunEventsSchema);
   const [showEvents, setShowEvents] = useState(false);
 
-  if (events.kind === "loading") return <Skeleton className="h-24 w-full" />;
+  if (events.kind === "loading") return <Skeleton className="skeleton-card-lg" />;
   if (events.kind !== "ready") {
     return (
       <RichEmptyState
@@ -289,12 +288,12 @@ function RunFailureDetail({
   return (
     <section className="insights-panel">
       <h3>Failure</h3>
-      <p className="text-sm text-destructive">
+      <p className="page-error">
         {message ?? "This run failed, but no event carried a specific error message."}
       </p>
       <button
         type="button"
-        className="font-semibold text-primary-emphasis"
+        className="insights-link-button"
         onClick={() => setShowEvents((value) => !value)}
       >
         {showEvents ? "Hide events" : "View events"}
@@ -330,7 +329,7 @@ export function InsightsRunDetail({
 }) {
   const failed = run !== null && insightsRunStatus(run) === "failed";
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="page-frame">
       <StageTopBar
         crumbs={[
           { label: "Runs", href: INSIGHTS_RUNS_PATH },
@@ -338,7 +337,7 @@ export function InsightsRunDetail({
         ]}
         subtitle={run !== null ? formatWhen(run.createdAt) : null}
       />
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="page-scroll">
         <PageShell width="full" className="page-fill">
           <div className="insights-layout">
             <StatGrid columns={3}>
@@ -385,7 +384,7 @@ export function InsightsPage({
 
   if (runs.kind === "unauthenticated") {
     return (
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="page-frame">
         <StageTopBar crumbs={[{ label: "Runs" }]} />
         <PageShell width="full" className="page-fill">
           <SignedOutNotice />
@@ -436,11 +435,11 @@ function InsightsWorkbenchPage({
     );
   }
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="page-frame">
       <StageTopBar crumbs={[{ label: "Insights" }]} />
       <PageShell width="full" className="page-fill">
         {workbenchesLoading ? (
-          <Skeleton className="h-48 w-full" />
+          <Skeleton className="skeleton-panel-lg" />
         ) : (
           <RichEmptyState
             icon={<ChartBar />}
@@ -469,7 +468,7 @@ function InsightsLandingRedirect({ benchTenantId }: { readonly benchTenantId: st
   if (isLoading) {
     return (
       <PageShell width="full" className="page-fill">
-        <Skeleton className="h-48 w-full" />
+        <Skeleton className="skeleton-panel-lg" />
       </PageShell>
     );
   }

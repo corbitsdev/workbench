@@ -26,7 +26,7 @@ export function WorkflowsTab({ workbenchTenantId }: { readonly workbenchTenantId
         <h3>Scheduled here</h3>
         <Link to={benchLink(WORKFLOWS_PATH_PREFIX, workbenchTenantId)}>Open all</Link>
       </div>
-      {flows.isLoading ? <Skeleton className="h-16 w-full" /> : null}
+      {flows.isLoading ? <Skeleton className="skeleton-card" /> : null}
       {flows.isError ? (
         <p className="workbench-info-empty-note">
           {describeApiError(flows.error, "loading workflows")}

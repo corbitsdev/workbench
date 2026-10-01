@@ -51,7 +51,7 @@ export function ApprovalsCard({
         {capped ? ` Based on the ${runs.length} most recent runs.` : ""}
       </p>
       {tally.kind === "loading" ? (
-        <Skeleton className="h-24 w-full" />
+        <Skeleton className="skeleton-card-lg" />
       ) : tally.kind === "error" ? (
         <p className="bi-sub">Couldn't load approvals.</p>
       ) : (
@@ -83,7 +83,7 @@ export function ApprovalsLine({
   readonly runs: readonly InsightsRun[];
 }) {
   const tally = useApprovalTally(tenantId, runs);
-  if (tally.kind === "loading") return <Skeleton className="h-5 w-full" />;
+  if (tally.kind === "loading") return <Skeleton className="skeleton-line" />;
   if (tally.kind === "error") return <p className="insights-note">Couldn't load approvals.</p>;
   return (
     <div className="appr-line">

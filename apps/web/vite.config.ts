@@ -7,7 +7,6 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 
 import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite";
 import { defineConfig, type Plugin } from "vite";
 
 const workerDir = path.resolve(__dirname, "..", "..", "packages", "worker");
@@ -42,7 +41,7 @@ function manualChunks(id: string): string | undefined {
 const hubOrigin = process.env.BASE_URL ?? "http://localhost:3000";
 
 export default defineConfig({
-  plugins: [workerWorkflowBundle(), react(), tailwindcss()],
+  plugins: [workerWorkflowBundle(), react()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),

@@ -1,0 +1,114 @@
+.diff-view,
+.diff-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.diff-summary {
+  gap: 0.25rem;
+}
+
+.diff-summary-text {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: var(--foreground);
+}
+
+.diff-counts {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+
+.diff-scroll {
+  max-height: 24rem;
+  overflow: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--muted) 30%, transparent);
+}
+
+.diff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.625;
+}
+
+.diff-row {
+  border-bottom-width: 0;
+}
+
+.diff-row:hover {
+  background: transparent;
+}
+
+.diff-row-context {
+  color: var(--muted-foreground);
+}
+
+.diff-row-added {
+  background: color-mix(in oklab, var(--success) 10%, transparent);
+  color: var(--foreground);
+}
+
+.diff-row-removed {
+  background: color-mix(in oklab, var(--destructive) 10%, transparent);
+  color: var(--foreground);
+}
+
+.diff-row-skipped {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+.diff-row-added:hover,
+.diff-row-removed:hover {
+  background: transparent;
+}
+
+.diff-cell {
+  user-select: none;
+}
+
+.diff-cell-number {
+  width: 2.5rem;
+  padding-inline: 0.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+
+.diff-cell-marker {
+  width: 1.5rem;
+  padding-inline: 0.25rem;
+  text-align: center;
+}
+
+.diff-cell-text {
+  user-select: auto;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  padding: 0.125rem 0.5rem;
+}
+
+.diff-skip-marker {
+  margin-inline: auto;
+}
+
+.diff-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.diff-heading-arrow {
+  color: var(--muted-foreground);
+}

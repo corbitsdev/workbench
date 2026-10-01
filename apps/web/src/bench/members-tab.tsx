@@ -87,7 +87,7 @@ export function MembersTab({
           <h3>People</h3>
           <Link to="/settings/people">Invite</Link>
         </div>
-        {people.isPending ? <Skeleton className="h-12 w-full" /> : null}
+        {people.isPending ? <Skeleton className="skeleton-row-lg" /> : null}
         {people.isError ? (
           <RichEmptyState
             title="Couldn't load people"
@@ -119,7 +119,7 @@ export function MembersTab({
           <h3>Workers</h3>
           <Link to="/workers">Add</Link>
         </div>
-        {loading ? <Skeleton className="h-12 w-full" /> : null}
+        {loading ? <Skeleton className="skeleton-row-lg" /> : null}
         {!loading && workers.length === 0 ? (
           <p className="workbench-info-empty-note">No workers yet.</p>
         ) : null}

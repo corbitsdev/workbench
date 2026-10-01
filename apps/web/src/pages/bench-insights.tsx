@@ -217,7 +217,7 @@ export function BenchInsights({
 
   let body: ReactNode;
   if (runs.kind === "loading") {
-    body = <Skeleton className="h-48 w-full" />;
+    body = <Skeleton className="skeleton-panel-lg" />;
   } else if (runs.kind !== "ready") {
     body = (
       <RichEmptyState
@@ -233,9 +233,9 @@ export function BenchInsights({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="page-frame">
       <StageTopBar crumbs={crumbs} actions={rangeSeg} />
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="page-scroll">
         <PageLayout title="Insights" subtitle={`What happened in ${title}.`}>
           {body}
         </PageLayout>

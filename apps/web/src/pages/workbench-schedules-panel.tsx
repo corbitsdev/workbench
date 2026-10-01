@@ -19,6 +19,7 @@ import {
 } from "../routines-api";
 import { tenantKeys } from "../query-client";
 import { ConfirmButton } from "../components/confirm-button";
+import "./workbench-schedules-panel.css";
 
 type FormState = {
   readonly definitionName: string;
@@ -109,7 +110,7 @@ export function WorkbenchSchedulesPanel({
         </Button>
       </div>
 
-      {schedules.isLoading ? <Skeleton className="h-16 w-full" /> : null}
+      {schedules.isLoading ? <Skeleton className="skeleton-card" /> : null}
       {schedules.isError ? (
         <p className="workbench-info-empty-note">
           {describeApiError(schedules.error, "loading schedules")}
@@ -150,7 +151,7 @@ export function WorkbenchSchedulesPanel({
                   </span>
                 </>
               )}
-              <div className="mt-1 flex gap-2">
+              <div className="workbench-info-schedule-actions">
                 {schedule.stoppedAt === null ? null : (
                   <Button
                     variant="ghost"
@@ -182,9 +183,9 @@ export function WorkbenchSchedulesPanel({
       ) : null}
 
       {open ? (
-        <div className="mt-3 flex flex-col gap-2">
+        <div className="workbench-info-schedule-form">
           {create.isError ? (
-            <p className="text-sm text-destructive" role="alert">
+            <p className="page-error" role="alert">
               {scheduleError(create.error)}
             </p>
           ) : null}

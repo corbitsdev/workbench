@@ -94,9 +94,9 @@ export function SkillsPage({
 
   function stage(body: ReactNode) {
     return (
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="page-frame">
         <StageTopBar crumbs={crumbs} />
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="page-scroll">
           <PageLayout
             title="Skills"
             subtitle="Know-how your workers draw on. Ask for more in any bench."
@@ -111,9 +111,7 @@ export function SkillsPage({
   const filterInput = <ListFilter label="Filter skills" value={query} onChange={setQuery} />;
 
   if (tenantId === null) {
-    return stage(
-      <p className="text-sm text-muted-foreground">Pick a workbench to see its skills.</p>,
-    );
+    return stage(<p className="page-note">Pick a workbench to see its skills.</p>);
   }
 
   if (state.status === "loading") {
@@ -135,7 +133,7 @@ export function SkillsPage({
 
   if (skills.length === 0) {
     return stage(
-      <div className="flex flex-col gap-4">
+      <div className="page-stack">
         {filterInput}
         <RichEmptyState
           icon={<Lightning />}

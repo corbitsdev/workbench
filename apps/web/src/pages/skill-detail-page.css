@@ -1,0 +1,32 @@
+.skill-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.skill-detail-head {
+  min-width: 0;
+}
+
+.skill-detail-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+.skill-detail-meta {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--muted-foreground);
+}
+
+.skill-detail-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}

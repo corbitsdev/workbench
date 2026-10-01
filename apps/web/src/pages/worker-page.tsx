@@ -100,9 +100,9 @@ function InstructionsCard({
         How this worker should behave. It reads these at the start of every run.
       </p>
       {source.isPending ? (
-        <p className="mt-3 text-[13px] text-(--ink-3)">Loading instructions…</p>
+        <p className="wp-note">Loading instructions…</p>
       ) : source.isError ? (
-        <p role="alert" className="mt-3 text-[13px] text-(--danger-ink)">
+        <p role="alert" className="wp-note wp-note-error">
           {describeApiError(source.error, "load these instructions")}
         </p>
       ) : (
@@ -113,10 +113,10 @@ function InstructionsCard({
             value={value}
             readOnly={!editable}
             onChange={(event) => setDraft(event.target.value)}
-            className="mt-3 w-full resize-y rounded-(--r-md) border border-(--line) bg-(--card) p-3 text-[13.5px] leading-relaxed"
+            className="wp-instructions"
           />
           {editable ? (
-            <div className="mt-3 flex items-center gap-3">
+            <div className="wp-save-row">
               <Button
                 size="sm"
                 disabled={!dirty || value.trim() === "" || save.isPending}
@@ -124,7 +124,7 @@ function InstructionsCard({
               >
                 {save.isPending ? "Saving…" : "Save changes"}
               </Button>
-              <span className="text-[12.5px] text-(--ink-3)">
+              <span className="wp-hint">
                 {save.isPending
                   ? "Restarting with the new instructions"
                   : dirty
@@ -133,7 +133,7 @@ function InstructionsCard({
               </span>
             </div>
           ) : (
-            <p className="mt-3 text-[12.5px] text-(--ink-3)">
+            <p className="wp-note wp-hint">
               The default worker's instructions ship with Workbench and can't be edited here.
             </p>
           )}
@@ -191,17 +191,17 @@ function PermissionsCard({
         What it may do without asking. Workbench grants can narrow these, never widen them.
       </p>
       {query.isPending ? (
-        <p className="mt-3 text-[13px] text-(--ink-3)">Loading permissions…</p>
+        <p className="wp-note">Loading permissions…</p>
       ) : query.isError ? (
-        <p role="alert" className="mt-3 text-[13px] text-(--danger-ink)">
+        <p role="alert" className="wp-note wp-note-error">
           {describeApiError(query.error, "load these permissions")}
         </p>
       ) : query.data === null || query.data.tools.length === 0 ? (
-        <p className="mt-3 text-[13px] text-(--ink-3)">
+        <p className="wp-note">
           Permissions appear here once this worker has started its first run.
         </p>
       ) : (
-        <div className="mt-3">
+        <div className="wp-perm-list">
           {effectiveToolGrants(query.data.tools).map((grant) => {
             const name = grant.resource.slice(TOOL_PREFIX.length);
             const all = query.data?.tools ?? [];
@@ -297,9 +297,9 @@ function DetailsCard({
         {own === null ? null : (
           <>
             <dt>Runs</dt>
-            <dd className="tabular-nums">{thisWeek.length} this week</dd>
+            <dd className="wp-figure">{thisWeek.length} this week</dd>
             <dt>Approvals</dt>
-            <dd className="tabular-nums">{approvalsLabel(tally)}</dd>
+            <dd className="wp-figure">{approvalsLabel(tally)}</dd>
           </>
         )}
       </dl>
@@ -320,7 +320,7 @@ function ActivityPanel({
       <h2>Activity</h2>
       <p className="wp-sub">Its most recent runs.</p>
       {runs.kind === "loading" ? (
-        <Skeleton className="h-24 w-full" />
+        <Skeleton className="skeleton-card-lg" />
       ) : own === null ? (
         <p className="wp-empty">Couldn't load its runs.</p>
       ) : own.length === 0 ? (
@@ -453,28 +453,26 @@ export function WorkerRoute({ agentId }: { readonly agentId: string }) {
   const found = workers.find((candidate) => candidate.agent.id === agentId);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="page-frame">
       {error !== undefined ? (
-        <p role="alert" className="p-7 text-[14px] text-(--danger-ink)">
+        <p role="alert" className="wp-page-message wp-page-message-error">
           {error}
         </p>
       ) : loading ? (
-        <Skeleton className="m-7 h-40" />
+        <Skeleton className="wp-page-skeleton" />
       ) : found === undefined ? (
         <>
           <StageTopBar
             crumbs={[{ label: "Workers", href: WORKERS_PATH_PREFIX }, { label: "Not found" }]}
           />
-          <p className="p-7 text-[14px] text-(--ink-3)">
-            This workbench has no worker with that id.
-          </p>
+          <p className="wp-page-message">This workbench has no worker with that id.</p>
         </>
       ) : (
         <>
           <StageTopBar
             crumbs={[{ label: "Workers", href: WORKERS_PATH_PREFIX }, { label: found.agent.name }]}
           />
-          <div className="min-h-0 flex-1 overflow-auto">
+          <div className="page-scroll-auto">
             <WorkerDetail agent={found.agent} bench={found.bench} />
           </div>
         </>

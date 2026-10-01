@@ -1,0 +1,170 @@
+/* The frame every routed page shares: a column that fills the stage, with
+   one scrolling body. */
+.page-frame {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.page-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.page-scroll-auto {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+
+.page-scroll-column {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.page-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.page-note {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: var(--muted-foreground);
+}
+
+.page-error {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: var(--destructive);
+}
+
+.page-error-inline {
+  margin-bottom: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: var(--destructive);
+}
+
+.page-meta {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--muted-foreground);
+}
+
+.inline-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.inline-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Icons default to the surrounding text size; `:where` keeps zero
+   specificity so a sized icon class still wins. */
+:where(svg.lucide) {
+  width: 1em;
+  height: 1em;
+}
+
+.icon-sm {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+/* Loading placeholders, sized by the content they stand in for. */
+.skeleton-line {
+  width: 100%;
+  height: 1.25rem;
+}
+.skeleton-row {
+  width: 100%;
+  height: 2.5rem;
+}
+.skeleton-row-lg {
+  width: 100%;
+  height: 3rem;
+}
+.skeleton-card {
+  width: 100%;
+  height: 4rem;
+}
+.skeleton-card-lg {
+  width: 100%;
+  height: 6rem;
+}
+.skeleton-panel-sm {
+  width: 100%;
+  height: 8rem;
+}
+.skeleton-panel {
+  width: 100%;
+  height: 10rem;
+}
+.skeleton-panel-lg {
+  width: 100%;
+  height: 12rem;
+}
+.skeleton-avatar {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 9999px;
+}
+.skeleton-avatar-lg {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+}
+.skeleton-name {
+  width: 5rem;
+  height: 1rem;
+}
+.skeleton-stat {
+  width: 4rem;
+  height: 26px;
+}
+
+.page-meta-plain {
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.page-error-list {
+  list-style: inside disc;
+}
+
+.code-textarea {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.code-textarea-canvas {
+  background: var(--background);
+}
+
+.code-textarea-tall {
+  min-height: 320px;
+}

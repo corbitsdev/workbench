@@ -165,12 +165,12 @@ function WorkbenchMessageRow({
             principalId={resolved?.id ?? message.address}
           />
         ) : (
-          <Skeleton className="size-8 rounded-full" />
+          <Skeleton className="skeleton-avatar-lg" />
         )}
       </span>
       <div className="chat-thread-body">
         <div className="chat-thread-head">
-          {rosterReady ? <b>{avatarName}</b> : <Skeleton className="h-4 w-20" />}
+          {rosterReady ? <b>{avatarName}</b> : <Skeleton className="skeleton-name" />}
           {chatAgent === undefined ? null : (
             <WorkerRoleText tenantId={workbenchTenantId} agent={chatAgent} />
           )}
@@ -346,7 +346,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="page-frame">
       {releasedAgents.map((agent) => (
         <AgentRedeployer
           key={agent.id}
