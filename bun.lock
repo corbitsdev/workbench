@@ -85,7 +85,7 @@
         "workflow-child": "./bin/workflow-child",
       },
       "dependencies": {
-        "@corbits/credential-header": "github:corbitsdev/corbits-credential-header#eee7b7eb79755fd1ddc3eb2b9a57c4e50982e293",
+        "@corbits/credential-header": "^0.1.0",
         "@corbits/credential-mcp": "github:corbitsdev/corbits-credential-mcp#fb9ec3a6754348cd33c388c70c0830b8844c83de",
         "@intx/agent": "workspace:*",
         "@intx/authz": "0.4.0",
@@ -633,7 +633,7 @@
 
     "@corbits/codex-provider": ["@corbits/codex-provider@github:corbitsdev/corbits-codex-provider#a1f475f", { "dependencies": { "@corbits/oauth-core": "github:corbitsdev/corbits-oauth-core", "@corbits/openai-responses": "github:corbitsdev/corbits-openai-responses", "arktype": "2.2.3" }, "peerDependencies": { "@intx/inference": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-codex-provider-a1f475f", "sha512-D6d0lblWx/4KudfLwQoQGrLB8GKRLP/HVp1cx08L2/hOGZAgH6txLPpeEtBqjl+R520qXSSPfM0kDC+3XNaAfw=="],
 
-    "@corbits/credential-header": ["@corbits/credential-header@github:corbitsdev/corbits-credential-header#eee7b7e", { "peerDependencies": { "@intx/harness": ">=0.3.0", "@intx/types": ">=0.3.0" } }, "corbitsdev-corbits-credential-header-eee7b7e", "sha512-jCgdLZDxHSqL7PJo/xwp/xTCXTBdBgTQb4ZMBwRYCS6x29j8EPtuQiX0mvzZPRXVi02cmz45Shbc2/xQsjZ1oQ=="],
+    "@corbits/credential-header": ["@corbits/credential-header@0.1.0", "", { "peerDependencies": { "@intx/harness": ">=0.4.0", "@intx/types": ">=0.4.0" } }, "sha512-C/Jse7CeqwrwSA53npZb1Dm0ruEd7FOqhIqFMMsJy/yl5Dorc4Y0i/5bPl3eIT1ggZKiy7rJIo5rRLdJIi382g=="],
 
     "@corbits/credential-http": ["@corbits/credential-http@0.1.0", "", { "peerDependencies": { "@intx/harness": "^0.4.0", "@intx/types": "^0.4.0" } }, "sha512-/I4lKk9u3DhPhrBvMNRHFdpzHTwbfGwt/P6yGELby8YQ1qPxmhCQoZYyOqMWl4ONbiShMUHJrkAFi0EtzzgpyQ=="],
 
