@@ -106,6 +106,6 @@
     "hono": "4.13.3",
     "@intx/mailbox": "workspace:*",
     "@corbits/oauth-core": "^0.3.0",
-    "@corbits/openai-responses": "github:corbitsdev/corbits-openai-responses#7efe0006da9d94ac9037c1389f23d3d6163df4a5"
+    "@corbits/openai-responses": "^0.2.1"
   }
 }
