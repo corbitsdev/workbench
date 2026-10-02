@@ -38,11 +38,11 @@ Pinned to [faremeter/interchange](https://github.com/faremeter/interchange)
 | `vendor/intx/mail-memory`       | `@intx/mail-memory` at a newer commit than npm has published              | maintainers | 2026-11-03 |
 | `vendor/intx/mailbox`           | `@intx/mailbox`, never yet published to npm                               | maintainers | 2026-11-03 |
 | `vendor/intx/mime`              | `@intx/mime` at a newer commit than npm has published                     | maintainers | 2026-11-03 |
-| `vendor/intx/types`             | `@intx/types`, with one local model-provider-plugin enum addition         | maintainers | 2026-11-03 |
+| `vendor/intx/types`             | `@intx/types`, with local childRunId, openai-responses plugin id, and OAuth-login token shapes | maintainers | 2026-11-03 |
 | `vendor/intx/hub-common`        | `@intx/hub-common` at a newer commit than npm has published               | maintainers | 2026-11-03 |
 | `vendor/intx/workflow`          | `@intx/workflow`, with one local step-timeout-budget delta                | maintainers | 2026-11-03 |
 | `vendor/intx/workflow-deploy`   | `@intx/workflow-deploy` at a newer commit than npm has published          | maintainers | 2026-11-03 |
-| `vendor/intx/workflow-host`     | `@intx/workflow-host`, with a local step-grants-collapse delta and a temporary delta omitting an empty inbound `Subject` header instead of passing it through empty (kill condition: upstream tolerates an empty Subject, INTR-577) | maintainers | 2026-11-03 |
+| `vendor/intx/workflow-host`     | `@intx/workflow-host`, with local credential-wiring/childRunId threading, a step-grants-collapse delta, and a temporary delta omitting an empty inbound `Subject` header instead of passing it through empty (kill condition: upstream tolerates an empty Subject, INTR-577) | maintainers | 2026-11-03 |
 
 Every row above is re-vendored at the same commit rather than mixed pins
 (npm's `0.4.0` is this commit; rows with no local delta are un-vendoring

@@ -13,7 +13,9 @@ Multi-entry exports:
 
 - `@intx/workflow/definition` — `WorkflowDefinition`, `defineWorkflow`,
   `hashDefinition`, the `stepId` shape rule. The on-disk form a
-  workflow lives in.
+  workflow lives in. It also carries the canonical step walk
+  (`walkStepTree`, `walkWorkflowSteps`, `executableStepIds`); see
+  "Walking a definition's steps" below.
 - `@intx/workflow/state-machine` — the event union, the transition
   function, the `RunState` projection. Pure functions over the
   workflow-run log.
@@ -29,8 +31,9 @@ Multi-entry exports:
 For a production host (workflow-run repo backing, scheduler that
 honors wall-clock fire times, signal channel that observes commits,
 DI seams for mail bus / signing key / subprocess spawner), see
-`@intx/workflow-host`. For deploy-time validation, capability walk,
-and the agent-deploy-trivial-workflow dichotomy, see
+`@intx/workflow-host`. For the deploy-time capability walk, the
+operator-approval gate that consumes it, and the address derivation
+and per-step inference-source pinning a deploy needs, see
 `@intx/workflow-deploy`.
 
 ## Tools are available wherever inference runs
@@ -108,6 +111,45 @@ reading as a leaf. `walkStepTree` itself is generic over the step and
 tree types, so the inert wire projection — whose step values are
 `unknown` and are validated as the caller descends — rides the same
 traversal.
+
+## A selector names something that must exist
+
+A selector that names a path or a field fails the run rather than
+resolving to a hole. A `from` path throws on a missing key, an
+out-of-range index, and an in-range index a sparse array leaves
+unfilled; the one hole it admits is an own key whose value is
+`undefined`. The `step`, `action`, and `loop` runners canonicalize
+an input that is wholly `undefined` to `null`, and that check does
+not descend, so a hole nested inside a resolved object survives it.
+The `childWorkflow` runner does not canonicalize at all: it tests
+whether the input selector is present, not what the selector
+resolved to, so a hole there spawns the child with an `undefined`
+input while the parent's `StepStarted` value loses the key in
+serialization. An agent step's two sinks agree because both see the
+JSON form, where the key is absent; a handler that receives the input
+object by reference sees the key present. A `project` throws when the
+source object does not carry a listed field as an own property, and
+when the own value of a listed field is `undefined`. Neither shape
+reads an inherited member, so a path segment or a field named `toString`,
+`constructor`, or `hasOwnProperty` throws even though the member is
+reachable on every JSON-derived object. An own key of that name is a
+normal key and resolves normally; `merge` and `project` both build
+their result by defining keys, so an own `__proto__` key lands as data
+and never changes the result's prototype.
+
+The vocabulary therefore has no optional field. `fields: ["x"]` is a
+claim that the source carries a value for `x`, and the run fails at the
+selector that made the claim rather than at some later step that
+received `undefined`. A field that is genuinely sometimes absent is
+modeled by the producing step, which emits the key with an explicit
+`null`.
+
+`merge` inherits this. Later operands override earlier ones for
+overlapping keys, so an operand carrying a hole erases a real value an
+earlier operand supplied. A `project` operand cannot carry one, because
+it throws on an absent field and on a field whose own value is
+`undefined`. A `from` operand carries whatever the producing step
+emitted, so it is the shape that can.
 
 ## Consuming a real agent step's structured output
 
