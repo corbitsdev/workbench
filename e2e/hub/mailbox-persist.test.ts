@@ -81,7 +81,7 @@ async function setup(opts: { withSession?: boolean } = {}) {
   await db.insert(tenantTable).values({
     id: tenantId,
     name: "Mailbox Persist Wrap Tenant",
-    slug: uid("mbxpw"),
+    slug: uid("mbxpw").replaceAll("_", "-"),
     domain,
   });
   await db.insert(workflowDefinition).values({
