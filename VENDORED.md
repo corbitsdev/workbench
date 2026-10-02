@@ -31,9 +31,9 @@ Pinned to [faremeter/interchange](https://github.com/faremeter/interchange)
 | `vendor/intx/agent`            | `@intx/agent` at a newer commit than npm has published                    | maintainers | 2026-11-03 |
 | `vendor/intx/db`                | `@intx/db`, with one local serving-time credential-refresh delta          | maintainers | 2026-11-03 |
 | `vendor/intx/harness`           | `@intx/harness` at a newer commit than npm has published                  | maintainers | 2026-11-03 |
-| `vendor/intx/hub-agent`         | `@intx/hub-agent`, with a local OAuth-login-over-websocket delta          | maintainers | 2026-11-03 |
-| `vendor/intx/hub-api`           | `@intx/hub-api`, with the local workflow-deploy-bearer route             | maintainers | 2026-11-03 |
-| `vendor/intx/hub-sessions`      | `@intx/hub-sessions`, with several local run/pack-acceptance fixes        | maintainers | 2026-11-03 |
+| `vendor/intx/hub-agent`         | `@intx/hub-agent`, with local childRunId event threading and an OAuth-login-over-websocket delta | maintainers | 2026-11-03 |
+| `vendor/intx/hub-api`           | `@intx/hub-api`, with the local workflow-deploy-bearer route and a serving-time credential-refresh hook | maintainers | 2026-11-03 |
+| `vendor/intx/hub-sessions`      | `@intx/hub-sessions`, with local childRunId event threading, serving-time credential refresh, loopback OAuth login, and prepared-deploy step staging | maintainers | 2026-11-03 |
 | `vendor/intx/inference`         | `@intx/inference`, with one local Google file-upload compile fix          | maintainers | 2026-11-03 |
 | `vendor/intx/mail-memory`       | `@intx/mail-memory` at a newer commit than npm has published              | maintainers | 2026-11-03 |
 | `vendor/intx/mailbox`           | `@intx/mailbox`, never yet published to npm                               | maintainers | 2026-11-03 |
