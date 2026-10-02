@@ -23,26 +23,26 @@ never a convenience.
 ## Ledger
 
 Pinned to [faremeter/interchange](https://github.com/faremeter/interchange)
-@ `5453d0b0` (origin/main, v0.4.0).
+@ `9febf69` (origin/main, v0.4.0).
 
 | Vendored path                 | What it is                                                              | Owner  | Kill date  |
 | ------------------------------ | ------------------------------------------------------------------------ | ------ | ---------- |
-| `apps/sidecar`                 | Copy of upstream's sidecar app; apps are never npm-published. Two local deltas: `workflow-substrate-factory.ts` registers `@corbits/credential-header`'s and `@corbits/credential-mcp`'s providers alongside `builtinCredentialProviders()`; `bin/workflow-child` and `bin/workflow-probe-child` run under plain `bun` instead of upstream's `intx-src` resolve condition; `createSidecarStepBuildEnv` resolves the step's director registry from the closure package (`interchange.directors`) instead of the built-ins only, so a workflow's own director runs and not just probes (kill condition: upstream's step env loads the closure registry) | maintainers | 2026-11-03 |
+| `apps/sidecar`                 | Copy of upstream's sidecar app; apps are never npm-published. Three local deltas: `workflow-substrate-factory.ts` registers `@corbits/credential-header`'s and `@corbits/credential-mcp`'s providers alongside `builtinCredentialProviders()`; `bin/workflow-child` and `bin/workflow-probe-child` run under plain `bun` instead of upstream's `intx-src` resolve condition; `createSidecarStepBuildEnv` resolves the step's director registry from the closure package (`interchange.directors`) instead of the built-ins only, so a workflow's own director runs and not just probes (kill condition: upstream's step env loads the closure registry) | maintainers | 2026-11-03 |
 | `vendor/intx/agent`            | `@intx/agent` at a newer commit than npm has published                    | maintainers | 2026-11-03 |
-| `vendor/intx/db`                | `@intx/db`, with one local serving-time credential-refresh delta          | maintainers | 2026-11-03 |
+| `vendor/intx/db`                | `@intx/db`, with local fork migrations (wire_projection, launch origin, tolerate rewrite, tenant slug check), a serving-time credential-refresh seam, and an openai-responses catalog id | maintainers | 2026-11-03 |
 | `vendor/intx/harness`           | `@intx/harness` at a newer commit than npm has published                  | maintainers | 2026-11-03 |
-| `vendor/intx/hub-agent`         | `@intx/hub-agent`, with a local OAuth-login-over-websocket delta          | maintainers | 2026-11-03 |
-| `vendor/intx/hub-api`           | `@intx/hub-api`, with the local workflow-deploy-bearer route             | maintainers | 2026-11-03 |
-| `vendor/intx/hub-sessions`      | `@intx/hub-sessions`, with several local run/pack-acceptance fixes        | maintainers | 2026-11-03 |
+| `vendor/intx/hub-agent`         | `@intx/hub-agent`, with local childRunId event threading and an OAuth-login-over-websocket delta | maintainers | 2026-11-03 |
+| `vendor/intx/hub-api`           | `@intx/hub-api`, with the local workflow-deploy-bearer route and a serving-time credential-refresh hook | maintainers | 2026-11-03 |
+| `vendor/intx/hub-sessions`      | `@intx/hub-sessions`, with local childRunId event threading, serving-time credential refresh, loopback OAuth login, and prepared-deploy step staging | maintainers | 2026-11-03 |
 | `vendor/intx/inference`         | `@intx/inference`, with one local Google file-upload compile fix          | maintainers | 2026-11-03 |
 | `vendor/intx/mail-memory`       | `@intx/mail-memory` at a newer commit than npm has published              | maintainers | 2026-11-03 |
 | `vendor/intx/mailbox`           | `@intx/mailbox`, never yet published to npm                               | maintainers | 2026-11-03 |
 | `vendor/intx/mime`              | `@intx/mime` at a newer commit than npm has published                     | maintainers | 2026-11-03 |
-| `vendor/intx/types`             | `@intx/types`, with one local model-provider-plugin enum addition         | maintainers | 2026-11-03 |
+| `vendor/intx/types`             | `@intx/types`, with local childRunId, openai-responses plugin id, and OAuth-login token shapes | maintainers | 2026-11-03 |
 | `vendor/intx/hub-common`        | `@intx/hub-common` at a newer commit than npm has published               | maintainers | 2026-11-03 |
 | `vendor/intx/workflow`          | `@intx/workflow`, with one local step-timeout-budget delta                | maintainers | 2026-11-03 |
 | `vendor/intx/workflow-deploy`   | `@intx/workflow-deploy` at a newer commit than npm has published          | maintainers | 2026-11-03 |
-| `vendor/intx/workflow-host`     | `@intx/workflow-host`, with a local step-grants-collapse delta and a temporary delta omitting an empty inbound `Subject` header instead of passing it through empty (kill condition: upstream tolerates an empty Subject, INTR-577) | maintainers | 2026-11-03 |
+| `vendor/intx/workflow-host`     | `@intx/workflow-host`, with local credential-wiring/childRunId threading, a step-grants-collapse delta, and a temporary delta omitting an empty inbound `Subject` header instead of passing it through empty (kill condition: upstream tolerates an empty Subject, INTR-577) | maintainers | 2026-11-03 |
 
 Every row above is re-vendored at the same commit rather than mixed pins
 (npm's `0.4.0` is this commit; rows with no local delta are un-vendoring

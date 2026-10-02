@@ -54,7 +54,7 @@ describeIfDb("ensureRunSession", () => {
     await db.db.insert(schema.tenant).values({
       id: tenantId,
       name: "Agent Session Test Tenant",
-      slug: `agent-session-${tenantId}`,
+      slug: `agent-session-${tenantId.replaceAll("_", "-")}`,
       domain,
       parentId: null,
       config: null,

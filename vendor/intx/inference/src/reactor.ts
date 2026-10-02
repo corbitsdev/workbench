@@ -356,20 +356,25 @@ export function createReactor(config: ReactorConfig): Reactor {
   let toolBatchRepeatCount = 0;
   let lastToolBatchNames: string[] = [];
 
-  function openMessageRun(messageId: string): void {
+  function openMessageRun(messageId: string | undefined): void {
     currentMessageRunId = crypto.randomUUID();
-    currentMessageId = messageId;
+    currentMessageId = messageId ?? null;
     lastToolBatchSignature = null;
     toolBatchRepeatCount = 0;
     lastToolBatchNames = [];
+    const data: {
+      messageId?: string;
+      messageRunId: string;
+      receivedAt: number;
+    } = {
+      messageRunId: currentMessageRunId,
+      receivedAt: Date.now(),
+    };
+    if (messageId !== undefined) data.messageId = messageId;
     emit({
       type: "message.run.started",
       seq: nextSeq(),
-      data: {
-        messageId,
-        messageRunId: currentMessageRunId,
-        receivedAt: Date.now(),
-      },
+      data,
     });
   }
 
@@ -377,17 +382,19 @@ export function createReactor(config: ReactorConfig): Reactor {
     status: "completed" | "failed",
     error?: { message: string; kind?: string },
   ): void {
-    if (currentMessageRunId === null || currentMessageId === null) return;
+    // Gated on the run id alone: a message that named no id still has to
+    // close its bracket, or the run stays open for the rest of the session.
+    if (currentMessageRunId === null) return;
     const data: {
       messageRunId: string;
-      messageId: string;
+      messageId?: string;
       status: "completed" | "failed";
       error?: { message: string; kind?: string };
     } = {
       messageRunId: currentMessageRunId,
-      messageId: currentMessageId,
       status,
     };
+    if (currentMessageId !== null) data.messageId = currentMessageId;
     if (error !== undefined) data.error = error;
     emit({ type: "message.run.ended", seq: nextSeq(), data });
     currentMessageRunId = null;
@@ -897,9 +904,6 @@ export function createReactor(config: ReactorConfig): Reactor {
           kind: "approval",
           registeredAt: Date.now(),
           gateId,
-          ...(marker.expectedFrom !== undefined
-            ? { expectedFrom: marker.expectedFrom }
-            : {}),
         };
         correlations.register(op);
         stateManager.addPendingOperation(op);
