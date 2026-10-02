@@ -137,7 +137,16 @@ export interface DurableConversationStore {
   restoreFromSubstrate(): Promise<boolean>;
   /** Commit new turns as an O(1) WAL append, compacting into a checkpoint at the compaction interval. */
   mirrorToSubstrate(): Promise<void>;
-  /** Advances connector thread state from an inbound message so composeReply can address a threaded reply. */
+  /**
+   * Advance the connector router from a received inbound message so the
+   * warm agent's reply path has thread state. Runs the router's pure
+   * `route()` then `commit()`; the router owns what each decision does to
+   * the thread. The advanced connector state is flushed into the local
+   * store's metadata so the run-boundary mirror persists it and a respawn
+   * restore re-seeds the router. Called before the warm agent's send so
+   * `composeReply()` can compose a threaded reply. A metadata write
+   * failure surfaces.
+   */
   seedInbound(message: InboundMessage): Promise<void>;
   /** Threading headers for a reply on the active connector thread; throws NoActiveConnectorThreadError with none seeded. */
   composeReply(): ConnectorReplyParts;
