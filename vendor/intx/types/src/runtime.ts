@@ -128,11 +128,22 @@ export const InterchangeType = type.enumerated(
 );
 export type InterchangeType = typeof InterchangeType.infer;
 
+const CONVERSATION_TYPES: ReadonlySet<InterchangeType> = new Set([
+  "conversation.message",
+  "conversation.join",
+  "conversation.leave",
+]);
+
 /**
- * Attachment for an outbound message. Content is raw bytes; the transport
- * handles Content-Transfer-Encoding (base64 for binary, quoted-printable
- * for 8-bit text).
+ * Membership is enumerated rather than derived from the `conversation.` name
+ * prefix, so a member added to InterchangeType is not a conversation type until
+ * it is listed in CONVERSATION_TYPES.
  */
+export function isConversationType(value: InterchangeType): boolean {
+  return CONVERSATION_TYPES.has(value);
+}
+
+/** Attachment for an outbound message. Content is raw bytes. */
 export type MessageAttachment = {
   name: string;
   contentType: string;
@@ -205,13 +216,16 @@ export type SendReceipt = {
 /**
  * Parsed headers from an inbound message. Field names follow RFC 5322 and
  * the Interchange-specific header conventions from MESSAGE.md § Headers.
+ *
+ * `from` is optional because a message can arrive carrying no originator at
+ * all, and there is no string that honestly stands for one.
  */
 export type MessageHeaders = {
-  from: string;
+  from?: string;
   to: string[];
   cc?: string[];
-  date: string;
-  messageId: string;
+  date?: string;
+  messageId?: string;
   inReplyTo?: string;
   references?: string[];
   subject?: string;
@@ -253,9 +267,11 @@ export type SignatureStatus = typeof SignatureStatus.infer;
  * produces it.
  *
  * - `clean` — nothing suspect; always admitted
- * - `untrustedFrom` — the visible `From` cannot be trusted, either because it is
- *   present but unparseable or because a valid signature is worn under a
- *   mismatched sender identity
+ * - `untrustedFrom` — the visible `From` is present but cannot be reduced to a
+ *   single addr-spec
+ * - `mismatchedFrom` — the visible `From` names a different identity from the
+ *   sender the hub stamped
+ * - `absentFrom` — the message carries no usable `From`
  * - `invalid` — the signature check failed (tampering or the wrong key)
  * - `missing` — the message carried no signature
  * - `unknown` — no key was available to verify against
@@ -264,6 +280,8 @@ export type SignatureStatus = typeof SignatureStatus.infer;
 export const InboundMailOutcome = type.enumerated(
   "clean",
   "untrustedFrom",
+  "mismatchedFrom",
+  "absentFrom",
   "invalid",
   "missing",
   "unknown",
@@ -280,6 +298,8 @@ export type InboundMailOutcome = typeof InboundMailOutcome.infer;
  */
 export const AuthorControllableOutcome = type.enumerated(
   "untrustedFrom",
+  "mismatchedFrom",
+  "absentFrom",
   "invalid",
   "missing",
   "unknown",
@@ -288,7 +308,7 @@ export type AuthorControllableOutcome = typeof AuthorControllableOutcome.infer;
 
 /**
  * A per-workflow inbound-mail admission policy: for each admission outcome the
- * author may control, whether a message that resolved to that outcome is
+ * author may control, whether a message that raises that outcome as a finding is
  * `reject`ed or `admit`ted. The key set is exactly the
  * {@link AuthorControllableOutcome} values -- `clean` (always admitted) and
  * `error` (pinned to reject) are deliberately not keys.
@@ -303,11 +323,33 @@ export type AuthorControllableOutcome = typeof AuthorControllableOutcome.infer;
  */
 export const InboundMailPolicy = type({
   "untrustedFrom?": "'reject' | 'admit'",
+  "mismatchedFrom?": "'reject' | 'admit'",
+  "absentFrom?": "'reject' | 'admit'",
   "invalid?": "'reject' | 'admit'",
   "missing?": "'reject' | 'admit'",
   "unknown?": "'reject' | 'admit'",
 }).onUndeclaredKey("reject");
 export type InboundMailPolicy = typeof InboundMailPolicy.infer;
+
+type AssertEqual<A, B> = [A] extends [B]
+  ? [B] extends [A]
+    ? true
+    : false
+  : false;
+
+/**
+ * The three outcome vocabularies must move together, but nothing else connects
+ * them: each spells the same names out again in its own notation.
+ */
+const _policyKeysMatchAuthorControllable: AssertEqual<
+  keyof InboundMailPolicy,
+  AuthorControllableOutcome
+> = true;
+
+const _authorControllableAreOutcomes: AssertEqual<
+  Exclude<AuthorControllableOutcome, InboundMailOutcome>,
+  never
+> = true;
 
 /**
  * A parsed MIME part. `content` is the DECODED bytes in memory (the
@@ -322,9 +364,9 @@ export type MessagePart = {
   filename?: string;
   disposition?: "inline" | "attachment";
   /**
-   * Original Content-Transfer-Encoding, when a producer chooses to record it.
-   * Not set for a decoded mail part -- `content` is already decoded, so the
-   * wire encoding is spent transport metadata.
+   * The Content-Transfer-Encoding the part declared. Not set for a decoded
+   * mail part -- `content` is already decoded, so the wire encoding is spent
+   * transport metadata.
    */
   encoding?: string;
 };
@@ -377,14 +419,17 @@ export type Mail = {
 };
 
 const MailShape = type({
-  // Require the header fields a consumer dereferences unconditionally (the
-  // sender/recipient a projection reads); other header fields stay optional
-  // and are carried losslessly in `rawHeaders`.
+  // Require the recipient list a consumer dereferences unconditionally; other
+  // header fields stay optional and are carried losslessly in `rawHeaders`.
+  // `from` is optional here deliberately: a mail with no usable originator is
+  // still mail, and requiring it makes `isMail` reject one.
   headers: {
-    from: "string",
+    "from?": "string",
     to: "string[]",
   },
-  rawHeaders: "object",
+  rawHeaders: {
+    "[string]": "string[]",
+  },
   parts: type({
     contentType: "string",
     ref: "string",
@@ -683,6 +728,42 @@ export interface MessageTransport {
   ): Promise<void>;
 }
 
+/**
+ * The condition a `MessageTransport` operation failed under. A transport that
+ * grows a condition this union does not carry takes its name from RFC 5530 § 3
+ * rather than coining one.
+ *
+ * https://www.rfc-editor.org/rfc/rfc5530.html
+ */
+export const MessageTransportCondition = type(
+  "'NONEXISTENT' | 'CANNOT' | 'SERVERBUG'",
+);
+export type MessageTransportCondition = typeof MessageTransportCondition.infer;
+
+export class MessageTransportError extends Error {
+  readonly condition: MessageTransportCondition;
+
+  constructor(condition: MessageTransportCondition, message: string) {
+    super(message);
+    this.name = "MessageTransportError";
+    this.condition = condition;
+  }
+}
+
+/**
+ * `instanceof` is not usable for this: a tool package is published as a bundle
+ * whose workspace imports are inlined (`bin/build-builtins.ts`), so a consumer
+ * loaded from a bundle holds its own copy of the class above and answers false
+ * against an error the host's copy constructed.
+ */
+export function isMessageTransportError(
+  value: unknown,
+): value is Error & { readonly condition: MessageTransportCondition } {
+  if (!(value instanceof Error)) return false;
+  if (!("condition" in value)) return false;
+  return MessageTransportCondition.allows(value.condition);
+}
+
 // ---------------------------------------------------------------------------
 // Tool Execution (ARCHITECTURE.md § Tools, INFERENCE.md § Tool Execution)
 // ---------------------------------------------------------------------------
@@ -803,7 +884,6 @@ export const ToolResult = type({
   "pendingMarker?": {
     status: "'pending'",
     correlationId: "string",
-    "expectedFrom?": "string",
   },
 });
 export type ToolResult = typeof ToolResult.infer;
@@ -1555,7 +1635,7 @@ export const InferenceEvent = type.or(
     type: "'message.run.started'",
     seq: "number",
     data: {
-      messageId: "string",
+      "messageId?": "string",
       messageRunId: "string",
       receivedAt: "number",
     },
@@ -1565,7 +1645,7 @@ export const InferenceEvent = type.or(
     seq: "number",
     data: {
       messageRunId: "string",
-      messageId: "string",
+      "messageId?": "string",
       status: type.enumerated("completed", "failed"),
       "error?": {
         message: "string",
@@ -1802,7 +1882,7 @@ export type InferenceEvent =
       type: "message.run.started";
       seq: number;
       data: {
-        messageId: string;
+        messageId?: string;
         messageRunId: string;
         receivedAt: number;
       };
@@ -1811,7 +1891,8 @@ export type InferenceEvent =
       /**
        * Per-message run-bracket close. Pairs with `message.run.started`
        * by `messageRunId`. `messageId` is carried redundantly so log
-       * readers can correlate without a join against the open event.
+       * readers can correlate without a join against the open event; it is
+       * absent for a message that named no id of its own.
        *
        * The `status` enum is `"completed" | "failed"` only.
        * Cancellation lives in the workflow-runtime's
@@ -1833,7 +1914,7 @@ export type InferenceEvent =
       seq: number;
       data: {
         messageRunId: string;
-        messageId: string;
+        messageId?: string;
         status: "completed" | "failed";
         error?: {
           message: string;
@@ -1944,7 +2025,6 @@ export function parseInferenceEvent(
 export type PendingOperation = {
   correlationId: string;
   kind: SignalKind;
-  expectedFrom?: string;
   registeredAt: number;
   gateId: string;
   /**
@@ -2737,8 +2817,8 @@ export type ContextCommit = {
  * re-declaring the shape.
  */
 export const ConnectorThreadState = type({
-  threadRoot: "string",
-  lastMessageId: "string",
+  "threadRoot?": "string",
+  "lastMessageId?": "string",
   replyTo: "string",
   cc: "string[]",
   "subject?": "string",
