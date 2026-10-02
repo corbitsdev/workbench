@@ -23,7 +23,7 @@ never a convenience.
 ## Ledger
 
 Pinned to [faremeter/interchange](https://github.com/faremeter/interchange)
-@ `5453d0b0` (origin/main, v0.4.0).
+@ `9febf69` (origin/main, v0.4.0).
 
 | Vendored path                 | What it is                                                              | Owner  | Kill date  |
 | ------------------------------ | ------------------------------------------------------------------------ | ------ | ---------- |
