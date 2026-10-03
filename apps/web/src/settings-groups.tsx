@@ -17,7 +17,7 @@ export function resolveAppSettingsSectionGroups(
       id: "insights",
       title: "Insights",
       icon: ChartBar,
-      render: () => <InsightsRoute path={SETTINGS_INSIGHTS_PATH} />,
+      render: () => <InsightsRoute path={SETTINGS_INSIGHTS_PATH} embedded />,
     },
   ]);
 }

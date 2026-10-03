@@ -35,12 +35,17 @@ describe("settings-hosted insights path", () => {
     const sections = resolveAppSettingsSectionGroups(access).flatMap((group) => group.sections);
     const insights = sections.find((section) => section.id === "insights");
     if (insights === undefined) throw new Error("insights section missing from settings groups");
-    const { path } = insights.render({ tenantId: null, principalId: null }).props as {
+    const { path, embedded } = insights.render({ tenantId: null, principalId: null }).props as {
       readonly path?: unknown;
+      readonly embedded?: unknown;
     };
     if (typeof path !== "string") {
       throw new Error("insights section must hand the embedded route an explicit path");
     }
     expect(parseInsightsPath(path).mode).not.toBe("landing");
+    // The embedded route must suppress its full-page chrome (crumb links,
+    // run-row top-level navigation, sidebar toggle), or clicking any of them
+    // navigates the host app out from under the dialog.
+    expect(embedded).toBe(true);
   });
 });

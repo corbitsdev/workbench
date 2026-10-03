@@ -20,6 +20,7 @@ export function StageTopBar({
   chip,
   filter,
   actions,
+  hideSidebarToggle = false,
 }: {
   /** The page's title trail: parents first, the page itself last. */
   readonly crumbs: readonly StageCrumb[];
@@ -33,11 +34,14 @@ export function StageTopBar({
   readonly filter?: StageSearchProps;
   /** The primary-action slot: the buttons and inputs this page owns. */
   readonly actions?: ReactNode;
+  /** Views embedded in a dialog (Settings' Insights section) own no sidebar,
+   * so the host shell's toggle would flip the page behind the dialog. */
+  readonly hideSidebarToggle?: boolean;
 }) {
   const hasSubtitle = subtitle !== undefined && subtitle !== null;
   return (
     <header className="stage-top-bar" data-testid="stage-top-bar">
-      <StageSidebarToggle />
+      {hideSidebarToggle ? null : <StageSidebarToggle />}
       <div className="stage-top-bar-title">
         <PageCrumbs crumbs={crumbs} />
       </div>
