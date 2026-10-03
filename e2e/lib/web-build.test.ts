@@ -21,6 +21,12 @@ function initRepo(): { repo: string; web: string } {
   git(repo, ["init"]);
   git(repo, ["config", "user.email", "test@example.com"]);
   git(repo, ["config", "user.name", "test"]);
+  // The developer's global git config may sign commits or install hooks;
+  // neither exists usefully inside a throwaway repo.
+  const hooks = path.join(repo, "no-hooks");
+  mkdirSync(hooks, { recursive: true });
+  git(repo, ["config", "commit.gpgsign", "false"]);
+  git(repo, ["config", "core.hooksPath", hooks]);
   writeFileSync(path.join(repo, "src.txt"), "v1");
   git(repo, ["add", "."]);
   git(repo, ["commit", "-m", "init"]);
