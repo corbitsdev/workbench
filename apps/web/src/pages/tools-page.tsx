@@ -14,7 +14,6 @@ import {
   Input,
   RichEmptyState,
   Section,
-  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -24,10 +23,11 @@ import {
 } from "@corbits/react-ui";
 import { toast } from "@corbits/react-ui/ui/toast";
 import { QueryView } from "@/lib/api-query";
-import { MagnifyingGlass, Plugs, type Icon } from "@/lib/icons";
+import { CircleNotch, MagnifyingGlass, Plugs, type Icon } from "@/lib/icons";
 
 import { describeApiError } from "@/lib/api-query";
 import { MCP_SERVER_CATALOG, type McpCatalogEntry } from "../mcp-servers";
+import { toolCountLabel } from "../tools/tool-count";
 import {
   describeRedeployResult,
   useAddMcpServer,
@@ -43,6 +43,7 @@ import { useFromBench } from "../shell/page-crumbs";
 import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { ConfirmButton } from "../components/confirm-button";
+import { ListCard, ListFilter } from "./library-list";
 
 /** The handle a pasted URL's server is stored under; the host's first label
  * reads better than a random id and is what a person would have typed. */
@@ -84,7 +85,7 @@ function ToolTile({
   );
 }
 
-function ConnectedTile({
+function ConnectedRow({
   server,
   onRemove,
   removing,
@@ -94,27 +95,36 @@ function ConnectedTile({
   readonly removing: boolean;
 }) {
   const official = MCP_SERVER_CATALOG.some((entry) => entry.handle === server.handle);
+  const RowIcon = mcpServerIcon(server.handle);
   const agents = server.agentNames.length === 0 ? "" : ` · ${server.agentNames.join(", ")}`;
   return (
-    <ToolTile
-      icon={mcpServerIcon(server.handle)}
-      name={server.name}
-      desc={`${toolHost(server.url)}${agents}`}
-      official={official}
-    >
-      <div className="tool-tile-foot">
-        <span className="tool-live">{`${String(server.tools.length)} tools live`}</span>
-        <span style={{ flex: 1 }} />
+    <li className="lib-row">
+      <div className="lib-cell tools-row-main">
+        <span className="tools-row-mark" aria-hidden="true">
+          <RowIcon />
+        </span>
+        <span className="tools-row-text">
+          <span className="tools-row-name">
+            <span className="tools-row-name-text">{server.name}</span>
+            <span className="tool-kind">{official ? "Official" : "Custom"}</span>
+          </span>
+          <span className="tools-row-desc">{`${toolHost(server.url)}${agents}`}</span>
+        </span>
+      </div>
+      <span className="lib-cell">
+        <span className="tool-live">{`${toolCountLabel(server.tools.length)} live`}</span>
+      </span>
+      <span className="lib-cell lib-cell--end">
         <ConfirmButton
-          size="sm"
+          size="lg"
           disabled={removing}
           confirmLabel="Disconnect?"
           onConfirm={onRemove}
         >
           Disconnect
         </ConfirmButton>
-      </div>
-    </ToolTile>
+      </span>
+    </li>
   );
 }
 
@@ -139,12 +149,21 @@ function PopularTile({
       official
     >
       <div className="tool-tile-foot">
-        <Button size="sm" variant="outline" disabled={busy} onClick={onConnect}>
-          {keyless ? "Connect" : "Sign in"}
+        <Button size="lg" variant="outline" disabled={busy} onClick={onConnect}>
+          {waiting ? (
+            <>
+              <CircleNotch className="tool-spin" aria-hidden="true" />
+              Waiting for sign-in…
+            </>
+          ) : keyless ? (
+            "Connect"
+          ) : (
+            "Sign in"
+          )}
         </Button>
-        <span className="tool-tile-hint">
-          {waiting ? "Waiting for sign-in…" : keyless ? "No key needed" : "OAuth"}
-        </span>
+        {waiting ? null : (
+          <span className="tool-tile-hint">{keyless ? "No key needed" : "OAuth"}</span>
+        )}
       </div>
     </ToolTile>
   );
@@ -217,15 +236,28 @@ function AddByUrl({
         }}
       />
       <div className="tool-add-actions">
-        <Button size="sm" disabled={adding || url === ""} onClick={submit}>
-          Add
+        <Button size="lg" disabled={adding || url === ""} onClick={submit}>
+          {waiting && token !== "" ? (
+            <>
+              <CircleNotch className="tool-spin" aria-hidden="true" />
+              Waiting for sign-in…
+            </>
+          ) : (
+            "Add"
+          )}
         </Button>
         {token === "" ? (
-          <Button size="sm" variant="outline" disabled={adding || url === ""} onClick={signIn}>
-            Sign in
+          <Button size="lg" variant="outline" disabled={adding || url === ""} onClick={signIn}>
+            {waiting ? (
+              <>
+                <CircleNotch className="tool-spin" aria-hidden="true" />
+                Waiting for sign-in…
+              </>
+            ) : (
+              "Sign in"
+            )}
           </Button>
         ) : null}
-        {waiting ? <span className="tool-tile-hint">Waiting for sign-in…</span> : null}
       </div>
     </Card>
   );
@@ -284,28 +316,9 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
 
   return stage(
     <div className="tools-sections">
-      <Input
-        className="tools-filter"
-        aria-label="Filter tools"
-        placeholder="Filter tools"
-        value={filter}
-        onChange={(event) => {
-          setFilter(event.target.value);
-        }}
-      />
+      <ListFilter label="Filter tools" value={filter} onChange={setFilter} />
 
-      <QueryView
-        query={serversQuery}
-        label="the workspace's MCP servers"
-        skeleton="rows"
-        loadingContent={
-          <div className="tools-grid" aria-hidden="true">
-            {Array.from({ length: 6 }, (_, index) => (
-              <Skeleton key={index} className="tool-tile-skeleton" />
-            ))}
-          </div>
-        }
-      >
+      <QueryView query={serversQuery} label="the workspace's MCP servers" skeleton="rows">
         {(servers) => {
           const connected = servers.filter(matches);
           const available = MCP_SERVER_CATALOG.filter(
@@ -332,8 +345,15 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
             ) : (
               <RichEmptyState
                 icon={<Plugs />}
-                title="No servers connected"
+                title="Nothing connected yet"
                 description="Connect a popular server below and its tools reach every workbench's worker."
+                actions={[
+                  {
+                    label: "Browse popular servers",
+                    href: "#popular-servers",
+                    variant: "primary",
+                  },
+                ]}
               />
             );
           }
@@ -342,17 +362,33 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
               <Section
                 title="Connected"
                 description="The workspace catalog, shared by every workbench: a server's tools reach the agents whose definitions bind it."
+                {...(connected.length === 0 ? {} : { count: connected.length })}
               >
                 {connected.length === 0 ? (
-                  <p className="page-note">
-                    {filtered
-                      ? "No connected servers match this filter."
-                      : "Nothing connected yet — pick a popular server below."}
-                  </p>
+                  filtered ? (
+                    <p className="page-note">No connected servers match this filter.</p>
+                  ) : (
+                    <RichEmptyState
+                      icon={<Plugs />}
+                      title="Nothing connected yet"
+                      description="Connect a popular server below and its tools reach every workbench's worker."
+                      actions={[
+                        {
+                          label: "Browse popular servers",
+                          href: "#popular-servers",
+                          variant: "primary",
+                        },
+                      ]}
+                    />
+                  )
                 ) : (
-                  <div className="tools-grid">
+                  <ListCard
+                    label="Connected servers"
+                    columns="minmax(0, 1fr) auto auto"
+                    heads={["Server", "Tools", ""]}
+                  >
                     {connected.map((server) => (
-                      <ConnectedTile
+                      <ConnectedRow
                         key={server.credentialId}
                         server={server}
                         removing={remove.isPending}
@@ -370,45 +406,48 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
                         }}
                       />
                     ))}
-                  </div>
+                  </ListCard>
                 )}
               </Section>
 
-              <Section
-                title="Popular"
-                description="The official catalog — connecting one shares it with every workbench."
-              >
-                {available.length === 0 ? (
-                  <p className="page-note">
-                    {filtered
-                      ? "No popular servers match this filter."
-                      : "Every official server is already connected."}
-                  </p>
-                ) : null}
-                <div className="tools-grid">
-                  {available.map((entry) => (
-                    <PopularTile
-                      key={entry.handle}
-                      entry={entry}
-                      busy={add.isPending || signIn.busy}
-                      waiting={signIn.waitingHandle === entry.handle}
-                      onConnect={() => {
-                        const server = { url: entry.url, name: entry.name, handle: entry.handle };
-                        if (entry.auth === "oauth") signIn.start.mutate(server);
-                        else addServer(server);
+              <div id="popular-servers">
+                <Section
+                  title="Popular"
+                  description="The official catalog — connecting one shares it with every workbench."
+                  {...(available.length === 0 ? {} : { count: available.length })}
+                >
+                  {available.length === 0 ? (
+                    <p className="page-note">
+                      {filtered
+                        ? "No popular servers match this filter."
+                        : "Every official server is already connected."}
+                    </p>
+                  ) : null}
+                  <div className="tools-grid">
+                    {available.map((entry) => (
+                      <PopularTile
+                        key={entry.handle}
+                        entry={entry}
+                        busy={add.isPending || signIn.busy}
+                        waiting={signIn.waitingHandle === entry.handle}
+                        onConnect={() => {
+                          const server = { url: entry.url, name: entry.name, handle: entry.handle };
+                          if (entry.auth === "oauth") signIn.start.mutate(server);
+                          else addServer(server);
+                        }}
+                      />
+                    ))}
+                    <AddByUrl
+                      onAdd={addServer}
+                      onSignIn={(server) => {
+                        signIn.start.mutate(server);
                       }}
+                      adding={add.isPending || signIn.busy}
+                      waiting={signIn.waitingHandle !== null}
                     />
-                  ))}
-                  <AddByUrl
-                    onAdd={addServer}
-                    onSignIn={(server) => {
-                      signIn.start.mutate(server);
-                    }}
-                    adding={add.isPending || signIn.busy}
-                    waiting={signIn.waitingHandle !== null}
-                  />
-                </div>
-              </Section>
+                  </div>
+                </Section>
+              </div>
             </>
           );
         }}

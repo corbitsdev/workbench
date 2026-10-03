@@ -1,8 +1,8 @@
 import { Button } from "@corbits/react-ui";
 
 import { QueryView } from "@/lib/api-query";
-import { Plugs } from "@/lib/icons";
 import { Link } from "../navigation";
+import { toolCountLabel } from "../tools/tool-count";
 import { useMcpServers } from "../tools/mcp-servers-query";
 import "../tools/tools-page.css";
 import "./drawer.css";
@@ -20,14 +20,12 @@ export function ToolsTab({ workbenchTenantId }: { readonly workbenchTenantId: st
             <div className="workbench-info-panel-header">
               <h2>Tools</h2>
             </div>
-            <p className="workbench-info-empty-note">
-              No tools are connected in this workbench yet.
+            <p className="drawer-about">
+              Nothing connected yet — connect a server from the Tools page and every tool it offers
+              shows up here.
             </p>
-            <Button asChild size="sm" variant="outline">
-              <Link to={manage}>
-                <Plugs size={14} />
-                Connect a tool
-              </Link>
+            <Button asChild size="lg">
+              <Link to={manage}>Connect a tool</Link>
             </Button>
           </section>
         ) : (
@@ -35,8 +33,13 @@ export function ToolsTab({ workbenchTenantId }: { readonly workbenchTenantId: st
             {servers.map((server) => (
               <section key={server.credentialId} className="drawer-sec">
                 <div className="drawer-sec-head">
-                  <h3>{server.name}</h3>
-                  <Link to={manage}>Add tools</Link>
+                  <h3>
+                    {server.name}{" "}
+                    <span className="tools-tab-count">{toolCountLabel(server.tools.length)}</span>
+                  </h3>
+                  <Link to={manage} className="tools-tab-add">
+                    Add tools
+                  </Link>
                 </div>
                 <ul className="drawer-list">
                   {server.tools.map((tool) => (
