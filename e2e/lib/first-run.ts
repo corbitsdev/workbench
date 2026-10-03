@@ -38,8 +38,22 @@ export async function runFirstRunFlow(page: Page, origin: string): Promise<void>
 
   // Connecting hands off to the new-workbench prompt (a workspace with no
   // workbenches); the first bench's worker is the first worker.
-  await page.waitForSelector("textarea", { timeout: STEP_TIMEOUT });
+  // The composer stays disabled until workspace roles have loaded (CL-9780).
+  await page.waitForFunction(
+    `(() => {
+      const input = document.querySelector("textarea");
+      return input instanceof HTMLTextAreaElement && !input.disabled;
+    })()`,
+    { timeout: STEP_TIMEOUT },
+  );
   await page.type("textarea", FIRST_WORKBENCH);
+  await page.waitForFunction(
+    `(() => {
+      const send = document.querySelector("button[aria-label='Start this workbench']");
+      return send instanceof HTMLButtonElement && !send.disabled;
+    })()`,
+    { timeout: STEP_TIMEOUT },
+  );
   await page.click("button[aria-label='Start this workbench']");
 
   // Creating the workbench navigates to its own page, which shows the prompt.
