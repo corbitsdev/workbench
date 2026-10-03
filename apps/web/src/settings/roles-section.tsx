@@ -26,7 +26,11 @@ import { useState } from "react";
 import { QueryView, toAPIQuery } from "@/lib/api-query";
 import { tenantKeys } from "@/query-client";
 import { reportError } from "@corbits/error-sink";
-import { principalLabel } from "./identity";
+import {
+  assignFailureMessage,
+  assignmentPrincipalLabel,
+  compareAssignmentPrincipals,
+} from "./role-assignment";
 import { SETTINGS_STRINGS } from "./strings";
 import {
   assignRole,
@@ -131,7 +135,7 @@ export function RolesSection({ tenantId }: { readonly tenantId: string | null })
       .then(reload)
       .catch((cause: unknown) => {
         reportError(cause, { operation: "settings.roles.assign", tenantId });
-        setRowError(SETTINGS_STRINGS.rolesAssignError);
+        setRowError(assignFailureMessage(cause));
       });
   }
 
@@ -297,11 +301,13 @@ export function RoleAssignments({
   const [principalId, setPrincipalId] = useState("");
   const [roleId, setRoleId] = useState("");
 
-  // The "Person" picker should match People's member roster, not the
-  // full tenant-wide principal list.
-  const people = principals.filter((p) => p.kind === "user");
+  // `assignRole` accepts any principal id, so the picker lists every kind:
+  // agents and workflows hold roles exactly like people do, and their
+  // principals only exist after their first run, which is also why a 404
+  // here earns its own guidance (see `assignFailureMessage`).
+  const assignable = [...principals].sort(compareAssignmentPrincipals);
 
-  const assignments = people.flatMap((principal) =>
+  const assignments = assignable.flatMap((principal) =>
     principal.roles.map((role) => ({ principal, role })),
   );
 
@@ -310,16 +316,16 @@ export function RoleAssignments({
       <h4>{SETTINGS_STRINGS.rolesAssignSectionTitle}</h4>
       <div className="settings-row-actions">
         <label className="settings-form-field">
-          <span>{SETTINGS_STRINGS.rolesAssignPersonLabel}</span>
+          <span>{SETTINGS_STRINGS.rolesAssignPrincipalLabel}</span>
           <select
             className="settings-select"
             value={principalId}
             onChange={(event) => setPrincipalId(event.target.value)}
           >
             <option value="">—</option>
-            {people.map((principal) => (
+            {assignable.map((principal) => (
               <option key={principal.id} value={principal.id}>
-                {principalLabel(principal.displayName).label}
+                {assignmentPrincipalLabel(principal)}
               </option>
             ))}
           </select>
@@ -354,7 +360,7 @@ export function RoleAssignments({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Person</TableHead>
+              <TableHead>Principal</TableHead>
               <TableHead>Role</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
@@ -362,7 +368,7 @@ export function RoleAssignments({
           <TableBody>
             {assignments.map(({ principal, role }) => (
               <TableRow key={`${principal.id}-${role.id}`}>
-                <TableCell>{principalLabel(principal.displayName).label}</TableCell>
+                <TableCell>{assignmentPrincipalLabel(principal)}</TableCell>
                 <TableCell>{role.name}</TableCell>
                 <TableCell>
                   <Button
