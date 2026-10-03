@@ -69,8 +69,9 @@ Ask every time, Deny.
 
 ## Pages
 
-Anything opened full-page from a bench gets breadcrumbs back to it, plus a
-back arrow. Lists are rows, not card grids. Insights is bench-scoped: runs,
+Anything opened full-page from a bench is scoped to it (`?from=`); pages
+title themselves with plain text, no breadcrumb trail (CL-9787). Lists are
+rows, not card grids. Insights is bench-scoped: runs,
 success rate, median run time, artifacts, runs per day, approvals, a
 per-workflow table, and recent failures. Tokens, tool calls, and latency show
 as coming later until the platform reports them.
@@ -86,6 +87,6 @@ drawer uses the drawer curve. Reduced motion keeps only fades.
 Shared chrome is `tokens.css`, `chrome.css`, `components.css`, and `app.js`.
 Bench conversation, drawer, and voice live in `index.html` (`?bench=`);
 workers in `agents.html` and `agent.html?w=`; insights in `insights.html`
-(`?from=` scopes it and sets breadcrumbs). Also `new.html`, `onboarding.html`,
+(`?from=` scopes it). Also `new.html`, `onboarding.html`,
 `workflows.html`, `routine.html`, `artifacts.html`, `skills.html`,
 `tools.html`, and `settings.html`.
