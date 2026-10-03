@@ -25,6 +25,7 @@ import { useState } from "react";
 
 import { QueryView, toAPIQuery } from "@/lib/api-query";
 import { tenantKeys } from "@/query-client";
+import { reportError } from "@corbits/error-sink";
 import { principalLabel } from "./identity";
 import { SETTINGS_STRINGS } from "./strings";
 import {
@@ -94,7 +95,10 @@ export function RolesSection({ tenantId }: { readonly tenantId: string | null })
         setCreateOpen(false);
         reload();
       })
-      .catch(() => setCreateError(SETTINGS_STRINGS.rolesCreateError))
+      .catch((cause: unknown) => {
+        reportError(cause, { operation: "settings.roles.create", tenantId });
+        setCreateError(SETTINGS_STRINGS.rolesCreateError);
+      })
       .finally(() => setCreating(false));
   }
 
@@ -103,7 +107,10 @@ export function RolesSection({ tenantId }: { readonly tenantId: string | null })
     setRowError(null);
     deleteRole(tenantId, role.id)
       .then(reload)
-      .catch(() => setRowError(SETTINGS_STRINGS.rolesDeleteError));
+      .catch((cause: unknown) => {
+        reportError(cause, { operation: "settings.roles.delete", tenantId });
+        setRowError(SETTINGS_STRINGS.rolesDeleteError);
+      });
   }
 
   function handleRename(role: Role, name: string) {
@@ -111,7 +118,10 @@ export function RolesSection({ tenantId }: { readonly tenantId: string | null })
     setRowError(null);
     renameRole(tenantId, role.id, { name })
       .then(reload)
-      .catch(() => setRowError(SETTINGS_STRINGS.rolesRenameError));
+      .catch((cause: unknown) => {
+        reportError(cause, { operation: "settings.roles.rename", tenantId });
+        setRowError(SETTINGS_STRINGS.rolesRenameError);
+      });
   }
 
   function handleAssign(principalId: string, roleId: string) {
@@ -119,7 +129,10 @@ export function RolesSection({ tenantId }: { readonly tenantId: string | null })
     setRowError(null);
     assignRole(tenantId, principalId, roleId)
       .then(reload)
-      .catch(() => setRowError(SETTINGS_STRINGS.rolesAssignError));
+      .catch((cause: unknown) => {
+        reportError(cause, { operation: "settings.roles.assign", tenantId });
+        setRowError(SETTINGS_STRINGS.rolesAssignError);
+      });
   }
 
   function handleUnassign(principalId: string, roleId: string) {
@@ -127,7 +140,10 @@ export function RolesSection({ tenantId }: { readonly tenantId: string | null })
     setRowError(null);
     unassignRole(tenantId, principalId, roleId)
       .then(reload)
-      .catch(() => setRowError(SETTINGS_STRINGS.rolesUnassignError));
+      .catch((cause: unknown) => {
+        reportError(cause, { operation: "settings.roles.unassign", tenantId });
+        setRowError(SETTINGS_STRINGS.rolesUnassignError);
+      });
   }
 
   return (

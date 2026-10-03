@@ -31,6 +31,7 @@ import { useMemo, useState } from "react";
 
 import { QueryView, toAPIQuery } from "@/lib/api-query";
 import { tenantKeys } from "@/query-client";
+import { reportError } from "@corbits/error-sink";
 import { PRINCIPAL_KIND_LABEL, PRINCIPAL_KIND_ORDER, principalLabel } from "./identity";
 import { expiryIsoFromPreset, expiryLabelFromPreset, grantPreviewSentence } from "./grant-preview";
 import { KindCards } from "./kind-cards";
@@ -157,7 +158,10 @@ export function GrantsSection({ tenantId }: { readonly tenantId: string | null }
         reload();
         toast(SETTINGS_STRINGS.grantCreatedToast);
       })
-      .catch(() => setCreateError(SETTINGS_STRINGS.grantsCreateError))
+      .catch((cause: unknown) => {
+        reportError(cause, { operation: "settings.grants.create", tenantId });
+        setCreateError(SETTINGS_STRINGS.grantsCreateError);
+      })
       .finally(() => setCreating(false));
   }
 
@@ -169,7 +173,10 @@ export function GrantsSection({ tenantId }: { readonly tenantId: string | null }
         reload();
         toast(SETTINGS_STRINGS.grantRevokedToast);
       })
-      .catch(() => setRowError(SETTINGS_STRINGS.grantsRevokeError));
+      .catch((cause: unknown) => {
+        reportError(cause, { operation: "settings.grants.revoke", tenantId });
+        setRowError(SETTINGS_STRINGS.grantsRevokeError);
+      });
   }
 
   return (
