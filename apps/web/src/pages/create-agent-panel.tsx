@@ -17,6 +17,7 @@ import { useState } from "react";
 import { ApiQueryError } from "@/lib/api-query";
 
 import type { DeployedAgent } from "../agent-deploy";
+import { useTenantRoles } from "../agent-roles-query";
 import { useDeployAgentMutation } from "../agents-api";
 import { useMcpServers } from "../tools/mcp-servers-query";
 import "./create-agent-panel.css";
@@ -63,8 +64,13 @@ export function CreateAgentPanel({
   // Handles checked below, out of the workspace catalog — each becomes a
   // definition binding plus a use requirement, the same as Worker's Exa.
   const [selectedHandles, setSelectedHandles] = useState<readonly string[]>([]);
+  // Role names checked below, out of this workbench's roles — each is
+  // resolved to the workbench's role id and assigned to the agent once it
+  // deploys.
+  const [selectedRoles, setSelectedRoles] = useState<readonly string[]>([]);
   const deploy = useDeployAgentMutation(tenantId);
   const catalog = useMcpServers(tenantId);
+  const roles = useTenantRoles(tenantId);
 
   function toggleHandle(handle: string) {
     setSelectedHandles((current) =>
@@ -72,10 +78,17 @@ export function CreateAgentPanel({
     );
   }
 
+  function toggleRole(name: string) {
+    setSelectedRoles((current) =>
+      current.includes(name) ? current.filter((role) => role !== name) : [...current, name],
+    );
+  }
+
   function reset() {
     setValues(EMPTY_VALUES);
     setSystemPrompt("");
     setSelectedHandles([]);
+    setSelectedRoles([]);
     deploy.reset();
   }
 
@@ -89,7 +102,13 @@ export function CreateAgentPanel({
       ? "Add a name to continue."
       : systemPrompt.trim() === ""
         ? "Write a system prompt to continue."
-        : null;
+        : roles.kind === "loading"
+          ? "Roles are still loading."
+          : roles.kind === "error"
+            ? "Roles failed to load."
+            : roles.kind === "unauthenticated"
+              ? "Sign in again to deploy."
+              : null;
 
   function handleSubmit() {
     if (blocked !== null) return;
@@ -98,6 +117,7 @@ export function CreateAgentPanel({
         name: values.name.trim(),
         systemPrompt: systemPrompt.trim(),
         ...(selectedHandles.length > 0 ? { mcpHandles: selectedHandles } : {}),
+        ...(selectedRoles.length > 0 ? { roles: selectedRoles } : {}),
       },
       {
         onSuccess: (deployment) => {
@@ -194,6 +214,44 @@ export function CreateAgentPanel({
                   Couldn&apos;t load the workspace catalog — the agent will deploy without MCP
                   servers.
                 </p>
+              )}
+            </fieldset>
+            <fieldset disabled={deploy.isPending}>
+              <legend className="create-agent-quiet-field">
+                <span>Roles</span>
+              </legend>
+              <p className="page-meta">
+                This workbench&apos;s roles — checked roles are assigned to this agent once it
+                deploys.
+              </p>
+              {roles.kind === "loading" ? (
+                <p className="page-meta">Loading workbench roles…</p>
+              ) : roles.kind === "ready" && roles.data.length === 0 ? (
+                <p className="page-meta">No roles in this workbench yet.</p>
+              ) : roles.kind === "ready" ? (
+                <ul className="create-agent-server-list">
+                  {roles.data.map((role) => (
+                    <li key={role.id} className="inline-row">
+                      <SelectionCheckbox
+                        checked={selectedRoles.includes(role.name)}
+                        onToggle={() => toggleRole(role.name)}
+                        rowLabel={role.name}
+                        ariaLabel={`Assign the ${role.name} role`}
+                      />
+                      <span className="create-agent-server-name">{role.name}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : roles.kind === "error" ? (
+                <p className="page-meta">
+                  Couldn&apos;t load the workbench&apos;s roles — deploying is blocked until they
+                  load.{" "}
+                  <Button type="button" variant="outline" onClick={() => roles.retry()}>
+                    Retry
+                  </Button>
+                </p>
+              ) : (
+                <p className="page-meta">Sign in again to see this workbench&apos;s roles.</p>
               )}
             </fieldset>
             <Button
