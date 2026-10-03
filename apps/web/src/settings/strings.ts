@@ -94,13 +94,15 @@ export const SETTINGS_STRINGS = {
   rolesDeleteAction: "Delete",
   rolesDeleteConfirm: "Delete for good?",
   rolesAssignSectionTitle: "Assign a role",
-  rolesAssignPersonLabel: "Person",
+  rolesAssignPrincipalLabel: "Principal",
   rolesAssignRoleLabel: "Role",
   rolesAssignSubmit: "Assign",
   rolesAssignError: "Couldn't assign that role — try again.",
+  rolesAssignMissingPrincipalError:
+    "That account isn't on this workbench yet — agent and workflow accounts are created on their first run, not when they're deployed. Have it run once, then assign the role again.",
   rolesUnassignError: "Couldn't remove that role — try again.",
   rolesAssignmentsTitle: "Assignments",
-  rolesAssignmentsEmpty: "No one has been assigned a role yet.",
+  rolesAssignmentsEmpty: "No assignments yet.",
   rolesUnassign: "Remove",
 
   grantsSectionTitle: "What agents can do",

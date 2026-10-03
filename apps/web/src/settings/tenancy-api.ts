@@ -30,6 +30,17 @@ export class TenancyApiError extends Error {
   }
 }
 
+/**
+ * The hub answers 404 when the principal or role on an assignment path does
+ * not exist in the tenant -- most often a machine principal the picker listed
+ * from a stale snapshot, or one never minted because its first run has not
+ * happened yet. Callers use this to explain that case instead of reporting a
+ * generic transient failure.
+ */
+export function isNotFoundError(cause: unknown): boolean {
+  return cause instanceof TenancyApiError && cause.status === 404;
+}
+
 type Validator<T> = (data: unknown) => T | ArkErrors;
 
 async function request<T>(path: string, schema: Validator<T>, init?: RequestInit): Promise<T> {
