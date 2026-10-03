@@ -146,7 +146,7 @@ describeBrowser("oauth mcp connect", () => {
       await popup.close();
       // Model returning to Tools: its sign-in query does not poll while backgrounded.
       await page.bringToFront();
-      await page.waitForFunction(`document.body.innerText.includes("1 tools live")`, {
+      await page.waitForFunction(`document.body.innerText.includes("1 tool live")`, {
         timeout: 120_000,
         polling: 500,
       });
