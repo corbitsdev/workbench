@@ -128,6 +128,16 @@ function serverReportedName(serverInfo: unknown): string | null {
   return null;
 }
 
+/** A typed name that is really a pasted URL, read back as a display name:
+ * the name field never saves a URL silently — the form says where the paste
+ * belongs and saves the extracted suggestion instead. Null when the typed
+ * text is not a URL at all. */
+export function redirectUrlName(typed: string, existingNames: readonly string[]): string | null {
+  const extracted = displayNameFromUrl(typed);
+  if (extracted === null) return null;
+  return dedupeMcpName(extracted, existingNames);
+}
+
 /** The name the form should show for a pasted URL and, once looked up, the
  * server's self-reported `serverInfo`. Untrusted on both sides: each is
  * parsed, trimmed, and capped before it is ever displayed or stored. */

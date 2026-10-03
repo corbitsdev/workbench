@@ -33,6 +33,7 @@ import {
   dedupeMcpHandle,
   dedupeMcpName,
   handleFromUrl,
+  redirectUrlName,
   suggestMcpServerName,
 } from "../mcp-server-name";
 import {
@@ -206,7 +207,11 @@ function AddByUrl({
   const suggestion = suggestMcpServerName({ url, serverInfo, existingNames });
   const shown = edited ? name : hasUrl ? suggestion.name : "";
   const typed = shown.trim();
-  const finalName = typed === "" ? suggestion.name : dedupeMcpName(typed, existingNames);
+  /** A URL pasted into the name field is never saved raw: the hint below
+   * says so, and the extracted suggestion is what gets stored. */
+  const typedUrlName = edited ? redirectUrlName(typed, existingNames) : null;
+  const finalName =
+    typedUrlName ?? (typed === "" ? suggestion.name : dedupeMcpName(typed, existingNames));
 
   let hint: string;
   if (!hasUrl) {
@@ -216,6 +221,8 @@ function AddByUrl({
       suggestion.source === "server"
         ? "From the server itself — edit as you like."
         : "Suggested from the URL — edit as you like.";
+  } else if (typedUrlName !== null) {
+    hint = `Looks like a URL — will be saved as "${typedUrlName}".`;
   } else if (typed === "") {
     hint = `Will be saved as "${suggestion.name}".`;
   } else if (finalName !== typed) {

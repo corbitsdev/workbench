@@ -243,7 +243,7 @@ async function deleteCredential(
 async function postDiscovery(
   args: { readonly tenantId: string; readonly url: string; readonly credentialId?: string },
   fetchImpl: typeof fetch,
-): Promise<{ readonly serverInfo: unknown; readonly tools: readonly McpTool[] }> {
+): Promise<{ readonly serverInfo: Record<string, unknown>; readonly tools: readonly McpTool[] }> {
   const response = await fetchImpl(tenantPath(args.tenantId, "/mcp/discover"), {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -273,6 +273,19 @@ export async function discoverMcpCatalog(
   return (await postDiscovery(args, fetchImpl)).tools;
 }
 
+/** The hub nests the server's self-report beside the negotiated protocol
+ * version (`{ protocolVersion, serverInfo? }`); the name lookup wants the
+ * inner report itself. A report-shaped object passes through untouched, and
+ * an envelope with no inner report stays whole — callers fall back to the
+ * URL suggestion either way. */
+function unwrapDiscoveredName(discovered: Record<string, unknown>): unknown {
+  if (typeof discovered["name"] === "string" || typeof discovered["title"] === "string") {
+    return discovered;
+  }
+  const inner = discovered["serverInfo"];
+  return inner !== null && typeof inner === "object" ? inner : discovered;
+}
+
 /** Asks a server what it calls itself without storing anything: the Tools
  * page pre-fills the name field from the returned `serverInfo` before the
  * server is added. `serverInfo` stays unknown — callers parse what they
@@ -283,7 +296,8 @@ export async function probeMcpServer(
   args: { readonly tenantId: string; readonly url: string },
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ readonly serverInfo: unknown; readonly tools: readonly McpTool[] }> {
-  return postDiscovery(args, fetchImpl);
+  const { serverInfo, tools } = await postDiscovery(args, fetchImpl);
+  return { serverInfo: unwrapDiscoveredName(serverInfo), tools };
 }
 
 export type AddMcpServerInput = {
