@@ -26,10 +26,18 @@ jobs:
       - run: bun run fmt:check
 
   # Integration and browser suites under e2e/. CI=true turns DB- and
-  # Chrome-gated skips into hard failures.
-  e2e:
+  # Chrome-gated skips into hard failures. Browser suites shard by
+  # round-robin over the sorted file list, so a new test file joins a shard
+  # automatically — no per-file list to keep in sync. Fewer files per shard
+  # also means fewer hub boots per `bun test` process, which is the
+  # documented flake boundary (see e2e/browser/first-run.test.ts).
+  e2e-browser:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -60,4 +68,47 @@ jobs:
       - run: |
           mkdir -p "$RUNNER_TEMP/hub-data"
           echo "HUB_DATA_DIR=$RUNNER_TEMP/hub-data" >> "$GITHUB_ENV"
-      - run: bun run test:e2e
+      - run: |
+          LC_ALL=C
+          i=0
+          files=""
+          for f in e2e/browser/*.test.ts e2e/mcp/*.test.ts; do
+            if [ "$((i % 3))" = "${{ matrix.shard }}" ]; then files="$files $f"; fi
+            i=$((i + 1))
+          done
+          echo "shard ${{ matrix.shard }} files:$files"
+          # shellcheck disable=SC2086
+          bun test $files
+
+  # Hub-level suites: no Chrome, no browser boots.
+  e2e-hub:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: workbench
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CI: "true"
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/workbench
+      # Throwaway keys for the ephemeral CI hub; same placeholders as .env.example.
+      CREDENTIAL_ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+      PRINCIPAL_KEY_ENCRYPTION_KEY: "1111111111111111111111111111111111111111111111111111111111111111"
+      SIDECAR_CREDENTIAL_ENCRYPTION_KEY: "2222222222222222222222222222222222222222222222222222222222222222"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-workbench
+      - run: |
+          mkdir -p "$RUNNER_TEMP/hub-data"
+          echo "HUB_DATA_DIR=$RUNNER_TEMP/hub-data" >> "$GITHUB_ENV"
+      - run: bun test e2e/grants e2e/hub e2e/install e2e/workflows
