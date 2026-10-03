@@ -44,13 +44,19 @@ export function PendingOpeningMessage({
     },
   });
 
-  if (text === null) return null;
-
   const live = participants.some((p) => p.kind === "agent" && p.address.includes("@"));
-  if (live && !attempted.current && !send.isPending) {
+  // Fires from an effect, never during render: mutating mid-render updates
+  // the mutation's own state on a fiber that hasn't mounted yet (React
+  // warns), and StrictMode double-renders would double-send without the
+  // ref guard.
+  useEffect(() => {
+    if (text === null || !live || attempted.current || send.isPending) return;
     attempted.current = true;
     send.mutate(text);
-  }
+  });
+
+  if (text === null) return null;
+
   const failed = send.isError || (timedOut && !live);
 
   return (

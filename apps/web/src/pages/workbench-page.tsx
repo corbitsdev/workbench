@@ -188,7 +188,9 @@ function WorkbenchMessageRow({
 }
 
 // Renders nothing; a mount's own ref plus the mutation's `isPending`/
-// `isSuccess` keep StrictMode's double render from firing it twice.
+// `isSuccess` keep StrictMode's double effect from firing it twice. Fires
+// from an effect, never during render: mutating mid-render updates the
+// mutation's own state on a fiber that hasn't mounted yet (React warns).
 function AgentRedeployer({
   workbenchTenantId,
   agent,
@@ -210,10 +212,11 @@ function AgentRedeployer({
       }),
     onError: (cause) => toast(errorText(cause)),
   });
-  if (!started.current && !redeploy.isPending && !redeploy.isSuccess) {
+  useEffect(() => {
+    if (started.current || redeploy.isPending || redeploy.isSuccess) return;
     started.current = true;
     redeploy.mutate();
-  }
+  });
   return null;
 }
 
