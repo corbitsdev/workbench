@@ -1,6 +1,7 @@
-// The 0-to-1 gate against scripted inference: signup, provider, a bench from
-// /new, a worker reply, a follow-up reply, an artifact the worker saves, and a
-// routine "Run now" brief. The Linear-connect step is not here (CL-9513).
+// The 0-to-1 gate against scripted inference, one flow: signup, provider, a
+// bench from /new, a worker reply that names the worker, a follow-up reply,
+// an artifact the worker saves, a routine "Run now" brief, and a worker
+// rename that survives reload. The Linear-connect step is not here (CL-9513).
 import { expect, test } from "bun:test";
 import { bootAimock, MOCK_REPLY, type Fixture } from "../lib/aimock";
 import { bootBrowserApp, browserGate } from "../lib/browser";
@@ -104,13 +105,34 @@ describeBrowser("0-to-1 gate", () => {
       await page.type("input[type=password]", "mock");
       const fields = await page.$$("form input:not([type=radio]):not([type=password])");
       await fields[1]?.type("mock-model");
+      // Custom takes base URL, key, and model: three non-radio inputs.
+      const inputs = await page.$$("form input:not([type=radio])");
+      expect(inputs.length).toBeGreaterThanOrEqual(3);
       await clickText(page, "button", "Connect");
 
       await page.waitForSelector("textarea", { timeout: STEP_TIMEOUT });
       await page.type("textarea", "Say hello");
       await page.click("button[aria-label='Start this workbench']");
       await page.waitForFunction(`location.pathname.startsWith("/w/")`, { timeout: STEP_TIMEOUT });
+      const benchUrl = page.url();
       await waitForText(page, MOCK_REPLY);
+
+      // The worker named itself: pill, sidebar and message header show it,
+      // and the marker line is never rendered.
+      await page.waitForFunction(
+        `document.querySelector(".bench-pill")?.innerText.includes("Ada")`,
+        {
+          timeout: STEP_TIMEOUT,
+        },
+      );
+      await page.waitForFunction(
+        `document.querySelector("[aria-label='Workbenches and workers']")?.textContent.includes("Ada")`,
+        { timeout: 20_000 },
+      );
+      expect(await page.evaluate("document.body.innerText.includes('Name: Ada')")).toBe(false);
+      await page.goto(`${app().origin}/workers`, { waitUntil: "networkidle0" });
+      await waitForText(page, "Ada");
+      await page.goto(benchUrl, { waitUntil: "networkidle0" });
 
       await send(page, FOLLOW_UP);
       await waitForText(page, FOLLOW_UP_REPLY);
@@ -132,68 +154,6 @@ describeBrowser("0-to-1 gate", () => {
       };
       expect(run.trigger?.status).toBe(202);
       await waitForText(page, BRIEF);
-    } catch (cause) {
-      const body = await page.evaluate("document.body.innerText");
-      process.stderr.write(
-        `zero-to-one failed at ${page.url()}:\n${String(body)}\nconsole: ${errors.join(" | ")}\njournal: ${JSON.stringify(aimock().journal()).slice(-3000)}\n`,
-      );
-      throw cause;
-    }
-    await page.close();
-  }, 300_000);
-
-  test("the worker's reply names it and rename survives reload", async () => {
-    const { page, errors } = await app().newPage();
-    try {
-      await page.goto(app().origin, { waitUntil: "networkidle0" });
-      await clickText(page, "button", "Create an account");
-      await waitForText(page, "Create your account");
-      await page.type("input[type=email]", `alice+${String(Date.now())}@example.com`);
-      await page.type("input[type=password]", "correct-horse-battery-staple");
-      await page.click("button[type=submit]");
-
-      // The Anthropic option pins api.anthropic.com; only Custom takes a base URL.
-      await waitForText(page, "Choose your AI model");
-      await clickText(page, "label", "Custom");
-      await page.waitForSelector("input[type=password]");
-      const inputs = await page.$$("form input:not([type=radio])");
-      expect(inputs.length).toBeGreaterThanOrEqual(3);
-      await page.type("form input:not([type=radio]):not([type=password])", `${aimock().url}/v1`);
-      await page.type("input[type=password]", "mock");
-      const model = await page.$$("form input:not([type=radio]):not([type=password])");
-      await model[1]?.type("mock-model");
-      await clickText(page, "button", "Connect");
-
-      await page.waitForSelector("textarea", { timeout: STEP_TIMEOUT });
-      await page.type("textarea", "Say hello");
-      await page.click("button[aria-label='Start this workbench']");
-      await page.waitForFunction(`location.pathname.startsWith("/w/")`, {
-        timeout: STEP_TIMEOUT,
-      });
-
-      await waitForText(page, MOCK_REPLY);
-      await page.waitForFunction(`!document.body.innerText.toLowerCase().includes("working")`, {
-        timeout: STEP_TIMEOUT,
-      });
-      expect(aimock().journal().length).toBeGreaterThan(0);
-
-      // The worker named itself: pill, sidebar and message header show it,
-      // and the marker line is never rendered.
-      const benchUrl = page.url();
-      await page.waitForFunction(
-        `document.querySelector(".bench-pill")?.innerText.includes("Ada")`,
-        {
-          timeout: STEP_TIMEOUT,
-        },
-      );
-      await page.waitForFunction(
-        `document.querySelector("[aria-label='Workbenches and workers']")?.textContent.includes("Ada")`,
-        { timeout: 20_000 },
-      );
-      expect(await page.evaluate("document.body.innerText.includes('Name: Ada')")).toBe(false);
-
-      await page.goto(`${app().origin}/workers`, { waitUntil: "networkidle0" });
-      await waitForText(page, "Ada");
 
       // Rename from the drawer; the new name persists across a reload.
       await page.goto(benchUrl, { waitUntil: "networkidle0" });
@@ -218,10 +178,10 @@ describeBrowser("0-to-1 gate", () => {
     } catch (cause) {
       const body = await page.evaluate("document.body.innerText");
       process.stderr.write(
-        `worker-reply failed at ${page.url()}:\n${String(body)}\nconsole: ${errors.join(" | ")}\njournal: ${JSON.stringify(aimock().journal()).slice(0, 4000)}\n`,
+        `zero-to-one failed at ${page.url()}:\n${String(body)}\nconsole: ${errors.join(" | ")}\njournal: ${JSON.stringify(aimock().journal()).slice(-3000)}\n`,
       );
       throw cause;
     }
     await page.close();
-  }, 240_000);
+  }, 300_000);
 });
