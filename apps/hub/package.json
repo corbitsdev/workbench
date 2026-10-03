@@ -25,7 +25,7 @@
     "@corbits/oauth-core": "^0.3.0",
     "@corbits/webhooks": "github:corbitsdev/webhooks#3f4f83147fd826d3aec5bcac7ef4b0ae7f75c00d",
     "@corbits/workflows": "workspace:*",
-    "@corbits/xai-provider": "github:corbitsdev/corbits-xai-provider#9f2d4bac40ea075df092fef807404a13c638cf14",
+    "@corbits/xai-provider": "0.1.2",
     "@intx/authz": "0.4.0",
     "@intx/crypto": "0.4.0",
     "@intx/db": "workspace:*",
