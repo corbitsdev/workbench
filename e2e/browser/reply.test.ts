@@ -29,7 +29,7 @@ describeBrowser("worker reply", () => {
       await page.click("button[type=submit]");
 
       // The Anthropic option pins api.anthropic.com; only Custom takes a base URL.
-      await waitForText(page, "Connect a brain");
+      await waitForText(page, "Choose your AI model");
       await clickText(page, "label", "Custom");
       await page.waitForSelector("input[type=password]");
       const inputs = await page.$$("form input:not([type=radio])");

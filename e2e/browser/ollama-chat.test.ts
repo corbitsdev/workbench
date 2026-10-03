@@ -51,7 +51,7 @@ describeBrowser("ollama chat", () => {
 
       // The Ollama option takes a base URL and offers the models the local
       // server reports as pulled — no key anywhere.
-      await waitForText(page, "Connect a brain");
+      await waitForText(page, "Choose your AI model");
       await clickText(page, "label", "Ollama (local)");
       await page.waitForFunction(
         `Array.from(document.querySelectorAll('select[aria-label="Model"] option')).length > 1`,

@@ -133,7 +133,7 @@ export function OnboardingPage({ user }: { readonly user: SessionUser }) {
     return (
       <OnboardingLayout step={1}>
         <div className="onboarding-phase onboarding-phase--credential" key="provider-setup">
-          <h1 className="onboarding-title">Connect a brain</h1>
+          <h1 className="onboarding-title">Choose your AI model</h1>
           <p className="onboarding-subtitle">
             Pick a provider and connect it, or skip for now and connect one later in Settings.
           </p>

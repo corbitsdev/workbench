@@ -89,7 +89,7 @@ describeBrowser("0-to-1 gate", () => {
       await page.click("button[type=submit]");
 
       // Only the Custom option takes a base URL.
-      await waitForText(page, "Connect a brain");
+      await waitForText(page, "Choose your AI model");
       await clickText(page, "label", "Custom");
       await page.waitForSelector("input[type=password]");
       await page.type("form input:not([type=radio]):not([type=password])", `${aimock().url}/v1`);

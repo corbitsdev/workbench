@@ -48,7 +48,7 @@ describeBrowser("composer layout", () => {
 
       // A placeholder key is enough: connecting stores a credential without
       // calling the provider, and creating a bench needs no inference.
-      await waitForText(page, "Connect a brain");
+      await waitForText(page, "Choose your AI model");
       await clickText(page, "label", "Anthropic");
       await page.waitForSelector("input[type=password]");
       await page.type("input[type=password]", "sk-ant-placeholder");
