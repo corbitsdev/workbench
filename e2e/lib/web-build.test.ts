@@ -2,7 +2,7 @@
 // serve: a dist marker matching the working-tree fingerprint means the
 // current tree already built it, so bootBrowserApp can skip its rebuild.
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { isWebBuildFresh, webBuildFingerprint, writeWebBuildMarker } from "./web-build";
@@ -60,6 +60,20 @@ test("a new commit invalidates the marker", () => {
   git(repo, ["add", "."]);
   git(repo, ["commit", "-m", "change"]);
   expect(isWebBuildFresh(web, repo)).toBe(false);
+});
+
+test("a missing build artifact means rebuild even with a matching marker", () => {
+  const { repo, web } = initRepo();
+  mkdirSync(path.join(repo, "pkg"), { recursive: true });
+  writeFileSync(path.join(repo, "pkg", "out.js"), "built");
+  writeWebBuildMarker(web, repo);
+  expect(isWebBuildFresh(web, repo, ["pkg/out.js"])).toBe(true);
+  // Deleting the artifact (and re-marking, so status matches again) must
+  // still read stale: only the existence check can catch this.
+  rmSync(path.join(repo, "pkg", "out.js"));
+  writeWebBuildMarker(web, repo);
+  expect(isWebBuildFresh(web, repo, ["pkg/out.js"])).toBe(false);
+  expect(isWebBuildFresh(web, repo)).toBe(true);
 });
 
 test("without git the build is never fresh", () => {

@@ -5,7 +5,7 @@
 // any tracked change, new file, or new commit rebuilds; ignored paths
 // (node_modules, .worktrees) never participate. Without git there is no
 // fingerprint, and the caller always rebuilds — the old behavior.
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 export const WEB_BUILD_MARKER = ".e2e-build-fingerprint";
@@ -51,7 +51,14 @@ function markerStatusPath(webDir: string, repoRoot: string): string {
   return path.relative(repoRoot, markerPath(webDir));
 }
 
-export function isWebBuildFresh(webDir: string, repoRoot: string): boolean {
+export function isWebBuildFresh(
+  webDir: string,
+  repoRoot: string,
+  // Repo-root-relative build artifacts the web build produces alongside
+  // dist (today the worker bundle): the marker matches the tree, but a
+  // deleted artifact still means rebuild.
+  requiredArtifacts: readonly string[] = [],
+): boolean {
   const fingerprint = webBuildFingerprint(repoRoot, [markerStatusPath(webDir, repoRoot)]);
   if (fingerprint === null) return false;
   let marker: string;
@@ -60,7 +67,8 @@ export function isWebBuildFresh(webDir: string, repoRoot: string): boolean {
   } catch {
     return false;
   }
-  return marker === fingerprint;
+  if (marker !== fingerprint) return false;
+  return requiredArtifacts.every((artifact) => existsSync(path.join(repoRoot, artifact)));
 }
 
 export function writeWebBuildMarker(webDir: string, repoRoot: string): void {
