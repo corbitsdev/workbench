@@ -21,7 +21,7 @@ export const DrawerTabContext = createContext<(tab: DrawerTab) => void>(() => un
 
 /** The floating card in the grid column that pushes the thread left. Each
  * tab's body arrives as a prop keyed by tab name; a tab without one shows a
- * short empty state until its own ticket lands. */
+ * short empty state. */
 export function BenchDrawer({
   open,
   title,
@@ -128,9 +128,7 @@ export function BenchDrawer({
         </div>
         <div className="drawer-body" role="tabpanel">
           <DrawerTabContext.Provider value={setTab}>
-            {body ?? (
-              <p className="workbench-info-empty-note">{tab} is coming to this drawer soon.</p>
-            )}
+            {body ?? <p className="workbench-info-empty-note">Nothing to show for {tab} yet.</p>}
           </DrawerTabContext.Provider>
         </div>
       </div>

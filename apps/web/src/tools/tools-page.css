@@ -1,4 +1,5 @@
-/* Quiet, token-only pills: no filled green, no vendor colour. */
+/* One quiet pill for every status tag: a sunk wash with an inset ring, never
+ * a filled green or a vendor colour. */
 .tool-live,
 .tool-kind {
   display: inline-flex;
@@ -7,34 +8,24 @@
   border-radius: 999px;
   font-size: 11.5px;
   font-weight: 600;
-  color: var(--ink);
-}
-
-.tool-live {
-  background: var(--success-wash);
-}
-
-.tool-kind {
-  background: var(--surface-sunk);
   color: var(--ink-2);
+  background: var(--surface-sunk);
   box-shadow: inset 0 0 0 1px var(--line);
 }
 
+/* The popular catalog: a dense tile grid. Connected servers read as rows in
+ * the shared list card — tiles are for browsing, not status. */
 .tools-grid {
   display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-}
-
-.tools-filter {
-  max-width: 320px;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
 }
 
 .tool-tile {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 20px;
+  gap: 2px;
+  padding: 16px;
   border-radius: var(--r-lg);
   background: var(--surface);
   box-shadow: var(--raised);
@@ -45,18 +36,35 @@
   box-shadow: var(--raised-hover);
 }
 
-/* A neutral monogram: a vendor's brand color never tints a tile. */
-.tool-tile-mark {
+/* Keyboard users land on the tile's buttons, so the tile itself names the
+ * focused group with the theme ring. */
+.tool-tile:focus-within {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* A neutral icon tile: a vendor's brand color never tints a tile. */
+.tool-tile-mark,
+.tools-row-mark {
   display: grid;
+  flex: none;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  margin-bottom: 14px;
-  border-radius: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-md);
   background: var(--surface-sunk);
   box-shadow: inset 0 0 0 1px var(--line);
-  color: var(--ink);
-  font-weight: 800;
+  color: var(--ink-2);
+}
+
+.tool-tile-mark {
+  margin-bottom: 10px;
+}
+
+.tool-tile-mark svg,
+.tools-row-mark svg {
+  width: 16px;
+  height: 16px;
 }
 
 .tool-tile-title {
@@ -64,22 +72,48 @@
   align-items: center;
   gap: 8px;
   margin: 0;
-  font-size: 15px;
-  font-weight: 800;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .tool-tile-desc {
   flex: 1;
-  margin: 0 0 16px;
+  margin: 0 0 12px;
   overflow-wrap: anywhere;
-  font-size: 13.5px;
+  font-size: 12.5px;
   color: var(--ink-2);
 }
 
 .tool-tile-foot {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+}
+
+/* A sign-in in flight spins inside its own disabled button — the wait is
+ * named where the action was, not beside it. */
+.tool-spin {
+  animation: tool-spin 0.8s linear infinite;
+}
+
+@keyframes tool-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-tile {
+    transition: none;
+  }
+
+  .tool-spin {
+    animation: none;
+  }
 }
 
 .tool-tile-hint {
@@ -109,7 +143,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  padding: 1rem;
+  padding: 16px;
 }
 
 .tools-sections {
@@ -118,7 +152,82 @@
   gap: 2rem;
 }
 
+/* Connected servers read as rows in the shared list card: a mark, the name
+ * and host, the live-tool pill, then Disconnect. The mark's 32px plus the
+ * row padding keeps every row over the 40px target. */
+.tools-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.tools-row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tools-row-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.tools-row-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tools-row-name .tool-kind {
+  flex: none;
+}
+
+.tools-row-desc {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+
+/* The drawer's per-server headers: a quiet count beside the name, and an Add
+ * tools link with visible hover, active, and focus states. */
+.tools-tab-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.tools-tab-add {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  text-underline-offset: 3px;
+}
+
+.tools-tab-add:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+
+.tools-tab-add:active {
+  color: var(--ink-2);
+}
+
+.tools-tab-add:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
 .tools-cell-name {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
   font-weight: 500;
 }
 
