@@ -8,6 +8,7 @@ import type { ToolEffect } from "@corbits/worker/definition-json";
 import type { McpServerDeployment } from "@corbits/worker/workflow-ids";
 
 import { ensureAgentHubCredential } from "./agent-hub-credential";
+import { assignRolesToAgent, resolveAgentRoleIds } from "./agent-roles";
 import { personMailAddress } from "./mail-address";
 import { listMcpServers, resolveWorkspaceTenantId, toMcpServerDeployment } from "./mcp-servers";
 import type { McpServer } from "./mcp-servers";
@@ -74,6 +75,11 @@ export type NewAgentInput = {
   /** Tool permissions to re-declare on a redeploy, as creator-sourced grant
    * requirements. */
   readonly toolEffects?: readonly ToolEffect[];
+  /** Role names checked in the create form, resolved against this tenant's
+   * live roles and assigned to the agent's workflow principal once the
+   * install lands. An unknown name fails the deploy before anything
+   * installs; a missing principal (no first run yet) fails it after. */
+  readonly roles?: readonly string[];
   /** Deploy anew even when nothing changed (a restart mints a fresh run). */
   readonly redeploy?: boolean;
 };
@@ -183,6 +189,16 @@ export async function deployAgentSource(
   if (!isValidSlug(slug)) {
     throw new AgentDeployError("this name doesn't produce a usable agent address");
   }
+  // Fail fast on an unknown role name: resolving before anything installs
+  // leaves no half-deployed agent behind. An empty selection skips the read.
+  let roleIds: readonly string[] = [];
+  try {
+    roleIds = await resolveAgentRoleIds(args.tenantId, args.input.roles ?? [], fetchImpl);
+  } catch (cause) {
+    throw new AgentDeployError(
+      cause instanceof Error ? cause.message : "resolving this agent's roles failed",
+    );
+  }
   const assetName = agentDeploySourceAssetName(slug);
   const packageName = `@workbench-agent/${slug}`;
 
@@ -246,6 +262,25 @@ export async function deployAgentSource(
   });
   if (args.input.schedule !== undefined) {
     await scheduleAgentRun(args.tenantId, args.input.schedule, assetName, tenant.domain, fetchImpl);
+  }
+  // The install already landed, so a missing principal (no first run yet)
+  // or a refused write fails the deploy with the agent in place — the panel
+  // stays open with this message, and resubmitting assigns the roles.
+  if (roleIds.length > 0) {
+    try {
+      await assignRolesToAgent(
+        {
+          tenantId: args.tenantId,
+          roleIds,
+          principalRef: { deploymentId: parsed.deploymentId, address: triggerAddress },
+        },
+        fetchImpl,
+      );
+    } catch (cause) {
+      throw new AgentDeployError(
+        cause instanceof Error ? cause.message : "assigning this agent's roles failed",
+      );
+    }
   }
   return parsed;
 }
