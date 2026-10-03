@@ -45,12 +45,20 @@ export type BrowserApp = {
   newPage: () => Promise<{ page: Page; errors: string[] }>;
 };
 
+// The web build also emits the worker bundle (see apps/web/vite.config.ts),
+// which non-browser suites consume without ever building the web bundle.
+const REQUIRED_ARTIFACTS = [
+  "packages/worker/bundle/workflow-bundle.js",
+  "packages/worker/bundle/directors-bundle.js",
+  "packages/worker/bundle/tool-names.json",
+];
+
 // One build per process: files in one `bun test e2e` run serially, so the
 // first browser suite builds and the rest reuse its dist while the tree is
 // unchanged. A stale dist still rebuilds — the marker only matches the tree
 // that produced it.
 async function ensureWebBuild(): Promise<void> {
-  if (isWebBuildFresh(WEB_DIR, REPO_ROOT)) return;
+  if (isWebBuildFresh(WEB_DIR, REPO_ROOT, REQUIRED_ARTIFACTS)) return;
   const proc = Bun.spawn(["bun", "run", "build"], {
     cwd: WEB_DIR,
     stdout: "inherit",
@@ -106,7 +114,12 @@ export function bootBrowserApp(): () => BrowserApp {
     app = {
       origin,
       newPage: async () => {
-        const page = await launched.newPage();
+        // A fresh incognito context per page: tests sharing one boot must
+        // not share sessions — a second signup would land on an already
+        // signed-in shell instead of the signed-out screen. Contexts die
+        // with the browser in afterAll.
+        const context = await launched.createBrowserContext();
+        const page = await context.newPage();
         const errors: string[] = [];
         page.on("console", (msg) => {
           if (msg.type() === "error") errors.push(msg.text());
