@@ -153,7 +153,7 @@ describeBrowser("mcp server name prefill", () => {
 
       // Adding stores the suggestion; the tile shows it live.
       await clickText(page, ".tool-add-actions button", "Add");
-      await page.waitForFunction(`document.body.innerText.includes("1 tools live")`, {
+      await page.waitForFunction(`document.body.innerText.includes("1 tool live")`, {
         timeout: 120_000,
         polling: 500,
       });
