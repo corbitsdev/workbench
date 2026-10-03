@@ -15,6 +15,14 @@ const ARTIFACT_TITLE = "Gate artifact";
 const ARTIFACT_DONE = "Saved the gate artifact.";
 const BRIEF = "Brief: nothing shipped this week.";
 
+// The worker-reply test's worker names itself. Registered after the scripted
+// turns so exact matches win, ahead of bootAimock's default MOCK_REPLY
+// fallback — which the gate's own first reply still falls through to.
+const ADA_REPLY: Fixture = {
+  match: { predicate: () => true },
+  response: { content: `${MOCK_REPLY}\n\nName: Ada` },
+};
+
 const FIXTURES: Fixture[] = [
   { match: { userMessage: FOLLOW_UP }, response: { content: FOLLOW_UP_REPLY } },
   {
@@ -75,7 +83,7 @@ async function send(page: import("puppeteer-core").Page, text: string): Promise<
 }
 
 describeBrowser("0-to-1 gate", () => {
-  const aimock = bootAimock(FIXTURES);
+  const aimock = bootAimock([...FIXTURES, ADA_REPLY]);
   const app = bootBrowserApp();
 
   test("signup to reply, follow-up, artifact, and routine brief", async () => {
@@ -133,4 +141,87 @@ describeBrowser("0-to-1 gate", () => {
     }
     await page.close();
   }, 300_000);
+
+  test("the worker's reply names it and rename survives reload", async () => {
+    const { page, errors } = await app().newPage();
+    try {
+      await page.goto(app().origin, { waitUntil: "networkidle0" });
+      await clickText(page, "button", "Create an account");
+      await waitForText(page, "Create your account");
+      await page.type("input[type=email]", `alice+${String(Date.now())}@example.com`);
+      await page.type("input[type=password]", "correct-horse-battery-staple");
+      await page.click("button[type=submit]");
+
+      // The Anthropic option pins api.anthropic.com; only Custom takes a base URL.
+      await waitForText(page, "Choose your AI model");
+      await clickText(page, "label", "Custom");
+      await page.waitForSelector("input[type=password]");
+      const inputs = await page.$$("form input:not([type=radio])");
+      expect(inputs.length).toBeGreaterThanOrEqual(3);
+      await page.type("form input:not([type=radio]):not([type=password])", `${aimock().url}/v1`);
+      await page.type("input[type=password]", "mock");
+      const model = await page.$$("form input:not([type=radio]):not([type=password])");
+      await model[1]?.type("mock-model");
+      await clickText(page, "button", "Connect");
+
+      await page.waitForSelector("textarea", { timeout: STEP_TIMEOUT });
+      await page.type("textarea", "Say hello");
+      await page.click("button[aria-label='Start this workbench']");
+      await page.waitForFunction(`location.pathname.startsWith("/w/")`, {
+        timeout: STEP_TIMEOUT,
+      });
+
+      await waitForText(page, MOCK_REPLY);
+      await page.waitForFunction(`!document.body.innerText.toLowerCase().includes("working")`, {
+        timeout: STEP_TIMEOUT,
+      });
+      expect(aimock().journal().length).toBeGreaterThan(0);
+
+      // The worker named itself: pill, sidebar and message header show it,
+      // and the marker line is never rendered.
+      const benchUrl = page.url();
+      await page.waitForFunction(
+        `document.querySelector(".bench-pill")?.innerText.includes("Ada")`,
+        {
+          timeout: STEP_TIMEOUT,
+        },
+      );
+      await page.waitForFunction(
+        `document.querySelector("[aria-label='Workbenches and workers']")?.textContent.includes("Ada")`,
+        { timeout: 20_000 },
+      );
+      expect(await page.evaluate("document.body.innerText.includes('Name: Ada')")).toBe(false);
+
+      await page.goto(`${app().origin}/workers`, { waitUntil: "networkidle0" });
+      await waitForText(page, "Ada");
+
+      // Rename from the drawer; the new name persists across a reload.
+      await page.goto(benchUrl, { waitUntil: "networkidle0" });
+      await page.click(".bench-pill");
+      await page.waitForSelector("input[aria-label='Worker name']");
+      await page.evaluate(`document.querySelector("input[aria-label='Worker name']").select()`);
+      await page.type("input[aria-label='Worker name']", "Bea");
+      await clickText(page, "button", "Rename");
+      await page.waitForFunction(
+        `document.querySelector(".bench-pill")?.innerText.includes("Bea")`,
+        {
+          timeout: STEP_TIMEOUT,
+        },
+      );
+      await page.reload({ waitUntil: "networkidle0" });
+      await page.waitForFunction(
+        `document.querySelector(".bench-pill")?.innerText.includes("Bea")`,
+        {
+          timeout: STEP_TIMEOUT,
+        },
+      );
+    } catch (cause) {
+      const body = await page.evaluate("document.body.innerText");
+      process.stderr.write(
+        `worker-reply failed at ${page.url()}:\n${String(body)}\nconsole: ${errors.join(" | ")}\njournal: ${JSON.stringify(aimock().journal()).slice(0, 4000)}\n`,
+      );
+      throw cause;
+    }
+    await page.close();
+  }, 240_000);
 });
