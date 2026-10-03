@@ -1,5 +1,6 @@
-// Two idioms, per DESIGN.md: a data table for what the workspace catalog
-// already carries, and a card catalog for the servers it could add.
+// Two idioms: a dense icon grid for the workspace MCP catalog — connected
+// servers first, then the popular official ones — and a data table for the
+// tool packages the workbench's agents already carry.
 
 import { useState } from "react";
 
@@ -9,9 +10,11 @@ import {
   Card,
   CardDescription,
   CardTitle,
+  EmptyState,
   Input,
   RichEmptyState,
   Section,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -21,7 +24,7 @@ import {
 } from "@corbits/react-ui";
 import { toast } from "@corbits/react-ui/ui/toast";
 import { QueryView } from "@/lib/api-query";
-import { Plugs } from "@/lib/icons";
+import { MagnifyingGlass, Plugs, type Icon } from "@/lib/icons";
 
 import { describeApiError } from "@/lib/api-query";
 import { MCP_SERVER_CATALOG, type McpCatalogEntry } from "../mcp-servers";
@@ -33,6 +36,7 @@ import {
   useSignInMcpServer,
   type McpServerRow,
 } from "../tools/mcp-servers-query";
+import { mcpServerIcon } from "../tools/mcp-server-icons";
 import { useDeployedToolPackages } from "../tools/deployed-tool-packages";
 import { useBench } from "../bench-context";
 import { useFromBench } from "../shell/page-crumbs";
@@ -53,13 +57,13 @@ function toolHost(url: string): string {
 }
 
 function ToolTile({
-  mark,
+  icon: TileIcon,
   name,
   desc,
   official,
   children,
 }: {
-  readonly mark: string;
+  readonly icon: Icon;
   readonly name: string;
   readonly desc: string;
   readonly official: boolean;
@@ -68,7 +72,7 @@ function ToolTile({
   return (
     <div className="tool-tile">
       <div className="tool-tile-mark" aria-hidden="true">
-        {mark}
+        <TileIcon />
       </div>
       <h3 className="tool-tile-title">
         {name}
@@ -93,7 +97,7 @@ function ConnectedTile({
   const agents = server.agentNames.length === 0 ? "" : ` · ${server.agentNames.join(", ")}`;
   return (
     <ToolTile
-      mark={server.name.slice(0, 1).toLocaleUpperCase()}
+      icon={mcpServerIcon(server.handle)}
       name={server.name}
       desc={`${toolHost(server.url)}${agents}`}
       official={official}
@@ -114,7 +118,7 @@ function ConnectedTile({
   );
 }
 
-function AvailableTile({
+function PopularTile({
   entry,
   onConnect,
   busy,
@@ -129,7 +133,7 @@ function AvailableTile({
 
   return (
     <ToolTile
-      mark={entry.name.slice(0, 1).toLocaleUpperCase()}
+      icon={mcpServerIcon(entry.handle)}
       name={entry.name}
       desc={toolHost(entry.url)}
       official
@@ -290,12 +294,49 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
         }}
       />
 
-      <QueryView query={serversQuery} label="the workspace's MCP servers" skeleton="rows">
+      <QueryView
+        query={serversQuery}
+        label="the workspace's MCP servers"
+        skeleton="rows"
+        loadingContent={
+          <div className="tools-grid" aria-hidden="true">
+            {Array.from({ length: 6 }, (_, index) => (
+              <Skeleton key={index} className="tool-tile-skeleton" />
+            ))}
+          </div>
+        }
+      >
         {(servers) => {
           const connected = servers.filter(matches);
           const available = MCP_SERVER_CATALOG.filter(
             (entry) => !servers.some((server) => server.handle === entry.handle) && matches(entry),
           );
+          const filtered = needle !== "";
+          if (connected.length === 0 && available.length === 0) {
+            return filtered ? (
+              <EmptyState
+                icon={<MagnifyingGlass />}
+                title={`No tools match "${filter.trim()}"`}
+                description="Try a different search."
+                action={
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setFilter("");
+                    }}
+                  >
+                    Clear filter
+                  </Button>
+                }
+              />
+            ) : (
+              <RichEmptyState
+                icon={<Plugs />}
+                title="No servers connected"
+                description="Connect a popular server below and its tools reach every workbench's worker."
+              />
+            );
+          }
           return (
             <>
               <Section
@@ -303,7 +344,11 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
                 description="The workspace catalog, shared by every workbench: a server's tools reach the agents whose definitions bind it."
               >
                 {connected.length === 0 ? (
-                  <p className="page-note">Nothing connected yet.</p>
+                  <p className="page-note">
+                    {filtered
+                      ? "No connected servers match this filter."
+                      : "Nothing connected yet — pick a popular server below."}
+                  </p>
                 ) : (
                   <div className="tools-grid">
                     {connected.map((server) => (
@@ -329,10 +374,20 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
                 )}
               </Section>
 
-              <Section title="Available" description="Official servers first.">
+              <Section
+                title="Popular"
+                description="The official catalog — connecting one shares it with every workbench."
+              >
+                {available.length === 0 ? (
+                  <p className="page-note">
+                    {filtered
+                      ? "No popular servers match this filter."
+                      : "Every official server is already connected."}
+                  </p>
+                ) : null}
                 <div className="tools-grid">
                   {available.map((entry) => (
-                    <AvailableTile
+                    <PopularTile
                       key={entry.handle}
                       entry={entry}
                       busy={add.isPending || signIn.busy}

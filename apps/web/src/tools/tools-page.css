@@ -22,8 +22,8 @@
 
 .tools-grid {
   display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
 }
 
 .tools-filter {
@@ -33,8 +33,8 @@
 .tool-tile {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 20px;
+  gap: 2px;
+  padding: 14px 16px;
   border-radius: var(--r-lg);
   background: var(--surface);
   box-shadow: var(--raised);
@@ -45,18 +45,29 @@
   box-shadow: var(--raised-hover);
 }
 
-/* A neutral monogram: a vendor's brand color never tints a tile. */
+/* Keyboard users land on the tile's buttons, so the tile itself names the
+ * focused group with the theme ring. */
+.tool-tile:focus-within {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* A neutral icon tile: a vendor's brand color never tints a tile. */
 .tool-tile-mark {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  margin-bottom: 14px;
+  width: 32px;
+  height: 32px;
+  margin-bottom: 10px;
   border-radius: 10px;
   background: var(--surface-sunk);
   box-shadow: inset 0 0 0 1px var(--line);
-  color: var(--ink);
-  font-weight: 800;
+  color: var(--ink-2);
+}
+
+.tool-tile-mark svg {
+  width: 16px;
+  height: 16px;
 }
 
 .tool-tile-title {
@@ -64,22 +75,34 @@
   align-items: center;
   gap: 8px;
   margin: 0;
-  font-size: 15px;
-  font-weight: 800;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .tool-tile-desc {
   flex: 1;
-  margin: 0 0 16px;
+  margin: 0 0 12px;
   overflow-wrap: anywhere;
-  font-size: 13.5px;
+  font-size: 12.5px;
   color: var(--ink-2);
 }
 
 .tool-tile-foot {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+}
+
+/* Loading tiles hold the dense grid's shape until the catalog lands. */
+.tool-tile-skeleton {
+  min-height: 128px;
+  border-radius: var(--r-lg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-tile {
+    transition: none;
+  }
 }
 
 .tool-tile-hint {
@@ -115,10 +138,12 @@
 .tools-sections {
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 1.5rem;
 }
 
 .tools-cell-name {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
   font-weight: 500;
 }
 
