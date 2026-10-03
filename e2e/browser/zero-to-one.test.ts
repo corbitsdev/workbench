@@ -1,6 +1,7 @@
-// The 0-to-1 gate against scripted inference: signup, provider, a bench from
-// /new, a worker reply, a follow-up reply, an artifact the worker saves, and a
-// routine "Run now" brief. The Linear-connect step is not here (CL-9513).
+// The 0-to-1 gate against scripted inference, one flow: signup, provider, a
+// bench from /new, a worker reply that names the worker, a follow-up reply,
+// an artifact the worker saves, a routine "Run now" brief, and a worker
+// rename that survives reload. The Linear-connect step is not here (CL-9513).
 import { expect, test } from "bun:test";
 import { bootAimock, MOCK_REPLY, type Fixture } from "../lib/aimock";
 import { bootBrowserApp, browserGate } from "../lib/browser";
@@ -14,6 +15,14 @@ const SAVE_ARTIFACT = "SAVE-ARTIFACT";
 const ARTIFACT_TITLE = "Gate artifact";
 const ARTIFACT_DONE = "Saved the gate artifact.";
 const BRIEF = "Brief: nothing shipped this week.";
+
+// The worker-reply test's worker names itself. Registered after the scripted
+// turns so exact matches win, ahead of bootAimock's default MOCK_REPLY
+// fallback — which the gate's own first reply still falls through to.
+const ADA_REPLY: Fixture = {
+  match: { predicate: () => true },
+  response: { content: `${MOCK_REPLY}\n\nName: Ada` },
+};
 
 const FIXTURES: Fixture[] = [
   { match: { userMessage: FOLLOW_UP }, response: { content: FOLLOW_UP_REPLY } },
@@ -75,7 +84,7 @@ async function send(page: import("puppeteer-core").Page, text: string): Promise<
 }
 
 describeBrowser("0-to-1 gate", () => {
-  const aimock = bootAimock(FIXTURES);
+  const aimock = bootAimock([...FIXTURES, ADA_REPLY]);
   const app = bootBrowserApp();
 
   test("signup to reply, follow-up, artifact, and routine brief", async () => {
@@ -96,13 +105,34 @@ describeBrowser("0-to-1 gate", () => {
       await page.type("input[type=password]", "mock");
       const fields = await page.$$("form input:not([type=radio]):not([type=password])");
       await fields[1]?.type("mock-model");
+      // Custom takes base URL, key, and model: three non-radio inputs.
+      const inputs = await page.$$("form input:not([type=radio])");
+      expect(inputs.length).toBeGreaterThanOrEqual(3);
       await clickText(page, "button", "Connect");
 
       await page.waitForSelector("textarea", { timeout: STEP_TIMEOUT });
       await page.type("textarea", "Say hello");
       await page.click("button[aria-label='Start this workbench']");
       await page.waitForFunction(`location.pathname.startsWith("/w/")`, { timeout: STEP_TIMEOUT });
+      const benchUrl = page.url();
       await waitForText(page, MOCK_REPLY);
+
+      // The worker named itself: pill, sidebar and message header show it,
+      // and the marker line is never rendered.
+      await page.waitForFunction(
+        `document.querySelector(".bench-pill")?.innerText.includes("Ada")`,
+        {
+          timeout: STEP_TIMEOUT,
+        },
+      );
+      await page.waitForFunction(
+        `document.querySelector("[aria-label='Workbenches and workers']")?.textContent.includes("Ada")`,
+        { timeout: 20_000 },
+      );
+      expect(await page.evaluate("document.body.innerText.includes('Name: Ada')")).toBe(false);
+      await page.goto(`${app().origin}/workers`, { waitUntil: "networkidle0" });
+      await waitForText(page, "Ada");
+      await page.goto(benchUrl, { waitUntil: "networkidle0" });
 
       await send(page, FOLLOW_UP);
       await waitForText(page, FOLLOW_UP_REPLY);
@@ -124,6 +154,27 @@ describeBrowser("0-to-1 gate", () => {
       };
       expect(run.trigger?.status).toBe(202);
       await waitForText(page, BRIEF);
+
+      // Rename from the drawer; the new name persists across a reload.
+      await page.goto(benchUrl, { waitUntil: "networkidle0" });
+      await page.click(".bench-pill");
+      await page.waitForSelector("input[aria-label='Worker name']");
+      await page.evaluate(`document.querySelector("input[aria-label='Worker name']").select()`);
+      await page.type("input[aria-label='Worker name']", "Bea");
+      await clickText(page, "button", "Rename");
+      await page.waitForFunction(
+        `document.querySelector(".bench-pill")?.innerText.includes("Bea")`,
+        {
+          timeout: STEP_TIMEOUT,
+        },
+      );
+      await page.reload({ waitUntil: "networkidle0" });
+      await page.waitForFunction(
+        `document.querySelector(".bench-pill")?.innerText.includes("Bea")`,
+        {
+          timeout: STEP_TIMEOUT,
+        },
+      );
     } catch (cause) {
       const body = await page.evaluate("document.body.innerText");
       process.stderr.write(
