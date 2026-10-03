@@ -2,8 +2,8 @@
 .chat-composer-box {
   display: flex;
   align-items: flex-end;
-  gap: 4px;
-  padding: 6px;
+  gap: 8px;
+  padding: 8px;
   background: var(--surface);
   border-radius: 22px;
   box-shadow: var(--floating);
@@ -21,13 +21,17 @@
   max-height: 180px;
   display: block;
   resize: none;
+  overflow-x: hidden;
+  overflow-y: auto;
   border: 0;
   background: transparent;
-  padding: 5px 4px;
+  padding: 6px 8px;
   font: inherit;
   font-size: 15px;
   line-height: 1.5;
   color: var(--ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .chat-composer-input:focus {
   outline: none;

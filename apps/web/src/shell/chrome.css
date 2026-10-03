@@ -72,9 +72,12 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
   min-height: 32px;
   padding: 5px 8px;
   border-radius: var(--r-md);
+  text-align: left;
 }
 
 .shell-sidebar .shell-ch-row:hover {
