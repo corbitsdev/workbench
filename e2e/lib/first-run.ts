@@ -30,7 +30,7 @@ export async function runFirstRunFlow(page: Page, origin: string): Promise<void>
 
   // Provider connect is the only onboarding step; a placeholder key is
   // enough because connecting stores a credential without calling the provider.
-  await waitForText(page, "Connect a brain");
+  await waitForText(page, "Choose your AI model");
   await clickText(page, "label", "Anthropic");
   await page.waitForSelector("input[type=password]");
   await page.type("input[type=password]", "sk-ant-placeholder");

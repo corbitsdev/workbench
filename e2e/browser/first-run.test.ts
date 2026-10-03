@@ -32,7 +32,7 @@ async function signUp(page: Page, origin: string): Promise<void> {
   await page.type("input[type=email]", `alice+${String(Date.now())}@example.com`);
   await page.type("input[type=password]", "correct-horse-battery-staple");
   await page.click("button[type=submit]");
-  await waitForText(page, "Connect a brain");
+  await waitForText(page, "Choose your AI model");
   await clickText(page, "label", "Anthropic");
   await page.waitForSelector("input[type=password]");
   await page.type("input[type=password]", "sk-ant-placeholder");
