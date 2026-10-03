@@ -20,6 +20,11 @@ import { PageLayout } from "../shell/page-layout";
 import { useWorkerRole } from "../worker-role-query";
 import { updateGrant, type Grant } from "../settings/tenancy-api";
 import { agentSlugFromSourceAssetName, deployAgentSource } from "../agent-deploy";
+import {
+  needsAgentRedeployForProviderChange,
+  readCurrentOfferingSources,
+  redeployAgentForProviderChange,
+} from "../agent-model-redeploy";
 import { readAgentMcpHandles, readAgentSource } from "../agent-source-read";
 import {
   TOOL_PREFIX,
@@ -263,6 +268,12 @@ function approvalsLabel(tally: ReturnType<typeof useApprovalTally>): string {
   return `${once + always + denied + waiting} asked · ${once + always} allowed`;
 }
 
+function formatSources(
+  sources: readonly { readonly provider: string; readonly model: string }[],
+): string {
+  return sources.map((source) => `${source.provider} · ${source.model}`).join(", ");
+}
+
 function DetailsCard({
   tenantId,
   agent,
@@ -280,6 +291,39 @@ function DetailsCard({
   const thisWeek = (own ?? []).filter((run) => Date.parse(run.createdAt) >= weekStart);
   const tally = useApprovalTally(tenantId, thisWeek.slice(0, 50));
   const created = (own ?? []).map((run) => Date.parse(run.createdAt)).sort((a, b) => a - b)[0];
+
+  // Only agents this pipeline deployed can be re-deployed from here — only
+  // they carry a slug to keep the address stable under. The default worker's
+  // provider moves are handled where the provider is edited (Settings).
+  const queryClient = useQueryClient();
+  const redeployable = agentSlugFromSourceAssetName(agent.assetName) !== null;
+  const offering = useQuery({
+    queryKey: [...tenantKeys.agents(tenantId), "offering"],
+    queryFn: () => readCurrentOfferingSources(tenantId),
+    enabled: redeployable,
+  });
+  const declared = source.data?.declaredSources;
+  const current = offering.data;
+  const providerChanged =
+    redeployable &&
+    declared !== undefined &&
+    current !== undefined &&
+    needsAgentRedeployForProviderChange(declared, current);
+
+  // Re-deploying preserves the agent's config (instructions, servers,
+  // permissions) — `redeployAgentForProviderChange` carries it over, so the
+  // move onto the current provider loses nothing the person set.
+  const redeploy = useMutation({
+    mutationFn: () => redeployAgentForProviderChange({ tenantId, agent }),
+    onSuccess: async () => {
+      toast("Worker re-deployed onto the current provider");
+      await queryClient.invalidateQueries({ queryKey: tenantKeys.agents(tenantId) });
+    },
+    onError: (cause) => {
+      reportError(cause, { operation: "worker_provider_redeploy", tenantId });
+    },
+  });
+
   return (
     <section className="wp-card">
       <h2 className="wp-h2--small">Details</h2>
@@ -303,6 +347,36 @@ function DetailsCard({
           </>
         )}
       </dl>
+      {!providerChanged ? null : (
+        <div className="wp-redeploy">
+          <p className="wp-note">
+            The inference provider changed since this worker was deployed — it still runs on{" "}
+            {formatSources(declared ?? [])}, while the workspace now offers{" "}
+            {formatSources(current ?? [])}. Re-deploying moves it over and keeps its instructions,
+            servers, and permissions.
+          </p>
+          {redeploy.isError ? (
+            <p role="alert" className="wp-note wp-note-error">
+              {describeApiError(redeploy.error, "re-deploy this worker")}
+            </p>
+          ) : null}
+          <div className="wp-save-row">
+            <ConfirmButton
+              size="sm"
+              disabled={redeploy.isPending}
+              confirmLabel={`Re-deploy onto ${formatSources(current ?? [])}`}
+              onConfirm={() => redeploy.mutate()}
+            >
+              {redeploy.isPending ? "Re-deploying…" : "Re-deploy"}
+            </ConfirmButton>
+            <span className="wp-hint">
+              {redeploy.isPending
+                ? "Moving onto the current provider"
+                : "Re-deploys and restarts this worker"}
+            </span>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
