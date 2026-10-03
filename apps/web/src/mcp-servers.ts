@@ -237,12 +237,13 @@ async function deleteCredential(
   });
 }
 
-/** Read a server's catalog through the hub, which is the only side that may
- * hold the bearer. `credentialId` names the stored secret to send. */
-export async function discoverMcpCatalog(
+/** One POST to the hub's discovery route, shared by the add flow (which needs
+ * only the tools) and the name lookup (which needs the self-reported
+ * `serverInfo` too). Stores nothing. */
+async function postDiscovery(
   args: { readonly tenantId: string; readonly url: string; readonly credentialId?: string },
-  fetchImpl: typeof fetch = fetch,
-): Promise<readonly McpTool[]> {
+  fetchImpl: typeof fetch,
+): Promise<{ readonly serverInfo: unknown; readonly tools: readonly McpTool[] }> {
   const response = await fetchImpl(tenantPath(args.tenantId, "/mcp/discover"), {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -260,7 +261,29 @@ export async function discoverMcpCatalog(
         : envelope.error,
     );
   }
-  return (await readJson(response, DiscoveryShape, "the MCP server's catalog")).data.tools;
+  return (await readJson(response, DiscoveryShape, "the MCP server's catalog")).data;
+}
+
+/** Read a server's catalog through the hub, which is the only side that may
+ * hold the bearer. `credentialId` names the stored secret to send. */
+export async function discoverMcpCatalog(
+  args: { readonly tenantId: string; readonly url: string; readonly credentialId?: string },
+  fetchImpl: typeof fetch = fetch,
+): Promise<readonly McpTool[]> {
+  return (await postDiscovery(args, fetchImpl)).tools;
+}
+
+/** Asks a server what it calls itself without storing anything: the Tools
+ * page pre-fills the name field from the returned `serverInfo` before the
+ * server is added. `serverInfo` stays unknown — callers parse what they
+ * display. Keyless servers answer directly; token-protected ones cannot
+ * answer until they hold a credential, so callers keep the URL suggestion
+ * when this rejects. */
+export async function probeMcpServer(
+  args: { readonly tenantId: string; readonly url: string },
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ readonly serverInfo: unknown; readonly tools: readonly McpTool[] }> {
+  return postDiscovery(args, fetchImpl);
 }
 
 export type AddMcpServerInput = {
