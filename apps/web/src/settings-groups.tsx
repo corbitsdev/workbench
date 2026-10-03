@@ -6,6 +6,7 @@ import { insertEveryoneSections, resolveSettingsSectionGroups } from "@/settings
 import type { SettingsSectionGroup, TenancyAccess } from "@/settings";
 
 import { InsightsRoute } from "./pages/insights-page";
+import { SETTINGS_INSIGHTS_PATH } from "./settings-insights-path";
 
 export function resolveAppSettingsSectionGroups(
   access: TenancyAccess,
@@ -16,7 +17,7 @@ export function resolveAppSettingsSectionGroups(
       id: "insights",
       title: "Insights",
       icon: ChartBar,
-      render: () => <InsightsRoute />,
+      render: () => <InsightsRoute path={SETTINGS_INSIGHTS_PATH} embedded />,
     },
   ]);
 }

@@ -204,6 +204,7 @@ export function InsightsRunsHistory({
   loading,
   nextCursor,
   onOpenRun,
+  embedded = false,
 }: {
   readonly runs: readonly InsightsRun[];
   readonly loading: boolean;
@@ -212,14 +213,23 @@ export function InsightsRunsHistory({
    * so the view says so instead of silently truncating at 100. */
   readonly nextCursor: string | null;
   readonly onOpenRun: (id: string) => void;
+  /** Rendered inside the Settings dialog: crumbs carry no `href` (a link
+   * would navigate the host app out from under the dialog) and the host
+   * shell's sidebar toggle is hidden. */
+  readonly embedded?: boolean;
 }) {
   const purpose = purposeRunsForInsights(runs);
   const groups = groupRunsByDefinition(purpose);
   return (
     <div className="page-frame">
       <StageTopBar
-        crumbs={[{ label: "Insights", href: INSIGHTS_PATH_PREFIX }, { label: "Run history" }]}
+        crumbs={
+          embedded
+            ? [{ label: "Insights" }, { label: "Run history" }]
+            : [{ label: "Insights", href: INSIGHTS_PATH_PREFIX }, { label: "Run history" }]
+        }
         subtitle={`${purpose.length} runs`}
+        hideSidebarToggle={embedded}
       />
       <div className="page-scroll">
         <PageShell width="full" className="page-fill">
@@ -323,19 +333,37 @@ function RunFailureDetail({
 export function InsightsRunDetail({
   run,
   tenantId,
+  embedded = false,
+  onBack,
 }: {
   readonly run: InsightsRun | null;
   readonly tenantId: string | null;
+  /** Same embedded contract as `InsightsRunsHistory`: no crumb links, no
+   * host sidebar toggle — plus a way back, since the host URL stays put. */
+  readonly embedded?: boolean;
+  readonly onBack?: () => void;
 }) {
   const failed = run !== null && insightsRunStatus(run) === "failed";
   return (
     <div className="page-frame">
       <StageTopBar
-        crumbs={[
-          { label: "Runs", href: INSIGHTS_RUNS_PATH },
-          { label: run !== null ? runDisplayName(run) : "Run" },
-        ]}
+        crumbs={
+          embedded
+            ? [{ label: "Runs" }, { label: run !== null ? runDisplayName(run) : "Run" }]
+            : [
+                { label: "Runs", href: INSIGHTS_RUNS_PATH },
+                { label: run !== null ? runDisplayName(run) : "Run" },
+              ]
+        }
         subtitle={run !== null ? formatWhen(run.createdAt) : null}
+        hideSidebarToggle={embedded}
+        actions={
+          embedded && onBack !== undefined ? (
+            <button type="button" className="insights-link-button" onClick={onBack}>
+              Back to runs
+            </button>
+          ) : undefined
+        }
       />
       <div className="page-scroll">
         <PageShell width="full" className="page-fill">
@@ -371,6 +399,7 @@ export function InsightsPage({
   path,
   runs,
   tenantId = null,
+  embedded = false,
 }: {
   readonly path: string;
   readonly runs: APIQuery<{
@@ -378,14 +407,19 @@ export function InsightsPage({
     nextCursor: string | null;
   }>;
   readonly tenantId?: string | null;
+  /** Rendered inside the Settings dialog: a run opens inline in local state
+   * instead of navigating the host app to a top-level route (which would
+   * unmount the dialog). */
+  readonly embedded?: boolean;
 }) {
   const navigate = useNavigate();
   const { mode, runId } = parseInsightsPath(path);
+  const [embeddedRunId, setEmbeddedRunId] = useState<string | null>(null);
 
   if (runs.kind === "unauthenticated") {
     return (
       <div className="page-frame">
-        <StageTopBar crumbs={[{ label: "Runs" }]} />
+        <StageTopBar crumbs={[{ label: "Runs" }]} hideSidebarToggle={embedded} />
         <PageShell width="full" className="page-fill">
           <SignedOutNotice />
         </PageShell>
@@ -401,12 +435,29 @@ export function InsightsPage({
     return <InsightsRunDetail run={run} tenantId={tenantId} />;
   }
 
+  if (embedded && embeddedRunId !== null) {
+    const run = runsData.find((r) => r.id === embeddedRunId) ?? null;
+    return (
+      <InsightsRunDetail
+        run={run}
+        tenantId={tenantId}
+        embedded
+        onBack={() => setEmbeddedRunId(null)}
+      />
+    );
+  }
+
   return (
     <InsightsRunsHistory
       runs={runsData}
       loading={runs.kind === "loading"}
       nextCursor={runsNextCursor}
-      onOpenRun={(id) => navigate(`${INSIGHTS_RUNS_PATH}/${encodeURIComponent(id)}`)}
+      onOpenRun={
+        embedded
+          ? (id) => setEmbeddedRunId(id)
+          : (id) => navigate(`${INSIGHTS_RUNS_PATH}/${encodeURIComponent(id)}`)
+      }
+      embedded={embedded}
     />
   );
 }
@@ -478,7 +529,13 @@ function InsightsLandingRedirect({ benchTenantId }: { readonly benchTenantId: st
   return <Redirect to={to} from={INSIGHTS_PATH_PREFIX} navigate={navigate} />;
 }
 
-export function InsightsRoute({ path }: { readonly path?: string }) {
+export function InsightsRoute({
+  path,
+  embedded = false,
+}: {
+  readonly path?: string;
+  readonly embedded?: boolean;
+}) {
   const { selectedTenantId: benchTenantId } = useBench();
   // A run opened from a workbench's Insights carries `from=`, so it reads
   // that workbench's tenant rather than the bench.
@@ -515,7 +572,14 @@ export function InsightsRoute({ path }: { readonly path?: string }) {
     nextCursor: string | null;
   }> = selectedTenantId === null ? { kind: "ready", data: { data: [], nextCursor: null } } : runs;
 
-  return <InsightsPage path={currentPath} runs={runsForPage} tenantId={selectedTenantId} />;
+  return (
+    <InsightsPage
+      path={currentPath}
+      runs={runsForPage}
+      tenantId={selectedTenantId}
+      embedded={embedded}
+    />
+  );
 }
 
 /** Resolves the workbench-scoped route's own workbench list. */
