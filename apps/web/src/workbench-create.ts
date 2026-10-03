@@ -3,7 +3,6 @@
 
 import { isDefaultWorker } from "@/chat/threads-api";
 import { agentSlugFromSourceAssetName, deployAgentSource } from "./agent-deploy";
-import { assignRolesToAgent, resolveAgentRoleIds } from "./agent-roles";
 import { readAgentSource } from "./agent-source-read";
 import { deployWorkerSource } from "./worker-deploy";
 import { parkOpeningMessage } from "./opening-message";
@@ -13,7 +12,7 @@ import { resolveExistingOffering } from "./onboarding/provider-connect-step";
 export class WorkbenchCreateError extends Error {
   constructor(
     message: string,
-    readonly stage: "create" | "deploy" | "roles",
+    readonly stage: "create" | "deploy",
     /** Set once the workbench tenant exists, so a later-stage failure can
      * still land the person in the workbench it created. */
     readonly tenantId?: string,
@@ -57,11 +56,6 @@ export type CreateWorkbenchInput = {
     readonly name: string;
     readonly assetName: string;
   }[];
-  /** Role names checked in the create form, resolved against the new
-   * tenant's seeded system roles and assigned to the workbench's Worker.
-   * An unknown name fails before anything deploys; a Worker that hasn't
-   * run yet (no principal) fails after, with the workbench in place. */
-  readonly roles?: readonly string[];
 };
 
 /** Returns the new workbench's tenant id — its deep link is `/w/<id>`. */
@@ -92,16 +86,7 @@ export async function createWorkbench(input: CreateWorkbenchInput): Promise<stri
     if (offering === null) {
       throw new Error("Connect a model provider in Settings before starting a workbench.");
     }
-    // Resolve the selection against the new tenant's seeded system roles
-    // before deploying: an unknown name fails here, with the workbench in
-    // place but nothing deployed into it yet.
-    let roleIds: readonly string[] = [];
-    try {
-      roleIds = await resolveAgentRoleIds(tenantId, input.roles ?? []);
-    } catch (cause) {
-      throw failure(cause, "roles", tenantId);
-    }
-    const worker = await deployWorkerSource({
+    await deployWorkerSource({
       tenantId,
       tenantDomain: domain,
       sourceOfferingIds: offering.sourceOfferingIds,
@@ -122,21 +107,6 @@ export async function createWorkbench(input: CreateWorkbenchInput): Promise<stri
         tenantId,
         input: { name: picked.name, systemPrompt: source.systemPrompt, slug },
       });
-    }
-
-    // Worker's workflow principal only exists after its first run, so a
-    // fresh workbench fails here with the workbench in place — opening it
-    // starts the worker, and the roles apply on a later attempt.
-    if (roleIds.length > 0) {
-      try {
-        await assignRolesToAgent({
-          tenantId,
-          roleIds,
-          principalRef: { deploymentId: worker.deploymentId, address: `worker@${domain}` },
-        });
-      } catch (cause) {
-        throw failure(cause, "roles", tenantId);
-      }
     }
   } catch (cause) {
     if (cause instanceof WorkbenchCreateError) throw cause;
