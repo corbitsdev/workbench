@@ -242,7 +242,6 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
     },
   });
   const [filter, setFilter] = useState("");
-  const crumbs = [{ label: "Tools" }];
   const needle = filter.trim().toLocaleLowerCase();
   const matches = (item: { readonly name: string }) =>
     needle === "" || item.name.toLocaleLowerCase().includes(needle);
@@ -250,7 +249,7 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
   function stage(body: React.ReactNode) {
     return (
       <div className="page-frame">
-        <StageTopBar crumbs={crumbs} />
+        <StageTopBar title="Tools" />
         <div className="page-scroll">
           <PageLayout
             title="Tools"

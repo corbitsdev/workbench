@@ -31,7 +31,6 @@ import {
 import { Link } from "../navigation";
 import { tenantKeys } from "../query-client";
 import { StageTopBar } from "../shell/stage-top-bar";
-import { WORKERS_PATH_PREFIX } from "../path-ids";
 import { workbenchPath } from "../workbench-path";
 import { useBenchWorkers } from "../worker-benches";
 import type { HubTenant } from "../needs-converge";
@@ -462,16 +461,12 @@ export function WorkerRoute({ agentId }: { readonly agentId: string }) {
         <Skeleton className="wp-page-skeleton" />
       ) : found === undefined ? (
         <>
-          <StageTopBar
-            crumbs={[{ label: "Workers", href: WORKERS_PATH_PREFIX }, { label: "Not found" }]}
-          />
+          <StageTopBar title="Not found" />
           <p className="wp-page-message">This workbench has no worker with that id.</p>
         </>
       ) : (
         <>
-          <StageTopBar
-            crumbs={[{ label: "Workers", href: WORKERS_PATH_PREFIX }, { label: found.agent.name }]}
-          />
+          <StageTopBar title={found.agent.name} />
           <div className="page-scroll-auto">
             <WorkerDetail agent={found.agent} bench={found.bench} />
           </div>

@@ -298,8 +298,6 @@ export const CHAT_STRINGS = {
   rowMenuSettings: "Settings",
   renameCancel: "Escape to cancel",
   workbenchSettingsAction: "Settings",
-  workbenchSettingsBreadcrumbLabel: "Settings breadcrumb",
-  workbenchSettingsBreadcrumbCurrent: "Workbench Settings",
   workbenchSettingsNavLabel: "Settings sections",
   workbenchSettingsGroupShared: "Shared",
   workbenchSettingsGroupPersonal: "Personal",

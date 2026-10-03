@@ -196,7 +196,7 @@ export function AppShell({
           <div className="shell-main-content">
             {routeHasNoStageTopBar(path) ? (
               <StageTopBar
-                crumbs={[{ label: routeLabel(path) }]}
+                title={routeLabel(path)}
                 {...(pendingChip !== undefined ? { chip: pendingChip } : {})}
               />
             ) : null}

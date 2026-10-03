@@ -72,12 +72,10 @@ export function SkillDetailPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- queryKey is derived from tenantId + name
   }, [queryClient, tenantId, name]);
 
-  const crumbs = [{ label: "Skills", href: SKILLS_PATH_PREFIX }, { label: name }];
-
   function frame(body: ReactNode) {
     return (
       <div className="page-frame">
-        <StageTopBar crumbs={crumbs} />
+        <StageTopBar title={name} />
         <div className="page-scroll">
           <PageShell width="full" className="page-fill">
             {body}

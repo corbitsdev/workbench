@@ -42,7 +42,6 @@ import { readLastWorkbenchId } from "../last-workbench";
 import { consumePendingLibraryUpload, LIBRARY_UPLOAD_EVENT } from "../library-upload";
 import { resolveLibraryWorkbenchScope } from "../library-workbench-scope";
 import { Link } from "../navigation";
-import { ARTIFACTS_PATH_PREFIX } from "../path-ids";
 import { tenantKeys } from "../query-client";
 import { useBenchActivity } from "../shell/bench-activity";
 import { useFromBench } from "../shell/page-crumbs";
@@ -316,14 +315,7 @@ export function LibraryPage({
   return (
     <div className="page-frame">
       <StageTopBar
-        crumbs={
-          selectedSummary === null
-            ? [{ label: "Artifacts" }]
-            : [
-                { label: "Artifacts", href: ARTIFACTS_PATH_PREFIX },
-                { label: selectedSummary.title },
-              ]
-        }
+        title={selectedSummary === null ? "Artifacts" : selectedSummary.title}
         subtitle={
           selectedSummary === null
             ? // Empty Artifacts already has a poster invitation — a "0
@@ -486,7 +478,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   if (selectedTenantId === null) {
     return (
       <div className="page-frame">
-        <StageTopBar crumbs={[{ label: "Artifacts" }]} />
+        <StageTopBar title="Artifacts" />
         <PageLayout title="Artifacts" subtitle="Everything your workers made. Yours to keep.">
           <RichEmptyState
             icon={<Stack />}
@@ -501,7 +493,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   if (page.kind === "error" && isArtifactsUnavailableStatus(page.status)) {
     return (
       <div className="page-frame">
-        <StageTopBar crumbs={[{ label: "Artifacts" }]} />
+        <StageTopBar title="Artifacts" />
         <PageLayout title="Artifacts" subtitle="Everything your workers made. Yours to keep.">
           <RichEmptyState
             icon={<Stack />}
@@ -516,7 +508,7 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   if (page.kind !== "ready") {
     return (
       <div className="page-frame">
-        <StageTopBar crumbs={[{ label: "Artifacts" }]} />
+        <StageTopBar title="Artifacts" />
         <PageLayout title="Artifacts" subtitle="Everything your workers made. Yours to keep.">
           {page.kind === "loading" ? (
             <ListSkeleton />

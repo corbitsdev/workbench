@@ -212,7 +212,7 @@ export function WorkersRoute() {
 
   return (
     <div className="page-frame">
-      <StageTopBar crumbs={[{ label: "Workers" }]} />
+      <StageTopBar title="Workers" />
       <div className="page-scroll-auto">
         <PageLayout
           title="Workers"

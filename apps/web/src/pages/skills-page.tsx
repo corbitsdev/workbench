@@ -90,12 +90,10 @@ export function SkillsPage({
     <CreateSkillDialog open={createOpen} onOpenChange={setCreateOpen} onSubmit={handleCreate} />
   );
 
-  const crumbs = [{ label: "Skills" }];
-
   function stage(body: ReactNode) {
     return (
       <div className="page-frame">
-        <StageTopBar crumbs={crumbs} />
+        <StageTopBar title="Skills" />
         <div className="page-scroll">
           <PageLayout
             title="Skills"

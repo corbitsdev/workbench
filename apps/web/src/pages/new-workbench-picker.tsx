@@ -89,7 +89,7 @@ export function NewWorkbenchPickerRoute() {
 
   return (
     <div className="page-frame">
-      <StageTopBar crumbs={[{ label: "New" }]} />
+      <StageTopBar title="New" />
       <div className="new-wrap" data-keyboard={keyboard ? "" : undefined}>
         {create.isPending ? (
           // `delayMs={0}`: a genuine wait the instant the person sends.

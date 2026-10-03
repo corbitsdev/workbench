@@ -29,7 +29,7 @@
 }
 
 /* Workbench settings — full stage surface (mock § Workbench settings):
-   workbenches are tenants, so settings replace the whole stage. Breadcrumb top
+   workbenches are tenants, so settings replace the whole stage. Title top
    bar, grouped left nav, panel on the right. Never a dialog. */
 
 @media (prefers-reduced-motion: no-preference) {

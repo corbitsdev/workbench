@@ -419,7 +419,7 @@ select:disabled,
 
 /* A subtitle that owns a control (thread close) must stay fully
    hit-testable — overflow:hidden on the 3rem bar would clip it. The
-   title trail still gives. */
+   title still gives. */
 .stage-top-bar-sub:has(button) {
   overflow: visible;
   flex-shrink: 0;
@@ -498,55 +498,6 @@ select:disabled,
 }
 
 .stage-search-input::placeholder {
-  color: var(--muted-foreground);
-}
-
-/* Breadcrumb trails live in the title slot, always top-left. */
-.stage-crumbs {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 0.35rem;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-/* Parent crumbs share the shrink budget with the current-page crumb, so a
-   three-level trail narrows its ancestors instead of crushing the title. */
-.stage-crumb-link,
-.stage-crumb-label {
-  min-width: 2.5rem;
-  flex-shrink: 1;
-  max-width: 14rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--muted-foreground);
-  font-size: 13.5px;
-  font-weight: 640;
-}
-
-.stage-crumbs {
-  font-size: 13.5px;
-}
-
-.stage-crumb-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.stage-crumb-link:hover {
-  color: var(--foreground);
-}
-
-.stage-crumb-current {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.stage-crumbs-sep {
-  flex-shrink: 0;
   color: var(--muted-foreground);
 }
 
@@ -2443,16 +2394,4 @@ a.drawer-li:hover,
   white-space: nowrap;
   font-size: 0.78rem;
   color: var(--muted-foreground);
-}
-
-.stage-crumb-back {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  margin-right: 0.15rem;
-  color: var(--muted-foreground);
-}
-
-.stage-crumb-back:hover {
-  color: var(--foreground);
 }

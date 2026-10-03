@@ -32,10 +32,8 @@ import { X } from "../lib/icons";
 import { tenantKeys } from "../query-client";
 import { listCronSchedules } from "../routines-api";
 import { formatWhen } from "./insights-page";
-import { useFromBench } from "../shell/page-crumbs";
 import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
-import { workbenchPath } from "../workbench-path";
 
 import "./bench-insights.css";
 
@@ -177,24 +175,15 @@ function Meter({
 
 export function BenchInsights({
   tenantId,
-  workbenchId,
   title,
   onOpenRun,
 }: {
   readonly tenantId: string;
-  readonly workbenchId: string;
   readonly title: string;
   readonly onOpenRun: (id: string) => void;
 }) {
   const [range, setRange] = useState<BenchRange>(7);
   const runs = useAPIQuery(insightsTopLevelRunsPath(tenantId), TopLevelRunsSchema);
-  // `?from=` already prefixes the bench's own crumb; without it the trail
-  // names the bench itself, so it never shows twice.
-  const from = useFromBench();
-  const crumbs =
-    from === workbenchId
-      ? [{ label: "Insights" }]
-      : [{ label: title, href: workbenchPath(workbenchId) }, { label: "Insights" }];
 
   const rangeSeg = (
     <div className="bi-seg" role="tablist" aria-label="Range">
@@ -234,7 +223,7 @@ export function BenchInsights({
 
   return (
     <div className="page-frame">
-      <StageTopBar crumbs={crumbs} actions={rangeSeg} />
+      <StageTopBar title="Insights" actions={rangeSeg} />
       <div className="page-scroll">
         <PageLayout title="Insights" subtitle={`What happened in ${title}.`}>
           {body}

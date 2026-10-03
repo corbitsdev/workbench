@@ -179,9 +179,7 @@ function RoutineNotice({
   const navigate = useNavigate();
   return (
     <div className="page-frame">
-      <StageTopBar
-        crumbs={[{ label: "Workflows", href: WORKFLOWS_PATH_PREFIX }, { label: title }]}
-      />
+      <StageTopBar title={title} />
       <div className="page-scroll">
         <PageLayout title={title}>
           <RichEmptyState
@@ -213,12 +211,7 @@ export function RoutineDetailPage({
   const paused = state.label === "paused";
   return (
     <div className="page-frame">
-      <StageTopBar
-        crumbs={[
-          { label: "Workflows", href: WORKFLOWS_PATH_PREFIX },
-          { label: row.definition.name },
-        ]}
-      />
+      <StageTopBar title={row.definition.name} />
       <div className="page-scroll">
         <PageLayout
           title={row.definition.name}

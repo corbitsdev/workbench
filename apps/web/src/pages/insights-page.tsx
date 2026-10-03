@@ -217,10 +217,7 @@ export function InsightsRunsHistory({
   const groups = groupRunsByDefinition(purpose);
   return (
     <div className="page-frame">
-      <StageTopBar
-        crumbs={[{ label: "Insights", href: INSIGHTS_PATH_PREFIX }, { label: "Run history" }]}
-        subtitle={`${purpose.length} runs`}
-      />
+      <StageTopBar title="Run history" subtitle={`${purpose.length} runs`} />
       <div className="page-scroll">
         <PageShell width="full" className="page-fill">
           <div className="insights-layout">
@@ -331,10 +328,7 @@ export function InsightsRunDetail({
   return (
     <div className="page-frame">
       <StageTopBar
-        crumbs={[
-          { label: "Runs", href: INSIGHTS_RUNS_PATH },
-          { label: run !== null ? runDisplayName(run) : "Run" },
-        ]}
+        title={run !== null ? runDisplayName(run) : "Run"}
         subtitle={run !== null ? formatWhen(run.createdAt) : null}
       />
       <div className="page-scroll">
@@ -385,7 +379,7 @@ export function InsightsPage({
   if (runs.kind === "unauthenticated") {
     return (
       <div className="page-frame">
-        <StageTopBar crumbs={[{ label: "Runs" }]} />
+        <StageTopBar title="Runs" />
         <PageShell width="full" className="page-fill">
           <SignedOutNotice />
         </PageShell>
@@ -414,12 +408,10 @@ export function InsightsPage({
 // Titles the page by the workbench name, never the tenant's. A legacy or
 // mis-wired id gets an honest empty state instead of a doomed fetch.
 function InsightsWorkbenchPage({
-  workbenchId,
   workbenchesLoading,
   resolution,
   onOpenRun,
 }: {
-  readonly workbenchId: string;
   readonly onOpenRun: (id: string) => void;
   readonly workbenchesLoading: boolean;
   readonly resolution: ReturnType<typeof resolveWorkbenchInsightsScope>;
@@ -428,7 +420,6 @@ function InsightsWorkbenchPage({
     return (
       <BenchInsights
         tenantId={resolution.tenantId}
-        workbenchId={workbenchId}
         title={resolution.title}
         onOpenRun={onOpenRun}
       />
@@ -436,7 +427,7 @@ function InsightsWorkbenchPage({
   }
   return (
     <div className="page-frame">
-      <StageTopBar crumbs={[{ label: "Insights" }]} />
+      <StageTopBar title="Insights" />
       <PageShell width="full" className="page-fill">
         {workbenchesLoading ? (
           <Skeleton className="skeleton-panel-lg" />
@@ -532,7 +523,6 @@ function InsightsWorkbenchPageRoute({
   const resolution = resolveWorkbenchInsightsScope(workbenches, workbenchId);
   return (
     <InsightsWorkbenchPage
-      workbenchId={workbenchId}
       workbenchesLoading={isLoading}
       resolution={resolution}
       onOpenRun={onOpenRun}

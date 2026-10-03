@@ -137,7 +137,7 @@ export function RoutinesRoute() {
 
   return (
     <div className="page-frame">
-      <StageTopBar crumbs={[{ label: "Workflows" }]} />
+      <StageTopBar title="Workflows" />
       <div className="stage-content page-scroll-column">
         {routinesQuery.kind === "loading" ? (
           <WorkflowsLayout>
