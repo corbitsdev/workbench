@@ -243,6 +243,12 @@
   color: var(--danger-ink);
 }
 
+.wp-redeploy {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.25rem;
+}
+
 .wp-hint {
   font-size: 12.5px;
   color: var(--ink-3);
