@@ -5,6 +5,7 @@ import {
   dedupeMcpName,
   displayNameFromUrl,
   handleFromUrl,
+  redirectUrlName,
   suggestMcpServerName,
 } from "./mcp-server-name";
 
@@ -140,6 +141,19 @@ describe("handleFromUrl", () => {
     expect(handleFromUrl("  https://mcp.linear.app/mcp  ")).toBe("linear");
     expect(handleFromUrl("")).toBeNull();
     expect(handleFromUrl("not a url")).toBeNull();
+  });
+});
+
+describe("redirectUrlName", () => {
+  test("extracts a display name from a pasted URL and dedupes it", () => {
+    expect(redirectUrlName("https://mcp.linear.app/mcp", [])).toBe("Linear");
+    expect(redirectUrlName("  https://mcp.linear.app/mcp  ", ["Linear"])).toBe("Linear 2");
+  });
+
+  test("leaves plain names, blanks, and non-URLs alone", () => {
+    expect(redirectUrlName("Linear", [])).toBeNull();
+    expect(redirectUrlName("", [])).toBeNull();
+    expect(redirectUrlName("not a url", [])).toBeNull();
   });
 });
 
