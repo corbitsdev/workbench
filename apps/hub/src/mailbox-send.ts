@@ -28,18 +28,14 @@ function frameBody(raw: Uint8Array): string {
   return split < 0 ? "" : text.slice(split + 4).trimEnd();
 }
 
-const TriggerError = type({ error: { code: "string" } });
+const TriggerError = type("string.json.parse").pipe(type({ error: { code: "string" } }));
 
 /** `workflow_run_terminal` is the one 409 that means the run is finished;
  * the trigger's other 409s are real failures. */
 function isTerminalRun(status: number, detail: string): boolean {
   if (status !== 409) return false;
-  try {
-    const parsed = TriggerError(JSON.parse(detail));
-    return !(parsed instanceof type.errors) && parsed.error.code === "workflow_run_terminal";
-  } catch {
-    return false;
-  }
+  const parsed = TriggerError(detail);
+  return !(parsed instanceof type.errors) && parsed.error.code === "workflow_run_terminal";
 }
 
 export type MailboxDeliverOpts = {

@@ -38,7 +38,7 @@ describe("mailbox send to a run", () => {
   }
 
   test("other trigger failures stay a server error", async () => {
-    const response = await sendTo(500, "boom");
+    const response = await sendTo(409, "not json");
     expect(response.status).toBe(500);
   });
 });
