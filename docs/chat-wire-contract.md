@@ -1,12 +1,10 @@
 # Chat wire contract
 
-`apps/web/src/chat/wire/*` is the browser-facing half of the wire contract
-a hand-mirrored copy of the server-side contract: `apps/web` cannot import
-server-only `@intx/*` packages, so this half is mirrored rather than shared
-by import.
-
-Keep both sides in sync by hand until then; a schema or type added to one
-side belongs on the other.
+`apps/web/src/chat/wire/*` holds the browser-side wire shapes and guards for
+chat. `apps/web` cannot import server-only `@intx/*` packages, so anything
+it needs from them (for example the `@intx/hub-common` id prefixes) is
+mirrored here by hand. There is no server-side copy in this repo to keep in
+sync with.
 
 ## Internal-id leak guard
 
