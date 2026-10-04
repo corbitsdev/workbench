@@ -30,7 +30,7 @@
     "@intx/crypto": "0.4.0",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
-    "@intx/hub-common": "0.4.0",
+    "@intx/hub-common": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
     "@intx/log": "0.4.0",
     "@intx/mime": "workspace:*",
