@@ -1,10 +1,9 @@
 # Chat wire contract
 
 `apps/web/src/chat/wire/*` is the browser-facing half of the wire contract
-also implemented server-side in `packages/chat/src`. `apps/web` cannot import
-`@corbits/chat` — a server-only package — so this half is hand-mirrored
-rather than shared by import. Once the hub moves onto native mail threads,
-`packages/chat`'s copy goes away and this becomes the one source of truth.
+a hand-mirrored copy of the server-side contract: `apps/web` cannot import
+server-only `@intx/*` packages, so this half is mirrored rather than shared
+by import.
 
 Keep both sides in sync by hand until then; a schema or type added to one
 side belongs on the other.
@@ -17,7 +16,7 @@ Title-Cased reading of one, e.g. "Run 737a058d…"). This recurred repeatedly
 as one-off display-time patches (insights, a worker reply, a chat title)
 before being consolidated here, so a new id-generating prefix is a missed
 test run rather than a missed grep. Prefix words mirror `@intx/hub-common`'s
-`generateId` (`PREFIXES` in `packages/hub-common/src/ids.ts`).
+`generateId` (`PREFIXES` in `vendor/intx/hub-common/src/ids.ts`).
 
 ## Approve block (`chat/blocks/approve-block.tsx`)
 
@@ -50,7 +49,7 @@ already gave the connecting stream.
 
 By the time a reply reaches the chat timeline it is a plain text part with
 no metadata — the failure's category is structured further upstream
-(`packages/chat`'s orchestrator reads it directly), but nothing carries it
+(the server-side orchestrator reads it directly), but nothing carries it
 down to this render layer. So this file matches reply prose against the
 exact preambles `@intx/inference`'s `formatInferenceError` writes for
 `credential_failure` and `quota_exhausted`, anchored at the start of the
