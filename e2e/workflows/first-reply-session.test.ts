@@ -6,7 +6,7 @@ import { eq, inArray } from "drizzle-orm";
 
 import { createDB, schema, type DB } from "@intx/db";
 import { generateId } from "@intx/hub-common";
-import type { EventCollectorRegistry } from "@intx/hub-sessions";
+import { createEventCollectorRegistry } from "@intx/hub-sessions";
 import { dbGate } from "../lib/db-gate";
 
 import { createHubPersistMailWithSessionEnsure } from "../../apps/hub/src/mailbox-persist";
@@ -26,8 +26,6 @@ function dbConfigFromUrl(databaseUrl: string) {
 const databaseUrl = process.env["DATABASE_URL"];
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
-type Registry = Pick<EventCollectorRegistry, "create" | "has" | "dispatch">;
-
 describeIfDb("first reply of a run", () => {
   let db: DB;
 
@@ -36,8 +34,17 @@ describeIfDb("first reply of a run", () => {
   const runPrincipalId = generateId("principal");
   const definitionId = generateId("workflowDefinition");
   const runId = generateId("workflowRun");
-  const sessionId = generateId("session");
   const domain = `first-reply-${tenantId}.localhost`;
+  const sessionId = generateId("session");
+  const unanchoredRunId = generateId("workflowRun");
+  const unanchoredSessionId = generateId("session");
+  const unanchoredAddress = `${unanchoredRunId}@${domain}`;
+  const closedRunId = generateId("workflowRun");
+  const closedSessionId = generateId("session");
+  const closedAddress = `${closedRunId}@${domain}`;
+  const closedPrincipalId = generateId("principal");
+  const runIds = [runId, unanchoredRunId, closedRunId];
+  const sessionIds = [sessionId, unanchoredSessionId, closedSessionId];
   const address = `${runId}@${domain}`;
 
   beforeAll(async () => {
@@ -55,6 +62,7 @@ describeIfDb("first reply of a run", () => {
     await db.db.insert(schema.principal).values([
       { id: userPrincipalId, tenantId, kind: "user", refId: "usr_test", status: "active" },
       { id: runPrincipalId, tenantId, kind: "workflow", refId: runId, status: "active" },
+      { id: closedPrincipalId, tenantId, kind: "workflow", refId: closedRunId, status: "active" },
     ]);
     await db.db.insert(schema.workflowDefinition).values({
       id: definitionId,
@@ -63,64 +71,117 @@ describeIfDb("first reply of a run", () => {
       assetId: null,
       name: "first-reply-test-definition",
     });
-    await db.db.insert(schema.workflowRun).values({
-      id: runId,
-      definitionId,
-      anchorRunId: runId,
-      tenantId,
-      principalId: runPrincipalId,
-      address,
-      status: "running",
-    });
-    await db.db.insert(schema.workflowRunLaunchSpec).values({
-      anchorRunId: runId,
-      sessionId,
-      deploymentDomain: domain,
-      sourceAuthorityPrincipalId: userPrincipalId,
-      frozenApprovalBundle: {},
-      sourceOfferingIds: [],
-      defaultSourceOfferingId: "off_test",
-      deployContent: { systemPrompt: "" },
-    });
+    const seedRun = async (
+      id: string,
+      session: string,
+      principalId: string | null,
+      runAddress: string,
+    ) => {
+      await db.db.insert(schema.workflowRun).values({
+        id,
+        definitionId,
+        anchorRunId: id,
+        tenantId,
+        principalId,
+        address: runAddress,
+        status: "running",
+      });
+      await db.db.insert(schema.workflowRunLaunchSpec).values({
+        anchorRunId: id,
+        sessionId: session,
+        deploymentDomain: domain,
+        sourceAuthorityPrincipalId: userPrincipalId,
+        frozenApprovalBundle: {},
+        sourceOfferingIds: [],
+        defaultSourceOfferingId: "off_test",
+        deployContent: { systemPrompt: "" },
+      });
+    };
+    await seedRun(runId, sessionId, runPrincipalId, address);
+    await seedRun(unanchoredRunId, unanchoredSessionId, null, unanchoredAddress);
+    await seedRun(closedRunId, closedSessionId, closedPrincipalId, closedAddress);
   });
 
   afterAll(async () => {
     if (databaseUrl === undefined) return;
-    await db.db.delete(schema.agentSession).where(eq(schema.agentSession.id, sessionId));
+    await db.db.delete(schema.inferenceTurn).where(eq(schema.inferenceTurn.tenantId, tenantId));
+    await db.db.delete(schema.agentSession).where(inArray(schema.agentSession.id, sessionIds));
     await db.db
       .delete(schema.workflowRunLaunchSpec)
-      .where(eq(schema.workflowRunLaunchSpec.anchorRunId, runId));
-    await db.db.delete(schema.workflowRun).where(eq(schema.workflowRun.id, runId));
+      .where(inArray(schema.workflowRunLaunchSpec.anchorRunId, runIds));
+    await db.db.delete(schema.workflowRun).where(inArray(schema.workflowRun.id, runIds));
     await db.db
       .delete(schema.workflowDefinition)
       .where(eq(schema.workflowDefinition.id, definitionId));
     await db.db
       .delete(schema.principal)
-      .where(inArray(schema.principal.id, [runPrincipalId, userPrincipalId]));
+      .where(inArray(schema.principal.id, [runPrincipalId, closedPrincipalId, userPrincipalId]));
     await db.db.delete(schema.tenant).where(eq(schema.tenant.id, tenantId));
   });
 
-  test("creates the collector before dispatching the run's first event, in order", async () => {
-    const collectors = new Set<string>();
-    const dispatched: string[] = [];
-    const registry: Registry = {
-      has: (a) => collectors.has(a),
-      create: (a) => {
-        collectors.add(a);
-        dispatched.push("create");
-      },
-      dispatch: (a, event) => {
-        if (!collectors.has(a)) return;
-        dispatched.push(event.type);
-      },
-    };
-    const lazy = withLazyRunCollector(registry, db.db);
+  const start = (seq: number) => ({ type: "inference.start", seq, data: { model: "m" } }) as const;
+  const turnsFor = (session: string) =>
+    db.db.query.inferenceTurn.findMany({ where: eq(schema.inferenceTurn.sessionId, session) });
 
-    lazy.dispatch(address, { type: "custom.first", seq: 1, data: {} });
-    lazy.dispatch(address, { type: "custom.second", seq: 2, data: {} });
-    await Bun.sleep(200);
+  test("persists the run's first turn although no collector existed yet", async () => {
+    const lazy = withLazyRunCollector(createEventCollectorRegistry({ db: db.db }), db.db);
 
-    expect(dispatched).toEqual(["create", "custom.first", "custom.second"]);
+    lazy.dispatch(address, start(1));
+    await Bun.sleep(300);
+
+    expect(lazy.has(address)).toBe(true);
+    expect(await turnsFor(sessionId)).toHaveLength(1);
+  });
+
+  test("creates no collector until the run has a session, then retries on the next event", async () => {
+    const lazy = withLazyRunCollector(createEventCollectorRegistry({ db: db.db }), db.db);
+
+    lazy.dispatch(unanchoredAddress, start(1));
+    await Bun.sleep(300);
+    expect(lazy.has(unanchoredAddress)).toBe(false);
+
+    const [principal] = await db.db
+      .insert(schema.principal)
+      .values({
+        id: generateId("principal"),
+        tenantId,
+        kind: "workflow",
+        refId: unanchoredRunId,
+        status: "active",
+      })
+      .returning();
+    await db.db
+      .update(schema.workflowRun)
+      .set({ principalId: principal!.id })
+      .where(eq(schema.workflowRun.id, unanchoredRunId));
+
+    lazy.dispatch(unanchoredAddress, start(2));
+    await Bun.sleep(300);
+    expect(lazy.has(unanchoredAddress)).toBe(true);
+    expect(await turnsFor(unanchoredSessionId)).toHaveLength(1);
+
+    await db.db.delete(schema.inferenceTurn).where(eq(schema.inferenceTurn.tenantId, tenantId));
+    await db.db.delete(schema.agentSession).where(eq(schema.agentSession.id, unanchoredSessionId));
+    await db.db
+      .update(schema.workflowRun)
+      .set({ principalId: null })
+      .where(eq(schema.workflowRun.id, unanchoredRunId));
+    await db.db.delete(schema.principal).where(eq(schema.principal.id, principal!.id));
+  });
+
+  test("does not resurrect a collector after abandon", async () => {
+    const lazy = withLazyRunCollector(createEventCollectorRegistry({ db: db.db }), db.db);
+
+    lazy.dispatch(closedAddress, start(1));
+    await Bun.sleep(300);
+    expect(lazy.has(closedAddress)).toBe(true);
+
+    lazy.abandon(closedAddress);
+    await Bun.sleep(300);
+    lazy.dispatch(closedAddress, start(2));
+    await Bun.sleep(300);
+
+    expect(lazy.has(closedAddress)).toBe(false);
   });
 
   test("persists the run's first outbound mail although its session is created mid-call", async () => {

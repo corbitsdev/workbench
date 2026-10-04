@@ -2,7 +2,12 @@
 // turn. See docs/agent-session-provisioning.md.
 import { eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
-import { agentSession, workflowRun, workflowRunLaunchSpec } from "@intx/db/schema";
+import {
+  agentSession,
+  isLiveWorkflowRunStatus,
+  workflowRun,
+  workflowRunLaunchSpec,
+} from "@intx/db/schema";
 import type { EventCollectorRegistry } from "@intx/hub-sessions";
 import { reportError } from "@corbits/error-sink";
 
@@ -24,6 +29,15 @@ export async function ensureRunSession(params: {
   if (runRow === undefined) {
     return null;
   }
+  return ensureSessionForRun(db, eventCollectors, runRow);
+}
+
+async function ensureSessionForRun(
+  db: DB["db"],
+  eventCollectors: Pick<EventCollectorPort, "create" | "has">,
+  runRow: typeof workflowRun.$inferSelect,
+): Promise<string> {
+  const runId = runRow.id;
 
   const launchSpecRow = await db.query.workflowRunLaunchSpec.findFirst({
     where: eq(workflowRunLaunchSpec.anchorRunId, runId),
@@ -59,52 +73,89 @@ export async function ensureRunSession(params: {
         .set({ principalId: runRow.principalId, updatedAt: new Date() })
         .where(eq(agentSession.id, sessionId));
     }
-  }
 
-  if (runRow.address !== null && !eventCollectors.has(runRow.address)) {
-    eventCollectors.create(runRow.address, runRow.tenantId, sessionId, runRow.id);
+    if (runRow.address !== null && !eventCollectors.has(runRow.address)) {
+      eventCollectors.create(runRow.address, runRow.tenantId, sessionId, runRow.id);
+    }
   }
   return sessionId;
 }
 
+const MAX_TRACKED_ADDRESSES = 1000;
+
+function track(set: Set<string>, address: string): void {
+  if (set.size >= MAX_TRACKED_ADDRESSES) {
+    const oldest = set.values().next().value;
+    if (oldest !== undefined) set.delete(oldest);
+  }
+  set.add(address);
+}
+
 /** Creates a run's event collector on its first inference event instead of
  * its first outbound mail, so the first reply's parts are not dropped. Events
- * for an address queue behind its in-flight ensure to keep their order. */
+ * for an address queue behind its in-flight ensure to keep their order. A
+ * collector is never created for an address whose collector already ended
+ * (terminal event or abandon), nor before the run has a session row. */
 export function withLazyRunCollector<
-  R extends Pick<EventCollectorRegistry, "create" | "has" | "dispatch">,
+  R extends Pick<EventCollectorRegistry, "create" | "has" | "dispatch" | "abandon">,
 >(registry: R, db: DB["db"]): R {
   const pending = new Map<string, Promise<void>>();
+  const closed = new Set<string>();
+  const notRuns = new Set<string>();
 
   async function ensureForAddress(address: string): Promise<void> {
+    if (closed.has(address) || notRuns.has(address)) return;
     try {
       const runRow = await db.query.workflowRun.findFirst({
         where: eq(workflowRun.address, address),
       });
-      if (runRow !== undefined) {
-        await ensureRunSession({ db, eventCollectors: registry, runId: runRow.id });
+      if (runRow === undefined) {
+        track(notRuns, address);
+        return;
       }
+      if (!isLiveWorkflowRunStatus(runRow.status)) return;
+      await ensureSessionForRun(
+        db,
+        {
+          has: registry.has,
+          create: (...args) => {
+            if (!closed.has(address)) registry.create(...args);
+          },
+        },
+        runRow,
+      );
     } catch (err) {
-      reportError(err, {
-        operation: "workflows.lazyRunCollector.ensure",
-        extra: { address },
-      });
+      reportError(err, { operation: "workflows.lazyRunCollector.ensure", extra: { address } });
     }
   }
 
   const dispatch: R["dispatch"] = (address, event) => {
+    const terminal =
+      event.type === "reactor.done" || (event.type === "reactor.error" && event.data.fatal);
     const inFlight = pending.get(address);
-    if (inFlight === undefined && (registry.has(address) || event.type === "reactor.done")) {
+    if (inFlight === undefined && (registry.has(address) || terminal)) {
+      if (terminal) track(closed, address);
       registry.dispatch(address, event);
       return;
     }
-    const next = (inFlight ?? ensureForAddress(address)).then(() => {
-      registry.dispatch(address, event);
-    });
+    if (terminal) track(closed, address);
+    const next = (inFlight ?? ensureForAddress(address))
+      .then(() => {
+        registry.dispatch(address, event);
+      })
+      .catch((err: unknown) => {
+        reportError(err, { operation: "workflows.lazyRunCollector.dispatch", extra: { address } });
+      });
     pending.set(address, next);
     void next.finally(() => {
       if (pending.get(address) === next) pending.delete(address);
     });
   };
 
-  return { ...registry, dispatch };
+  const abandon: R["abandon"] = (address) => {
+    track(closed, address);
+    registry.abandon(address);
+  };
+
+  return { ...registry, dispatch, abandon };
 }
