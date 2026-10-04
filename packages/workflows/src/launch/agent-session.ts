@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { agentSession, workflowRun, workflowRunLaunchSpec } from "@intx/db/schema";
 import type { EventCollectorRegistry } from "@intx/hub-sessions";
+import { reportError } from "@corbits/error-sink";
 
 /** The one port every launcher threads the same wrapped
  * `EventCollectorRegistry` through, never a second registry construction. */
@@ -64,4 +65,46 @@ export async function ensureRunSession(params: {
     eventCollectors.create(runRow.address, runRow.tenantId, sessionId, runRow.id);
   }
   return sessionId;
+}
+
+/** Creates a run's event collector on its first inference event instead of
+ * its first outbound mail, so the first reply's parts are not dropped. Events
+ * for an address queue behind its in-flight ensure to keep their order. */
+export function withLazyRunCollector<
+  R extends Pick<EventCollectorRegistry, "create" | "has" | "dispatch">,
+>(registry: R, db: DB["db"]): R {
+  const pending = new Map<string, Promise<void>>();
+
+  async function ensureForAddress(address: string): Promise<void> {
+    try {
+      const runRow = await db.query.workflowRun.findFirst({
+        where: eq(workflowRun.address, address),
+      });
+      if (runRow !== undefined) {
+        await ensureRunSession({ db, eventCollectors: registry, runId: runRow.id });
+      }
+    } catch (err) {
+      reportError(err, {
+        operation: "workflows.lazyRunCollector.ensure",
+        extra: { address },
+      });
+    }
+  }
+
+  const dispatch: R["dispatch"] = (address, event) => {
+    const inFlight = pending.get(address);
+    if (inFlight === undefined && (registry.has(address) || event.type === "reactor.done")) {
+      registry.dispatch(address, event);
+      return;
+    }
+    const next = (inFlight ?? ensureForAddress(address)).then(() => {
+      registry.dispatch(address, event);
+    });
+    pending.set(address, next);
+    void next.finally(() => {
+      if (pending.get(address) === next) pending.delete(address);
+    });
+  };
+
+  return { ...registry, dispatch };
 }
