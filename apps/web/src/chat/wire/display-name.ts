@@ -1,4 +1,4 @@
-// Mirrored from packages/chat/src (see docs/chat-wire-contract.md).
+// Browser-side wire contract (see docs/chat-wire-contract.md).
 
 // One derivation for "what does this agent look like to a person", never a
 // scattered `description ?? name` reimplemented per call site.

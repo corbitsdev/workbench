@@ -1,4 +1,4 @@
-// Mirrored from packages/chat/src (see docs/chat-wire-contract.md).
+// Browser-side wire contract (see docs/chat-wire-contract.md).
 
 // Deliberately permissive, unlike `@intx/types`'s `parseAgentAddress`: the
 // mention rule only needs the substring before "@", not a validated id.

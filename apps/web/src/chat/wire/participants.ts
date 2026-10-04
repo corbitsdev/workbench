@@ -1,4 +1,4 @@
-// Mirrored from packages/chat/src (see docs/chat-wire-contract.md).
+// Browser-side wire contract (see docs/chat-wire-contract.md).
 
 // Reading tolerates a bare address string (pre-rollout data) and upgrades it
 // to a record; writing always produces records, never bare strings.

@@ -1,4 +1,4 @@
-// Mirrored from packages/chat/src (see docs/chat-wire-contract.md, which
+// Browser-side wire contract (see docs/chat-wire-contract.md, which
 // also covers this file's organizing rule).
 import { type } from "arktype";
 import { Part } from "./parts";

@@ -1,4 +1,4 @@
-// Mirrored from packages/chat/src (see docs/chat-wire-contract.md).
+// Browser-side wire contract (see docs/chat-wire-contract.md).
 
 export const TOOLS_UNSUPPORTED_CONSUMER_MESSAGE = "This agent's model can't use tools.";
 
