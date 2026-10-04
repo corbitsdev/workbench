@@ -188,16 +188,18 @@ describeIfDb("first reply of a run", () => {
     await db.db.delete(schema.principal).where(eq(schema.principal.id, principal!.id));
   });
 
-  test("does not resurrect a collector after abandon", async () => {
+  test("recreates the collector after an abandon so a reconnected run keeps persisting", async () => {
     const lazy = withLazyRunCollector(createEventCollectorRegistry({ db: db.db }), db.db);
 
     lazy.dispatch(closedAddress, start(1));
     await waitFor(() => lazy.has(closedAddress));
     lazy.abandon(closedAddress);
     lazy.dispatch(closedAddress, start(2));
-    await Bun.sleep(100);
+    await waitFor(() => lazy.has(closedAddress));
 
-    expect(lazy.has(closedAddress)).toBe(false);
+    expect(lazy.has(closedAddress)).toBe(true);
+    await waitFor(async () => (await turnsFor(closedSessionId)).length === 2);
+    expect(await turnsFor(closedSessionId)).toHaveLength(2);
   });
 
   test("keeps the reply of a run whose done follows its start immediately", async () => {

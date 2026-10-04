@@ -94,10 +94,11 @@ function track(set: Set<string>, address: string): void {
 /** Creates a run's event collector on its first inference event instead of
  * its first outbound mail, so the first reply's parts are not dropped. Events
  * for an address queue behind its in-flight ensure to keep their order. Once
- * an address's collector ended (terminal event or abandon), `create` ignores
- * it, so no path (lazy dispatch or mail) can resurrect one. */
+ * a run delivered its terminal event, `create` ignores its address, so no path
+ * (lazy dispatch or mail) can resurrect one. A disconnect's abandon is not
+ * terminal: the next event recreates the collector. */
 export function withLazyRunCollector<
-  R extends Pick<EventCollectorRegistry, "create" | "has" | "dispatch" | "abandon">,
+  R extends Pick<EventCollectorRegistry, "create" | "has" | "dispatch">,
 >(registry: R, db: DB["db"]): R {
   const pending = new Map<string, Promise<void>>();
   const closed = new Set<string>();
@@ -140,10 +141,5 @@ export function withLazyRunCollector<
     });
   };
 
-  const abandon: R["abandon"] = (address) => {
-    track(closed, address);
-    registry.abandon(address);
-  };
-
-  return { ...registry, create, dispatch, abandon };
+  return { ...registry, create, dispatch };
 }
