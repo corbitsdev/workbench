@@ -69,6 +69,7 @@ export const tenantKeys = {
   routineRuns: (tenantId: string, routineId: string) =>
     ["tenant", tenantId, "routines", routineId, "runs"] as const,
   routineRunHistories: (tenantId: string) => ["tenant", tenantId, "routine-run-histories"] as const,
+  resolvedCatalog: (tenantId: string) => ["tenant", tenantId, "resolved-catalog"] as const,
   definitions: (tenantId: string) => ["tenant", tenantId, "definitions"] as const,
   agentDirectory: (tenantId: string) => ["tenant", tenantId, "agents", "directory"] as const,
   // The deploy roster (deployments -> runs -> assets join): every surface

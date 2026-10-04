@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { useBench } from "./bench-context";
 import { useNavigate, useSessionUser } from "./navigation";
 import { clearProviderSkipWhenUsable, useProviderSkipped } from "./provider-skip";
+import { tenantKeys } from "./query-client";
 import { getResolvedCatalog } from "./settings/inference";
 
 export const PROVIDER_SETTINGS_PATH = "/settings/credentials";
@@ -16,8 +17,9 @@ export function ProviderSkipBanner() {
   const { selectedTenantId } = useBench();
   const skipped = useProviderSkipped();
   const catalog = useQuery({
-    queryKey: ["tenant", selectedTenantId ?? "none", "resolved-catalog"] as const,
+    queryKey: tenantKeys.resolvedCatalog(selectedTenantId ?? "none"),
     queryFn: () => getResolvedCatalog(selectedTenantId ?? ""),
+    refetchOnMount: "always",
     enabled: skipped && selectedTenantId !== null,
   });
   useEffect(() => {

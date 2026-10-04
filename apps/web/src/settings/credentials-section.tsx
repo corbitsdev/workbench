@@ -143,6 +143,7 @@ export function CredentialsSection({ tenantId }: { readonly tenantId: string | n
     void queryClient.invalidateQueries({
       queryKey: ["tenant", tenantId, "settings-models"],
     });
+    void queryClient.invalidateQueries({ queryKey: tenantKeys.resolvedCatalog(tenantId) });
   }
 
   // Re-signing in files the tokens under the same credential name, so the
