@@ -10,7 +10,10 @@ import { createEventCollectorRegistry } from "@intx/hub-sessions";
 import { dbGate } from "../lib/db-gate";
 
 import { createHubPersistMailWithSessionEnsure } from "../../apps/hub/src/mailbox-persist";
-import { withLazyRunCollector } from "../../packages/workflows/src/launch/agent-session";
+import {
+  ensureRunSession,
+  withLazyRunCollector,
+} from "../../packages/workflows/src/launch/agent-session";
 
 function dbConfigFromUrl(databaseUrl: string) {
   const url = new URL(databaseUrl);
@@ -42,9 +45,13 @@ describeIfDb("first reply of a run", () => {
   const closedRunId = generateId("workflowRun");
   const closedSessionId = generateId("session");
   const closedAddress = `${closedRunId}@${domain}`;
+  const doneRunId = generateId("workflowRun");
+  const doneSessionId = generateId("session");
+  const doneAddress = `${doneRunId}@${domain}`;
+  const donePrincipalId = generateId("principal");
   const closedPrincipalId = generateId("principal");
-  const runIds = [runId, unanchoredRunId, closedRunId];
-  const sessionIds = [sessionId, unanchoredSessionId, closedSessionId];
+  const runIds = [runId, unanchoredRunId, closedRunId, doneRunId];
+  const sessionIds = [sessionId, unanchoredSessionId, closedSessionId, doneSessionId];
   const address = `${runId}@${domain}`;
 
   beforeAll(async () => {
@@ -62,6 +69,7 @@ describeIfDb("first reply of a run", () => {
     await db.db.insert(schema.principal).values([
       { id: userPrincipalId, tenantId, kind: "user", refId: "usr_test", status: "active" },
       { id: runPrincipalId, tenantId, kind: "workflow", refId: runId, status: "active" },
+      { id: donePrincipalId, tenantId, kind: "workflow", refId: doneRunId, status: "active" },
       { id: closedPrincipalId, tenantId, kind: "workflow", refId: closedRunId, status: "active" },
     ]);
     await db.db.insert(schema.workflowDefinition).values({
@@ -99,6 +107,7 @@ describeIfDb("first reply of a run", () => {
     };
     await seedRun(runId, sessionId, runPrincipalId, address);
     await seedRun(unanchoredRunId, unanchoredSessionId, null, unanchoredAddress);
+    await seedRun(doneRunId, doneSessionId, donePrincipalId, doneAddress);
     await seedRun(closedRunId, closedSessionId, closedPrincipalId, closedAddress);
   });
 
@@ -115,10 +124,20 @@ describeIfDb("first reply of a run", () => {
       .where(eq(schema.workflowDefinition.id, definitionId));
     await db.db
       .delete(schema.principal)
-      .where(inArray(schema.principal.id, [runPrincipalId, closedPrincipalId, userPrincipalId]));
+      .where(
+        inArray(schema.principal.id, [
+          runPrincipalId,
+          closedPrincipalId,
+          donePrincipalId,
+          userPrincipalId,
+        ]),
+      );
     await db.db.delete(schema.tenant).where(eq(schema.tenant.id, tenantId));
   });
 
+  async function waitFor(done: () => boolean | Promise<boolean>): Promise<void> {
+    for (let i = 0; i < 50 && !(await done()); i++) await Bun.sleep(20);
+  }
   const start = (seq: number) => ({ type: "inference.start", seq, data: { model: "m" } }) as const;
   const turnsFor = (session: string) =>
     db.db.query.inferenceTurn.findMany({ where: eq(schema.inferenceTurn.sessionId, session) });
@@ -173,15 +192,34 @@ describeIfDb("first reply of a run", () => {
     const lazy = withLazyRunCollector(createEventCollectorRegistry({ db: db.db }), db.db);
 
     lazy.dispatch(closedAddress, start(1));
-    await Bun.sleep(300);
-    expect(lazy.has(closedAddress)).toBe(true);
-
+    await waitFor(() => lazy.has(closedAddress));
     lazy.abandon(closedAddress);
-    await Bun.sleep(300);
     lazy.dispatch(closedAddress, start(2));
-    await Bun.sleep(300);
+    await Bun.sleep(100);
 
     expect(lazy.has(closedAddress)).toBe(false);
+  });
+
+  test("keeps the reply of a run whose done follows its start immediately", async () => {
+    const lazy = withLazyRunCollector(createEventCollectorRegistry({ db: db.db }), db.db);
+
+    lazy.dispatch(doneAddress, start(1));
+    lazy.dispatch(doneAddress, { type: "reactor.done", seq: 2, data: {} });
+    await waitFor(async () => (await turnsFor(doneSessionId)).length === 1);
+
+    expect(await turnsFor(doneSessionId)).toHaveLength(1);
+  });
+
+  test("does not recreate the collector for mail after the run is done", async () => {
+    const lazy = withLazyRunCollector(createEventCollectorRegistry({ db: db.db }), db.db);
+
+    lazy.dispatch(doneAddress, start(3));
+    lazy.dispatch(doneAddress, { type: "reactor.done", seq: 4, data: {} });
+    await waitFor(async () => (await turnsFor(doneSessionId)).length === 2);
+    await Bun.sleep(100);
+    await ensureRunSession({ db: db.db, eventCollectors: lazy, runId: doneRunId });
+
+    expect(lazy.has(doneAddress)).toBe(false);
   });
 
   test("persists the run's first outbound mail although its session is created mid-call", async () => {
