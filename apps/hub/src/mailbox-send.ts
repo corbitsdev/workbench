@@ -6,6 +6,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Context, MiddlewareHandler } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { parseRunAddress } from "@intx/types";
 import type { OutgoingMailboxMessage } from "@corbits/mailbox";
 import { reportError } from "@corbits/error-sink";
@@ -71,6 +72,9 @@ export function createMailboxDeliver(
           const err = new Error(
             `trigger for ${runId} answered ${String(response.status)}: ${detail}`,
           );
+          if (response.status === 409) {
+            throw new HTTPException(409, { message: detail, cause: err });
+          }
           reportError(err, {
             operation: "hub.mailboxDeliver.trigger",
             extra: { runId, tenantId },

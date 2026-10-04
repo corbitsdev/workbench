@@ -501,6 +501,12 @@ export async function sendToWorkbench(input: {
   } catch (cause) {
     throw new ChatApiError(cause instanceof Error ? cause.message : String(cause));
   }
+  if (response.status === 409) {
+    throw new ChatApiError(
+      "This worker has finished its work and can't take new messages.",
+      response.status,
+    );
+  }
   if (!response.ok) {
     throw new ChatApiError(
       `The workbench could not be reached (${String(response.status)}).`,

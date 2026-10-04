@@ -1,18 +1,16 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { ChatApiError, sendToWorkbench } from "./threads-api";
 
-const realFetch = globalThis.fetch;
+const fetchSpy = spyOn(globalThis, "fetch");
 afterEach(() => {
-  globalThis.fetch = realFetch;
+  fetchSpy.mockReset();
 });
 
 function send(status: number) {
-  globalThis.fetch = (() => Promise.resolve(new Response("{}", { status }))) as typeof fetch;
+  fetchSpy.mockResolvedValue(new Response("{}", { status }));
   return sendToWorkbench({
     workbenchTenantId: "t1",
-    participants: [
-      { id: "a1", kind: "agent", name: "Scout", address: "run_abc@example.test" },
-    ],
+    participants: [{ id: "a1", kind: "agent", name: "Scout", address: "run_abc@example.test" }],
     content: "hello",
   }).then(
     () => undefined,
