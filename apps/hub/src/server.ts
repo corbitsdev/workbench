@@ -13,7 +13,7 @@ import {
   tenant as tenantTable,
 } from "@intx/db/schema";
 import { and, eq } from "drizzle-orm";
-import { createEnvKeyCredentialCipher, sha256 } from "@intx/crypto";
+import { createEnvKeyCredentialCipher } from "@intx/crypto";
 import { hexDecode, hexEncode, type SidecarCapabilityRule } from "@intx/types";
 import {
   createApp,
@@ -113,10 +113,10 @@ import {
   type WorkflowArtifactEnv,
 } from "@corbits/artifacts";
 import { artifactMatchesLibraryKindSegment, LIBRARY_KIND_SEGMENTS } from "./library-kind-segments";
-import type { DB } from "@intx/db";
-import { sidecar, workflowRun } from "@intx/db/schema";
+import { workflowRun } from "@intx/db/schema";
 import path from "node:path";
 import { migrateHub } from "./migrate";
+import { createWorkflowRunAuthenticator } from "./workflow-run-authenticator";
 
 // The same condition registry `mountHubRoutes` builds by default when no
 // registry is supplied -- kept as one local constant so every Corbits
@@ -125,32 +125,6 @@ import { migrateHub } from "./migrate";
 const grantConditionRegistry: ConditionRegistry = {
   time_window: timeWindowEvaluator,
 };
-
-// The one concrete `WorkflowRunAuthenticator` every workflow-run-authenticated
-// Corbits surface below takes structurally (`@corbits/artifacts`'
-// `mountWorkflowArtifacts`): a sidecar bearer token + run address resolve to
-// the tenant/principal/run it names.
-function createWorkflowRunAuthenticator(deps: { db: DB["db"] }) {
-  return {
-    async resolve(token: string, runAddress: string) {
-      if (token === "" || runAddress === "") return null;
-      const tokenHash = await sha256(token);
-      const sidecarRow = await deps.db.query.sidecar.findFirst({
-        where: eq(sidecar.tokenHashSha256, tokenHash),
-      });
-      if (sidecarRow === undefined) return null;
-      const run = await deps.db.query.workflowRun.findFirst({
-        where: eq(workflowRun.address, runAddress),
-      });
-      if (run === undefined || run.principalId === null) return null;
-      return {
-        tenantId: run.tenantId,
-        principalId: run.principalId,
-        runId: run.id,
-      };
-    },
-  };
-}
 
 function buildProcessSidecarProvisioner(
   hubDataDir: string,
