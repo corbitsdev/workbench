@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { ModelInfo } from "@intx/types";
 
-import { clearProviderSkipWhenUsable, isProviderSkipped, setProviderSkipped } from "./provider-skip";
+import {
+  clearProviderSkipWhenUsable,
+  isProviderSkipped,
+  setProviderSkipped,
+} from "./provider-skip";
 
 const store = new Map<string, string>();
 
