@@ -223,7 +223,7 @@ export function frameBody(raw: string): string {
   const part = frameParts(raw, "chat_frame_body").find(
     (leaf) => leaf.filename === undefined && leaf.contentType === "text/plain",
   );
-  return part === undefined ? "" : utf8.decode(part.content).trim();
+  return part === undefined ? "" : utf8.decode(part.content).replaceAll("\r\n", "\n").trim();
 }
 
 /** Every named MIME leaf of a frame, decoded. A part counts as an
