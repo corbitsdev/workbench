@@ -24,3 +24,7 @@ that first trigger may write the principal first.
 `ensureRunSession` is a true upsert, called from every seam that might be a
 run's first mail-routable moment: it creates the row once a principal is
 anchored, and re-keys an existing row onto it.
+
+The hub also wraps its event collector registry with `withLazyRunCollector`,
+so a run's collector exists before its first inference event rather than
+after its first outbound mail; otherwise the first reply's parts are dropped.
