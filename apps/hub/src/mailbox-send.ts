@@ -6,6 +6,8 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { Context, MiddlewareHandler } from "hono";
+import { HTTPException } from "hono/http-exception";
+import { type } from "arktype";
 import { parseRunAddress } from "@intx/types";
 import type { OutgoingMailboxMessage } from "@corbits/mailbox";
 import { reportError } from "@corbits/error-sink";
@@ -24,6 +26,16 @@ function frameBody(raw: Uint8Array): string {
   const text = new TextDecoder().decode(raw);
   const split = text.indexOf("\r\n\r\n");
   return split < 0 ? "" : text.slice(split + 4).trimEnd();
+}
+
+const TriggerError = type("string.json.parse").pipe(type({ error: { code: "string" } }));
+
+/** `workflow_run_terminal` is the one 409 that means the run is finished;
+ * the trigger's other 409s are real failures. */
+function isTerminalRun(status: number, detail: string): boolean {
+  if (status !== 409) return false;
+  const parsed = TriggerError(detail);
+  return !(parsed instanceof type.errors) && parsed.error.code === "workflow_run_terminal";
 }
 
 export type MailboxDeliverOpts = {
@@ -71,6 +83,15 @@ export function createMailboxDeliver(
           const err = new Error(
             `trigger for ${runId} answered ${String(response.status)}: ${detail}`,
           );
+          if (isTerminalRun(response.status, detail)) {
+            throw new HTTPException(409, {
+              res: Response.json(
+                { error: { code: "workflow_run_terminal", message: "The run has finished." } },
+                { status: 409 },
+              ),
+              cause: err,
+            });
+          }
           reportError(err, {
             operation: "hub.mailboxDeliver.trigger",
             extra: { runId, tenantId },

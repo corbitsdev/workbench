@@ -452,6 +452,12 @@ export function ancestorChain(
   return chain;
 }
 
+const TerminalRunBody = type({ error: { code: "'workflow_run_terminal'" } });
+
+async function isTerminalRunBody(response: Response): Promise<boolean> {
+  return !(TerminalRunBody(await response.json().catch(() => undefined)) instanceof type.errors);
+}
+
 // The one send seam for a workbench (see docs/chat-mail-threading.md for
 // the roster mechanism).
 export async function sendToWorkbench(input: {
@@ -502,6 +508,9 @@ export async function sendToWorkbench(input: {
     throw new ChatApiError(cause instanceof Error ? cause.message : String(cause));
   }
   if (!response.ok) {
+    if (response.status === 409 && (await isTerminalRunBody(response))) {
+      throw new ChatApiError("This agent has finished and can't take new messages.", 409);
+    }
     throw new ChatApiError(
       `The workbench could not be reached (${String(response.status)}).`,
       response.status,
