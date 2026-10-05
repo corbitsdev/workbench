@@ -25,11 +25,12 @@ export function createHubPersistMailWithSessionEnsure<R extends readonly unknown
   upstream: (args: MailboxPersistArgs) => Promise<R>,
 ): (args: MailboxPersistArgs) => Promise<R> {
   return async (args) => {
-    const sender = await resolveRoutableAddress(db, args.senderAddress);
+    let sender = await resolveRoutableAddress(db, args.senderAddress);
     try {
       const eventCollectors = eventCollectorsRef.current;
       if (sender !== undefined && eventCollectors !== undefined) {
         await ensureRunSession({ db, eventCollectors, runId: sender.id });
+        sender = await resolveRoutableAddress(db, args.senderAddress);
       }
     } catch (err) {
       reportError(err, {
@@ -37,10 +38,9 @@ export function createHubPersistMailWithSessionEnsure<R extends readonly unknown
         extra: { senderAddress: args.senderAddress },
       });
     }
-    // The vendored session_mail write keys on the sender's principal, which
-    // doesn't exist yet on a run's first outbound mail; skip it rather than
-    // let it throw, since @corbits/mailbox's own write already persists this
-    // frame.
+    // The vendored session_mail write keys on the sender's session, which
+    // may still not exist; skip it rather than let it throw, since
+    // @corbits/mailbox's own write already persists this frame.
     if (sender !== undefined && sender.sessionId === null) {
       logger.debug("skipping vendored persistMail for run {runId}: no session yet", {
         runId: sender.id,

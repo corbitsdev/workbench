@@ -13,4 +13,8 @@ export {
   type WorkflowCatalogEntry,
   type TriggerFieldsValidation,
 } from "./catalog";
-export { ensureRunSession, type EventCollectorPort } from "./launch/agent-session";
+export {
+  ensureRunSession,
+  withLazyRunCollector,
+  type EventCollectorPort,
+} from "./launch/agent-session";

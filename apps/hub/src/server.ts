@@ -45,6 +45,7 @@ import {
   type SidecarProvisionerChooser,
   type WsHandle,
 } from "@intx/hub-sessions";
+import { withLazyRunCollector } from "@corbits/workflows";
 import { generateKeyPair } from "@intx/crypto";
 import { timeWindowEvaluator } from "@intx/authz";
 import type { ConditionRegistry } from "@intx/types/authz";
@@ -273,24 +274,27 @@ export async function createHubServer({
     void pushCredentialReconcile(db, sidecarRouter, agentAddress, credentialCipher);
   };
 
-  const eventCollectors = createEventCollectorRegistry({
+  const eventCollectors = withLazyRunCollector(
+    createEventCollectorRegistry({
+      db,
+      onTurnFinalized(agentAddress, turn) {
+        sidecarRouter.dispatchAgentEvent(agentAddress, {
+          type: "turn.committed",
+          data: {
+            turnId: turn.turnId,
+            status: turn.status,
+            text: turn.text,
+            hadReply: turn.hadReply,
+            hadError: turn.hadError,
+            errors: turn.errors,
+            toolCalls: turn.toolCalls,
+            toolErrors: turn.toolErrors,
+          },
+        });
+      },
+    }),
     db,
-    onTurnFinalized(agentAddress, turn) {
-      sidecarRouter.dispatchAgentEvent(agentAddress, {
-        type: "turn.committed",
-        data: {
-          turnId: turn.turnId,
-          status: turn.status,
-          text: turn.text,
-          hadReply: turn.hadReply,
-          hadError: turn.hadError,
-          errors: turn.errors,
-          toolCalls: turn.toolCalls,
-          toolErrors: turn.toolErrors,
-        },
-      });
-    },
-  });
+  );
 
   createHubSessionOrchestrator({
     events: sidecarRouter.events,
