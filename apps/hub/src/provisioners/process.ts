@@ -51,9 +51,7 @@ export type ProcessProvisionerConfig = {
   readonly allocationsDir: string;
   /** Where the shared allocation state store keeps generation fences. */
   readonly stateFilePath: string;
-  /** The ws(s):// URL provisioned sidecars dial back on; part of the
-   * binding fingerprint, since a hub moved to a new address is a
-   * different backend binding even with the same entry point. */
+  /** The ws(s):// URL provisioned sidecars dial back on. */
   readonly hubWebSocketUrl: string;
   /** The operator key every spawned sidecar seals its at-rest credentials under. */
   readonly sidecarCredentialEncryptionKey: string;
@@ -448,9 +446,10 @@ export type CreateProcessSidecarProvisionerOpts = {
 };
 
 /**
- * The binding fingerprint pins entry point and hub URL: a change to either
- * is a different backend binding, so allocations bound to the old one
- * aren't silently treated as current.
+ * The binding fingerprint names the backend kind and role only. Hub port,
+ * install path, and sidecar entry location change across restarts without
+ * changing what the backend can host; pinning them strands every existing
+ * allocation, which the reconciler can neither release nor replace.
  */
 export function createProcessSidecarProvisioner(
   opts: CreateProcessSidecarProvisionerOpts,
@@ -462,7 +461,7 @@ export function createProcessSidecarProvisioner(
   return createSidecarProvisioner({
     id: PROCESS_PROVISIONER_ID,
     apiVersion: PROVISIONER_API_VERSION,
-    bindingFingerprint: `process:v1:${opts.role}:${config.sidecarEntryPath}:${config.hubWebSocketUrl}`,
+    bindingFingerprint: `process:v1:${opts.role}`,
     capabilities: sidecarCapabilityDeclarations("process"),
     backend: createProcessBackend(runner, config),
     store,
