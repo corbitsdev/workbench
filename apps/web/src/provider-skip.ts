@@ -5,6 +5,7 @@ import { reportError } from "@corbits/error-sink";
 import { useSyncExternalStore } from "react";
 
 import { useSessionUser } from "./navigation";
+import { hasUsableModel, type ModelInfo } from "./settings/inference";
 
 const listeners = new Set<() => void>();
 
@@ -29,6 +30,10 @@ export function setProviderSkipped(userId: string, skipped: boolean): void {
     reportError(cause, { operation: "provider_skip.write" });
   }
   for (const listener of listeners) listener();
+}
+
+export function clearProviderSkipWhenUsable(userId: string, models: readonly ModelInfo[]): void {
+  if (isProviderSkipped(userId) && hasUsableModel(models)) setProviderSkipped(userId, false);
 }
 
 function subscribe(listener: () => void): () => void {
