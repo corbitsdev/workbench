@@ -4,7 +4,7 @@
 import { Button, EmptyState, PageShell, Skeleton } from "@corbits/react-ui";
 import { PanelLeft, WarningCircle } from "@/lib/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Fragment, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useContext, useEffect, useState } from "react";
 
 import { IdentityAvatar } from "@/chat/avatar";
 import { Composer } from "@/chat/composer";
@@ -54,6 +54,7 @@ import { recordLastWorkbenchId } from "../last-workbench";
 import { PROVIDER_SETTINGS_PATH, ProviderSkipBanner } from "../provider-skip-banner";
 import { useNavigate } from "../navigation";
 import { isClassifiedInferenceFailureText } from "@/chat/inference-failure";
+import { AgentRedeployer } from "../agent-redeployer";
 import { useRestartAgent } from "../use-restart-agent";
 import { workbenchIdFromPath } from "../workbench-path";
 
@@ -185,31 +186,6 @@ function WorkbenchMessageRow({
       </div>
     </div>
   );
-}
-
-// Renders nothing; a mount's own ref plus the mutation's `isPending`/
-// `isSuccess` keep StrictMode's double effect from firing it twice. Fires
-// from an effect, never during render: mutating mid-render updates the
-// mutation's own state on a fiber that hasn't mounted yet (React warns).
-function AgentRedeployer({
-  workbenchTenantId,
-  agent,
-}: {
-  readonly workbenchTenantId: string;
-  readonly agent: {
-    readonly id: string;
-    readonly name: string;
-    readonly assetName: string;
-  };
-}) {
-  const started = useRef(false);
-  const redeploy = useRestartAgent();
-  useEffect(() => {
-    if (started.current || redeploy.isPending || redeploy.isSuccess) return;
-    started.current = true;
-    redeploy.mutate({ tenantId: workbenchTenantId, agent });
-  });
-  return null;
 }
 
 function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }) {

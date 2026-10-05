@@ -7,7 +7,8 @@ import { Menu, MenuContent, MenuItem, MenuTrigger } from "@corbits/react-ui/ui/m
 import { Hash, Plus, Robot } from "@/lib/icons";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { workerState } from "@/chat/deployment-liveness";
+import { AgentRedeployer } from "../agent-redeployer";
+import { redeployMode, workerState } from "@/chat/deployment-liveness";
 import type { ChatAgent } from "@/chat/threads-api";
 import { WorkbenchAvatar } from "@/chat/avatar";
 import { useRestartAgent } from "../use-restart-agent";
@@ -85,6 +86,7 @@ export function WorkersRosterList({ workers }: { readonly workers: readonly Benc
   const [filter, setFilter] = useState<WorkerTone | "all">("all");
   const [query, setQuery] = useState("");
   const restart = useRestartAgent();
+  const autoRedeploy = workers.filter(({ agent }) => redeployMode(agent) === "auto");
   if (workers.length === 0) {
     return (
       <RichEmptyState
@@ -103,6 +105,9 @@ export function WorkersRosterList({ workers }: { readonly workers: readonly Benc
   );
   return (
     <div>
+      {autoRedeploy.map(({ agent, bench }) => (
+        <AgentRedeployer key={agent.id} workbenchTenantId={bench.id} agent={agent} />
+      ))}
       <div className="roster-toolbar">
         <div role="tablist" aria-label="Filter by status" className="bi-seg roster-filter">
           {FILTERS.map(([key, label]) => (
