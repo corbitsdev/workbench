@@ -2,10 +2,9 @@
 // the thread left; the drawer's Information tab carries the bench overview.
 
 import { Button, EmptyState, PageShell, Skeleton } from "@corbits/react-ui";
-import { toast } from "@corbits/react-ui/ui/toast";
 import { PanelLeft, WarningCircle } from "@/lib/icons";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Fragment, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useContext, useEffect, useState } from "react";
 
 import { IdentityAvatar } from "@/chat/avatar";
 import { Composer } from "@/chat/composer";
@@ -15,6 +14,7 @@ import "@/chat/thread.css";
 import { Markdown } from "@/chat/markdown";
 import { MessageAttachments } from "@/chat/message-attachments";
 import { resolveMessagePackage } from "@/chat/deployable-package";
+import { agentsToAutoDeploy, stoppedAgents } from "@/chat/agent-redeploy";
 import { stripRoster } from "@/chat/workbench-roster";
 import {
   ancestorChain,
@@ -54,7 +54,8 @@ import { recordLastWorkbenchId } from "../last-workbench";
 import { PROVIDER_SETTINGS_PATH, ProviderSkipBanner } from "../provider-skip-banner";
 import { useNavigate } from "../navigation";
 import { isClassifiedInferenceFailureText } from "@/chat/inference-failure";
-import { redeployWorkbenchAgent } from "../workbench-create";
+import { AgentRedeployer } from "../agent-redeployer";
+import { useRestartAgent } from "../use-restart-agent";
 import { workbenchIdFromPath } from "../workbench-path";
 
 function messagePlaceholder(name: string | undefined): string {
@@ -187,39 +188,6 @@ function WorkbenchMessageRow({
   );
 }
 
-// Renders nothing; a mount's own ref plus the mutation's `isPending`/
-// `isSuccess` keep StrictMode's double effect from firing it twice. Fires
-// from an effect, never during render: mutating mid-render updates the
-// mutation's own state on a fiber that hasn't mounted yet (React warns).
-function AgentRedeployer({
-  workbenchTenantId,
-  agent,
-}: {
-  readonly workbenchTenantId: string;
-  readonly agent: {
-    readonly id: string;
-    readonly name: string;
-    readonly assetName: string;
-  };
-}) {
-  const queryClient = useQueryClient();
-  const started = useRef(false);
-  const redeploy = useMutation({
-    mutationFn: () => redeployWorkbenchAgent(workbenchTenantId, agent),
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: workbenchKeys.scope(workbenchTenantId),
-      }),
-    onError: (cause) => toast(errorText(cause)),
-  });
-  useEffect(() => {
-    if (started.current || redeploy.isPending || redeploy.isSuccess) return;
-    started.current = true;
-    redeploy.mutate();
-  });
-  return null;
-}
-
 function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }) {
   const queryClient = useQueryClient();
   const [openThread, setOpenThread] = useState<string | null>(null);
@@ -242,7 +210,11 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
     // Poll while any agent has no live run yet, so the workbench notices its own
     // redeploy finishing without a manual refresh.
     refetchInterval: (query) =>
-      (query.state.data ?? []).some((p) => p.kind === "agent" && p.address === "") ? 3000 : false,
+      (query.state.data ?? []).some(
+        (p) => p.kind === "agent" && p.address === "" && p.redeploy !== "manual",
+      )
+        ? 3000
+        : false,
   });
   const chatAgentsQuery = useQuery({
     queryKey: tenantKeys.agents(workbenchTenantId),
@@ -292,13 +264,11 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
   }, [statedName, saveName]);
 
   const agents = roster.filter((participant) => participant.kind === "agent");
-  // Released by a hub restart: the asset is still here but nothing is live.
-  const releasedAgents = agents.filter(
-    (agent): agent is WorkbenchParticipant & { assetName: string } =>
-      agent.address === "" && agent.assetName !== undefined,
-  );
+  const releasedAgents = agentsToAutoDeploy(agents);
+  const stoppedAgent = stoppedAgents(agents)[0];
   const startingAgent = releasedAgents[0];
   const workerStatus = useWorkerStatus(workbenchTenantId, agents[0]?.id);
+  const restart = useRestartAgent();
   // Only a live agent can be addressed, so only one can be mentioned.
   const mentionables = agents
     .filter((agent) => agent.address.includes("@"))
@@ -379,6 +349,18 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
             open={drawerOpen}
             onToggle={() => setDrawerOpen((open) => !open)}
           />
+          {stoppedAgent === undefined ? null : (
+            <div className="wb-restart">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={restart.isPending}
+                onClick={() => restart.mutate({ tenantId: workbenchTenantId, agent: stoppedAgent })}
+              >
+                {restart.isPending ? "Starting…" : `Restart ${stoppedAgent.name}`}
+              </Button>
+            </div>
+          )}
           <div className="workbench-main">
             <div className="workbench-main-scroll">
               <div className="timeline-inner">

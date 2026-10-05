@@ -7,6 +7,8 @@ import { useQuery } from "@tanstack/react-query";
 import { WorkflowDeploymentResponse } from "@intx/types";
 import type { APIQuery } from "@/lib/api-query";
 import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@/lib/api-query";
+import { listTopLevelRuns } from "@/agents-api";
+import { deploymentLiveness } from "@/chat/deployment-liveness";
 import { isAgentDeploySourceAssetName } from "@/agent-deploy";
 import { WORKER_SOURCE_CONFIG } from "@/worker-source";
 
@@ -182,11 +184,13 @@ function isAgentAssetName(name: string): boolean {
 export async function listScheduledWorkflows(
   tenantId: string,
 ): Promise<readonly ScheduledWorkflowDefinition[]> {
-  const [deployments, assets, schedules] = await Promise.all([
+  const [deployments, assets, schedules, runs] = await Promise.all([
     fetchJSON(deploymentsPath(tenantId), DeploymentsSchema),
     fetchJSON(workflowAssetsPath(tenantId), WorkflowAssetsSchema),
     listCronSchedules(tenantId),
+    listTopLevelRuns(tenantId),
   ]);
+  const runStatusById = new Map(runs.map((run) => [run.id, run.status]));
   const nameByAssetId = new Map(assets.map((asset) => [asset.id, asset.name]));
   // A schedule names its target by definition name, which is the source
   // asset's name — so a redeploy keeps the row joined to the same row here.
@@ -206,7 +210,10 @@ export async function listScheduledWorkflows(
         assetId: deployment.definitionAssetId,
         name: name ?? "Untitled workflow",
         tenantId: deployment.tenantId,
-        status: deployment.status === "deployed" ? "deployed" : "stopped",
+        status:
+          deploymentLiveness(deployment.status, runStatusById.get(deployment.id)) === "stopped"
+            ? "stopped"
+            : "deployed",
         createdAt: deployment.createdAt,
         updatedAt: deployment.createdAt,
         schedule: row?.expression ?? null,

@@ -179,3 +179,11 @@
     display: none;
   }
 }
+
+.wb-restart {
+  position: absolute;
+  top: 54px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+}

@@ -1,7 +1,9 @@
 // An agent joins a workbench by being deployed into the child tenant
 // itself — its deploy route rejects the parent's inherited asset.
 
+import { clearRedeployFailure, markRedeployFailed } from "@/chat/redeploy-failures";
 import { isDefaultWorker } from "@/chat/threads-api";
+import { reportError } from "@corbits/error-sink";
 import { agentSlugFromSourceAssetName, deployAgentSource } from "./agent-deploy";
 import { readAgentSource } from "./agent-source-read";
 import { deployWorkerSource } from "./worker-deploy";
@@ -131,6 +133,25 @@ export function describeRestartFailure(cause: unknown): string {
  * redeploys one workbench agent through the same path `createWorkbench` used,
  * re-running it against the tenant its asset already lives in. */
 export async function redeployWorkbenchAgent(
+  workbenchTenantId: string,
+  agent: { readonly id: string; readonly name: string; readonly assetName: string },
+): Promise<void> {
+  try {
+    await deployExistingAgent(workbenchTenantId, agent);
+    clearRedeployFailure(agent.id);
+  } catch (cause) {
+    markRedeployFailed(agent.id);
+    throw cause;
+  }
+}
+
+/** Reports a failed restart and returns the text to show the person. */
+export function reportRestartFailure(cause: unknown, tenantId: string): string {
+  reportError(cause, { operation: "agent_restart", tenantId });
+  return describeRestartFailure(cause);
+}
+
+async function deployExistingAgent(
   workbenchTenantId: string,
   agent: { readonly id: string; readonly name: string; readonly assetName: string },
 ): Promise<void> {
