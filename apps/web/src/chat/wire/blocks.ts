@@ -1,5 +1,5 @@
-// Mirrored from packages/chat/src (see docs/chat-wire-contract.md) — apps/web
-// must not import @corbits/chat, a server-only package.
+// Browser-side wire contract (see docs/chat-wire-contract.md) — apps/web
+// must not import server-only packages.
 
 import { type } from "arktype";
 

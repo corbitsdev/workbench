@@ -1,4 +1,4 @@
-// Mirrored from packages/chat/src (see docs/chat-wire-contract.md).
+// Browser-side wire contract (see docs/chat-wire-contract.md).
 
 // HTTP status, raw provider dumps, and JSON error objects never belong on
 // the timeline — DESIGN.md Honesty is one consumer sentence.

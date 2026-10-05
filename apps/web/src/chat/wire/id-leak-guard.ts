@@ -1,9 +1,37 @@
-// Mirrored from packages/chat/src (see docs/chat-wire-contract.md, which
-// also covers this file's rationale).
+// Mirrors PREFIXES in vendor/intx/hub-common/src/ids.ts (see
+// docs/chat-wire-contract.md, which also covers this file's rationale).
 
 // Matches `_`, space, or `-` as separator so both the raw id and
 // `humanizeSlug`'s Title-Cased reading of one ("Run 737a058d…") trip it.
-const ID_PREFIX_WORDS = ["run", "wfd", "tnt", "prn", "ast", "gtk"] as const;
+const ID_PREFIX_WORDS = [
+  "tnt",
+  "prn",
+  "pky",
+  "rol",
+  "grt",
+  "ftr",
+  "prv",
+  "ocl",
+  "crd",
+  "wlt",
+  "txn",
+  "ofr",
+  "mdl",
+  "mpv",
+  "mof",
+  "mpr",
+  "ses",
+  "sml",
+  "itn",
+  "tp",
+  "ast",
+  "gtk",
+  "run",
+  "apr",
+  "sig",
+  "wfd",
+  "wdv",
+] as const;
 
 export const ID_LEAK_PATTERN = new RegExp(
   `\\b(?:${ID_PREFIX_WORDS.join("|")})[_\\s-][0-9a-f]{16,}\\b`,

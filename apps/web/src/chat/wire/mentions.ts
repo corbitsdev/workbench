@@ -1,4 +1,4 @@
-// Mirrored from packages/chat/src (see docs/chat-wire-contract.md).
+// Browser-side wire contract (see docs/chat-wire-contract.md).
 
 // The composer and the server fan-out both derive mentions from the same
 // `ParticipantRecord[]`, so what the composer highlights is always exactly
