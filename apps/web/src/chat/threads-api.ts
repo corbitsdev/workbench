@@ -10,6 +10,14 @@ import { agentSlugFromSourceAssetName } from "../agent-deploy";
 import { listTopLevelRuns } from "../agents-api";
 import { WORKER_SOURCE_CONFIG } from "../worker-source";
 import { personMailAddress } from "../mail-address";
+import {
+  deploymentLiveness,
+  diedQuickly,
+  redeployMode,
+  type DeploymentLiveness,
+  type RedeployMode,
+} from "./deployment-liveness";
+import { hasRedeployFailed } from "./redeploy-failures";
 import { mentionedAgents } from "./mentions";
 import { appendRoster } from "./workbench-roster";
 
@@ -36,14 +44,12 @@ export type ChatAgent = {
   /** The address of the agent's currently live run, or null when none is
    * live (mid-redeploy). */
   readonly liveAddress: string | null;
-  // A terminal status means nothing is running and nothing is coming
-  // unless someone restarts it.
-  readonly latestStatus: string | undefined;
+  /** The newest deployment's liveness; stopped means nothing is running. */
+  readonly latest: DeploymentLiveness;
+  /** Redeploying automatically would loop: the newest run never lived, or
+   * the last redeploy threw. */
+  readonly capped: boolean;
 };
-
-const LIVE_DEPLOYMENT_STATUSES = new Set(["deployed", "pending", "recovering"]);
-// On the way up but not live yet, distinct from a terminal status.
-export const STARTING_DEPLOYMENT_STATUSES = new Set(["pending", "recovering"]);
 
 const DeploymentsSchema = WorkflowDeploymentResponse.array();
 const WorkflowAssetSchema = type({ id: "string", name: "string" }).array();
@@ -96,26 +102,38 @@ export async function listChatAgents(tenantId: string): Promise<readonly ChatAge
     getJson(workflowAssetsPath(tenantId), WorkflowAssetSchema),
     listTopLevelRuns(tenantId),
   ]);
-  const addressByRunId = new Map(runs.map((run) => [run.id, run.address]));
+  const runById = new Map(runs.map((run) => [run.id, run]));
   const nameByAssetId = new Map(assets.map((asset) => [asset.id, asset.name]));
 
   const byAsset = new Map<
     string,
-    { addresses: Set<string>; liveAddress: string | null; latestStatus: string | undefined }
+    {
+      addresses: Set<string>;
+      liveAddress: string | null;
+      latest: DeploymentLiveness | undefined;
+      capped: boolean;
+    }
   >();
   for (const deployment of deployments) {
-    const address = addressByRunId.get(deployment.id);
-    if (address === undefined || address.length === 0) continue;
+    const run = runById.get(deployment.id);
+    const address = run?.address ?? "";
     const entry = byAsset.get(deployment.definitionAssetId) ?? {
       addresses: new Set<string>(),
       liveAddress: null,
-      latestStatus: undefined,
+      latest: undefined,
+      capped: hasRedeployFailed(deployment.definitionAssetId),
     };
-    entry.addresses.add(address);
+    if (address.length > 0) entry.addresses.add(address);
     // Deployments come back newest-first, so the first one seen per asset
-    // is the latest, and the first live one seen is the current one.
-    if (entry.latestStatus === undefined) entry.latestStatus = deployment.status;
-    if (entry.liveAddress === null && LIVE_DEPLOYMENT_STATUSES.has(deployment.status)) {
+    // is the latest, and the first live one seen is the current one. A run
+    // the list does not carry yet is still coming up, unless the deployment
+    // itself is terminal, in which case it never lived.
+    const liveness = deploymentLiveness(deployment.status, run?.status);
+    if (entry.latest === undefined) {
+      entry.latest = liveness;
+      if (run === undefined ? liveness === "stopped" : diedQuickly(run)) entry.capped = true;
+    }
+    if (entry.liveAddress === null && liveness !== "stopped" && address.length > 0) {
       entry.liveAddress = address;
     }
     byAsset.set(deployment.definitionAssetId, entry);
@@ -129,15 +147,10 @@ export async function listChatAgents(tenantId: string): Promise<readonly ChatAge
       assetName,
       addresses: [...entry.addresses],
       liveAddress: entry.liveAddress,
-      latestStatus: entry.latestStatus,
+      latest: entry.latest ?? "stopped",
+      capped: entry.capped,
     };
   });
-}
-
-// True once terminal (or never deployed): nothing is coming up on its own.
-export function isAgentNotRunning(agent: Pick<ChatAgent, "liveAddress" | "latestStatus">): boolean {
-  if (agent.liveAddress !== null) return false;
-  return agent.latestStatus === undefined || !STARTING_DEPLOYMENT_STATUSES.has(agent.latestStatus);
 }
 
 /** The agent an `@name` first message picks, matched case-insensitively
@@ -281,6 +294,8 @@ export type WorkbenchParticipant = {
   /** The workflow asset's raw name — only present for a `kind: "agent"`
    * row; what a released agent's redeploy re-reads/re-pushes source by. */
   readonly assetName?: string;
+  /** What becomes of an agent with nothing live: redeployed on its own, or left for the person. */
+  readonly redeploy?: RedeployMode;
 };
 
 const PrincipalPage = type({
@@ -313,13 +328,17 @@ export async function listWorkbenchParticipants(
       name: principal.displayName,
       address: personMailAddress(principal.refId, tenantDomain),
     }));
-  const agents = chatAgents.map((agent): WorkbenchParticipant => ({
-    id: agent.id,
-    kind: "agent",
-    name: agent.name,
-    address: agent.liveAddress ?? "",
-    assetName: agent.assetName,
-  }));
+  const agents = chatAgents.map((agent): WorkbenchParticipant => {
+    const redeploy = redeployMode(agent);
+    return {
+      id: agent.id,
+      kind: "agent",
+      name: agent.name,
+      address: agent.liveAddress ?? "",
+      assetName: agent.assetName,
+      ...(redeploy === undefined ? {} : { redeploy }),
+    };
+  });
   return [...people, ...agents];
 }
 

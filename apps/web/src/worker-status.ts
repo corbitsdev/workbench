@@ -41,7 +41,13 @@ function turnAnswered(timeline: readonly WorkbenchMessage[] | undefined, sentAt:
   return (timeline ?? []).some((m) => m.author === "other" && Date.parse(m.at) > sentAt);
 }
 
-const RANK: Record<string, number> = { "Needs you": 3, Working: 2, Live: 1, Starting: 0 };
+const RANK: Record<string, number> = {
+  "Needs you": 3,
+  Working: 2,
+  Live: 1,
+  Starting: 0,
+  Stopped: 0,
+};
 
 /** The status of the worker `isWorker` matches, across the given benches:
  * needs-you beats working beats live. */
@@ -89,7 +95,9 @@ export function useBenchWorkerStatus(
   benches.forEach((bench, index) => {
     const agent = participants[index]?.data?.find((p) => p.kind === "agent" && isWorker(p));
     if (agent === undefined) return;
-    if (agent.address === "") return offer({ tone: "idle", text: "Starting" });
+    if (agent.address === "") {
+      return offer({ tone: "idle", text: agent.redeploy === "manual" ? "Stopped" : "Starting" });
+    }
     const needsYou = (approvals[index]?.data?.data ?? []).some(
       (row) => row.status === "pending" && sameAddress(row.agentAddress, agent.address),
     );

@@ -4,15 +4,13 @@
 import { useState } from "react";
 import { Button, RichEmptyState, Skeleton } from "@corbits/react-ui";
 import { Menu, MenuContent, MenuItem, MenuTrigger } from "@corbits/react-ui/ui/menu";
-import { toast } from "@corbits/react-ui/ui/toast";
 import { Hash, Plus, Robot } from "@/lib/icons";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { reportError } from "@corbits/error-sink";
+import { useQueryClient } from "@tanstack/react-query";
 
-import { tenantKeys } from "../query-client";
-import { isAgentNotRunning, type ChatAgent } from "@/chat/threads-api";
+import { workerState } from "@/chat/deployment-liveness";
+import type { ChatAgent } from "@/chat/threads-api";
 import { WorkbenchAvatar } from "@/chat/avatar";
-import { describeRestartFailure, redeployWorkbenchAgent } from "../workbench-create";
+import { useRestartAgent } from "../use-restart-agent";
 import { useBench } from "../bench-context";
 import type { HubTenant } from "../needs-converge";
 import { useSidebarSections } from "../shell/sidebar-sections";
@@ -28,17 +26,21 @@ import "./workers-page.css";
 
 export type WorkerTone = "working" | "ready" | "idle";
 
-/** What a worker is doing right now, from its deployment alone: coming up is
- * working, stopped is waiting on the person to restart it, live and waiting
- * for mail is idle. */
-export function workerStatus(agent: Pick<ChatAgent, "liveAddress" | "latestStatus">): {
+/** What a worker is doing right now, from its deployment alone: coming up
+ * (including a dead one about to be redeployed) is working, stopped is
+ * waiting on the person to restart it, live and waiting for mail is idle. */
+export function workerStatus(agent: Pick<ChatAgent, "liveAddress" | "latest" | "capped">): {
   readonly tone: WorkerTone;
   readonly text: string;
 } {
-  if (agent.liveAddress !== null) return { tone: "idle", text: "Waiting for mail" };
-  return isAgentNotRunning(agent)
-    ? { tone: "ready", text: "Stopped. Restart it to put it back to work." }
-    : { tone: "working", text: "Starting up" };
+  switch (workerState(agent)) {
+    case "live":
+      return { tone: "idle", text: "Waiting for mail" };
+    case "stopped":
+      return { tone: "ready", text: "Stopped. Restart it to put it back to work." };
+    case "starting":
+      return { tone: "working", text: "Starting up" };
+  }
 }
 
 export function workerPath(agentId: string): string {
@@ -82,19 +84,7 @@ const FILTERS: readonly (readonly [WorkerTone | "all", string])[] = [
 export function WorkersRosterList({ workers }: { readonly workers: readonly BenchWorker[] }) {
   const [filter, setFilter] = useState<WorkerTone | "all">("all");
   const [query, setQuery] = useState("");
-  const queryClient = useQueryClient();
-  const restart = useMutation({
-    mutationFn: ({ agent, bench }: BenchWorker) => redeployWorkbenchAgent(bench.id, agent),
-    onSuccess: (_result, { bench }) => {
-      void queryClient.invalidateQueries({
-        queryKey: tenantKeys.agents(bench.id),
-      });
-    },
-    onError: (cause, { bench }) => {
-      reportError(cause, { operation: "agent_restart", tenantId: bench.id });
-      toast(describeRestartFailure(cause));
-    },
-  });
+  const restart = useRestartAgent();
   if (workers.length === 0) {
     return (
       <RichEmptyState
@@ -176,7 +166,7 @@ export function WorkersRosterList({ workers }: { readonly workers: readonly Benc
                     size="sm"
                     className="roster-restart"
                     disabled={restart.isPending}
-                    onClick={() => restart.mutate({ agent, bench })}
+                    onClick={() => restart.mutate({ tenantId: bench.id, agent })}
                   >
                     {restart.isPending && restart.variables?.agent.id === agent.id
                       ? "Starting…"
