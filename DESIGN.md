@@ -51,8 +51,11 @@ card that pushes the chat and composer left rather than covering them. Its
 tabs: Information (an overview of everything, including active workflows),
 Artifacts, Tools, Grants, Insights, Members, Workflows.
 
-The thread spans the sheet; prose holds a ~76ch measure and cards cap at
-640px. The composer is one lean full-width row: `+`, text, voice, send.
+The timeline, day divider, and composer share a centered column capped at
+1200px, with at least 32px side gutters. The column centers in the remaining
+chat pane when the bench drawer is open. Workers align left and user bubbles
+align right with a 16px inset; prose holds a ~76ch measure and cards cap at
+640px. The composer is one lean row: `+`, text, voice, send.
 
 Voice mode covers the thread with the worker's mark over a level-reactive
 glow, a speaking/listening state line, and live captions. Controls:
