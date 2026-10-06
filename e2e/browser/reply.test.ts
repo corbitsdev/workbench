@@ -13,7 +13,9 @@ describeBrowser("worker reply", () => {
   const aimock = bootAimock([
     {
       match: { predicate: () => true },
-      response: { content: `${MOCK_REPLY}\n\nName: Ada` },
+      response: {
+        content: `${MOCK_REPLY}\n\n${"This longer reply keeps the conversation scrolling while its prose stays readable.\n\n".repeat(16)}Name: Ada`,
+      },
     },
   ]);
   const app = bootBrowserApp();
@@ -52,6 +54,82 @@ describeBrowser("worker reply", () => {
         timeout: STEP_TIMEOUT,
       });
       expect(aimock().journal().length).toBeGreaterThan(0);
+
+      await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+      for (const { width, reservedSpace } of [
+        { width: 1800, reservedSpace: 0 },
+        { width: 1200, reservedSpace: 0 },
+        { width: 900, reservedSpace: 0 },
+        { width: 800, reservedSpace: 0 },
+        { width: 390, reservedSpace: 0 },
+        { width: 1800, reservedSpace: 16 },
+        { width: 900, reservedSpace: 16 },
+      ]) {
+        await page.setViewport({ width, height: 900 });
+        // Simulate reserved scrollbar space on hosts with overlay scrollbars.
+        await page.$eval(
+          ".workbench-main-scroll",
+          (element, space) => {
+            if (!(element instanceof HTMLElement)) throw new Error("Missing scroll pane");
+            element.style.borderInlineEnd = `${space}px solid transparent`;
+          },
+          reservedSpace,
+        );
+        for (const drawerOpen of [false, true]) {
+          if (drawerOpen) await page.click(".bench-pill");
+          const layout = await page.evaluate(() => {
+            const element = (selector: string) => {
+              const found = document.querySelector(selector);
+              if (found === null) throw new Error(`Missing layout element: ${selector}`);
+              return found;
+            };
+            const bounds = (selector: string) => {
+              const { left, right, width } = element(selector).getBoundingClientRect();
+              return { left, right, width };
+            };
+            const scroll = element(".workbench-main-scroll");
+            const prose = element(
+              '.timeline-inner .chat-thread-message:not([data-author="me"]) .chat-thread-body',
+            );
+            return {
+              main: bounds(".workbench-main"),
+              timeline: bounds(".timeline-inner"),
+              divider: bounds(".timeline-inner .chat-day"),
+              composer: bounds(".workbench-main-composer .chat-composer-box"),
+              worker: bounds(".timeline-inner .chat-thread-avatar"),
+              user: bounds(".timeline-inner .chat-thread-own-bubble"),
+              proseWidth: prose.getBoundingClientRect().width,
+              proseLimit: Number.parseFloat(getComputedStyle(prose).maxWidth),
+              scrolls: scroll.scrollHeight > scroll.clientHeight,
+              overflows: scroll.scrollWidth > scroll.clientWidth,
+              pageOverflows: document.documentElement.scrollWidth > innerWidth,
+            };
+          });
+          const context = `${width}px, drawer ${drawerOpen ? "open" : "closed"}, reserved space ${reservedSpace}px`;
+          for (const box of [layout.timeline, layout.divider]) {
+            expect(Math.abs(box.left - layout.composer.left), context).toBeLessThanOrEqual(1);
+            expect(Math.abs(box.right - layout.composer.right), context).toBeLessThanOrEqual(1);
+          }
+          const leftGutter = layout.composer.left - layout.main.left;
+          const rightGutter = layout.main.right - layout.composer.right;
+          expect(Math.abs(leftGutter - rightGutter), context).toBeLessThanOrEqual(1);
+          expect(leftGutter, context).toBeGreaterThanOrEqual(32);
+          expect(layout.composer.width, context).toBeLessThanOrEqual(1200);
+          expect(Math.abs(layout.worker.left - layout.composer.left), context).toBeLessThanOrEqual(
+            1,
+          );
+          expect(
+            Math.abs(layout.composer.right - layout.user.right - 16),
+            context,
+          ).toBeLessThanOrEqual(1);
+          expect(layout.proseWidth, context).toBeLessThanOrEqual(layout.proseLimit + 1);
+          expect(layout.scrolls, context).toBe(true);
+          expect(layout.overflows, context).toBe(false);
+          expect(layout.pageOverflows, context).toBe(false);
+          if (drawerOpen) await page.click('#bench-drawer button[aria-label="Close drawer"]');
+        }
+      }
+      await page.setViewport({ width: 1400, height: 900 });
 
       // The worker named itself: pill, sidebar and message header show it,
       // and the marker line is never rendered.
@@ -98,6 +176,7 @@ describeBrowser("worker reply", () => {
       );
       throw cause;
     }
+    expect(errors).toEqual([]);
     await page.close();
   }, 240_000);
 });
