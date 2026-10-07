@@ -1845,10 +1845,7 @@ tr.insights-row-clickable:hover {
 }
 .drawer {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  bottom: 8px;
-  width: calc(min(420px, 42vw) - 8px);
+  inset: 8px;
   background: var(--surface);
   border-radius: var(--r-lg);
   box-shadow: var(--overlay);
