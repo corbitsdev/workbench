@@ -74,6 +74,8 @@ describeBrowser("worker reply", () => {
         { width: 1800, reservedSpace: 0 },
         { width: 1200, reservedSpace: 0 },
         { width: 900, reservedSpace: 0 },
+        { width: 861, reservedSpace: 0 },
+        { width: 860, reservedSpace: 0 },
         { width: 800, reservedSpace: 0 },
         { width: 390, reservedSpace: 0 },
         { width: 1800, reservedSpace: 16 },
@@ -119,6 +121,7 @@ describeBrowser("worker reply", () => {
               user: bounds(".timeline-inner .chat-thread-own-bubble"),
               proseWidth: prose.getBoundingClientRect().width,
               proseLimit: Number.parseFloat(getComputedStyle(prose).maxWidth),
+              reservedWidth: scroll.getBoundingClientRect().width - scroll.clientWidth,
               scrolls: scroll.scrollHeight > scroll.clientHeight,
               overflows: scroll.scrollWidth > scroll.clientWidth,
               pageOverflows: document.documentElement.scrollWidth > innerWidth,
@@ -127,35 +130,50 @@ describeBrowser("worker reply", () => {
           if (drawerOpen) {
             const drawer = await page.evaluate(() => {
               const cell = document.querySelector(".drawer-cell")?.getBoundingClientRect();
-              const card = document.querySelector(".drawer")?.getBoundingClientRect();
-              if (cell === undefined || card === undefined) throw new Error("Missing drawer");
-              return { left: card.left - cell.left, right: cell.right - card.right };
+              const element = document.querySelector(".drawer");
+              if (cell === undefined || element === null) throw new Error("Missing drawer");
+              const card = element.getBoundingClientRect();
+              const style = getComputedStyle(element);
+              return {
+                left: card.left - cell.left,
+                right: cell.right - card.right,
+                shadow: style.boxShadow,
+                radius: Number.parseFloat(style.borderRadius),
+                divider: Number.parseFloat(style.borderLeftWidth),
+              };
             });
-            const inset = width > 860 ? 8 : 0;
-            expect(
-              Math.abs(drawer.left - inset),
-              `${width}px drawer left edge`,
-            ).toBeLessThanOrEqual(1);
-            expect(
-              Math.abs(drawer.right - inset),
-              `${width}px drawer right edge`,
-            ).toBeLessThanOrEqual(1);
+            expect(Math.abs(drawer.left), `${width}px drawer left edge`).toBeLessThanOrEqual(1);
+            expect(Math.abs(drawer.right), `${width}px drawer right edge`).toBeLessThanOrEqual(1);
+            if (width > 860) {
+              expect(drawer.shadow, `${width}px nested drawer surface`).toBe("none");
+              expect(drawer.radius, `${width}px flat drawer edge`).toBe(0);
+              expect(drawer.divider, `${width}px visible drawer divider`).toBe(1);
+            }
           }
           const context = `${width}px, drawer ${drawerOpen ? "open" : "closed"}, reserved space ${reservedSpace}px`;
           for (const box of [layout.timeline, layout.divider]) {
             expect(Math.abs(box.left - layout.composer.left), context).toBeLessThanOrEqual(1);
-            expect(Math.abs(box.right - layout.composer.right), context).toBeLessThanOrEqual(1);
+            const offset = drawerOpen ? 16 - layout.reservedWidth : 0;
+            expect(
+              Math.abs(box.right - layout.composer.right - offset),
+              context,
+            ).toBeLessThanOrEqual(1);
           }
           const leftGutter = layout.composer.left - layout.main.left;
           const rightGutter = layout.main.right - layout.composer.right;
-          expect(Math.abs(leftGutter - rightGutter), context).toBeLessThanOrEqual(1);
+          expect(
+            Math.abs(drawerOpen ? rightGutter - 16 : leftGutter - rightGutter),
+            context,
+          ).toBeLessThanOrEqual(1);
           expect(leftGutter, context).toBeGreaterThanOrEqual(32);
           expect(layout.composer.width, context).toBeLessThanOrEqual(1200);
           expect(Math.abs(layout.worker.left - layout.composer.left), context).toBeLessThanOrEqual(
             1,
           );
           expect(
-            Math.abs(layout.composer.right - layout.user.right - 16),
+            Math.abs(
+              layout.composer.right - layout.user.right - (drawerOpen ? layout.reservedWidth : 16),
+            ),
             context,
           ).toBeLessThanOrEqual(1);
           expect(layout.proseWidth, context).toBeLessThanOrEqual(layout.proseLimit + 1);
@@ -222,8 +240,8 @@ describeBrowser("worker reply", () => {
               overflows: body.scrollWidth > body.clientWidth,
             };
           });
-          expect(Math.abs(drawerWithReplies.left - 8), context).toBeLessThanOrEqual(1);
-          expect(Math.abs(drawerWithReplies.right - 8), context).toBeLessThanOrEqual(1);
+          expect(Math.abs(drawerWithReplies.left), context).toBeLessThanOrEqual(1);
+          expect(Math.abs(drawerWithReplies.right), context).toBeLessThanOrEqual(1);
           expect(drawerWithReplies.overflows, context).toBe(false);
           await page.click('#bench-drawer button[aria-label="Close drawer"]');
           await page.click(".workbench-subthread-head button");
