@@ -47,7 +47,8 @@ thin orange arc orbits a worker while it works, concentric with the mark.
 
 No top bar. A frosted pill centered at the top shows the bench's worker, its
 name, and live status; it opens the bench drawer. The drawer is a floating
-card that pushes the chat and composer left rather than covering them. Its
+card that pushes the chat and composer left rather than covering them.
+On desktop it sits 8px inside its column so its border stays visible. Its
 tabs: Information (an overview of everything, including active workflows),
 Artifacts, Tools, Grants, Insights, Members, Workflows.
 
@@ -56,6 +57,10 @@ The timeline, day divider, and composer share a centered column capped at
 chat pane when the bench drawer is open. Workers align left and user bubbles
 align right with a 16px inset; prose holds a ~76ch measure and cards cap at
 640px. The composer is one lean row: `+`, text, voice, send.
+When Replies is open, the timeline's right gutter collapses; the composer
+keeps a 16px gap from the reply panel. User bubbles retain their 16px inset
+within the timeline, which fits the available scroll width. Closing Replies
+restores centering.
 
 Voice mode covers the thread with the worker's mark over a level-reactive
 glow, a speaking/listening state line, and live captions. Controls:
