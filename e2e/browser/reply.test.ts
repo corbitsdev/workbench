@@ -42,7 +42,13 @@ describeBrowser("worker reply", () => {
       await model[1]?.type("mock-model");
       await clickText(page, "button", "Connect");
 
-      await page.waitForSelector("textarea", { timeout: STEP_TIMEOUT });
+      await page.waitForFunction(
+        `(() => {
+          const input = document.querySelector("textarea");
+          return input instanceof HTMLTextAreaElement && !input.disabled;
+        })()`,
+        { timeout: STEP_TIMEOUT },
+      );
       await page.type("textarea", "Say hello");
       await page.click("button[aria-label='Start this workbench']");
       await page.waitForFunction(`location.pathname.startsWith("/w/")`, {
@@ -56,7 +62,15 @@ describeBrowser("worker reply", () => {
       expect(aimock().journal().length).toBeGreaterThan(0);
 
       await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+      const waitForLayout = () =>
+        page.evaluate(
+          () =>
+            new Promise<void>((resolve) =>
+              requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+            ),
+        );
       for (const { width, reservedSpace } of [
+        { width: 2048, reservedSpace: 0 },
         { width: 1800, reservedSpace: 0 },
         { width: 1200, reservedSpace: 0 },
         { width: 900, reservedSpace: 0 },
@@ -64,6 +78,8 @@ describeBrowser("worker reply", () => {
         { width: 390, reservedSpace: 0 },
         { width: 1800, reservedSpace: 16 },
         { width: 900, reservedSpace: 16 },
+        { width: 1800, reservedSpace: 20 },
+        { width: 900, reservedSpace: 20 },
       ]) {
         await page.setViewport({ width, height: 900 });
         // Simulate reserved scrollbar space on hosts with overlay scrollbars.
@@ -76,7 +92,10 @@ describeBrowser("worker reply", () => {
           reservedSpace,
         );
         for (const drawerOpen of [false, true]) {
-          if (drawerOpen) await page.click(".bench-pill");
+          if (drawerOpen) {
+            await page.click(".bench-pill");
+            await waitForLayout();
+          }
           const layout = await page.evaluate(() => {
             const element = (selector: string) => {
               const found = document.querySelector(selector);
@@ -105,6 +124,23 @@ describeBrowser("worker reply", () => {
               pageOverflows: document.documentElement.scrollWidth > innerWidth,
             };
           });
+          if (drawerOpen) {
+            const drawer = await page.evaluate(() => {
+              const cell = document.querySelector(".drawer-cell")?.getBoundingClientRect();
+              const card = document.querySelector(".drawer")?.getBoundingClientRect();
+              if (cell === undefined || card === undefined) throw new Error("Missing drawer");
+              return { left: card.left - cell.left, right: cell.right - card.right };
+            });
+            const inset = width > 860 ? 8 : 0;
+            expect(
+              Math.abs(drawer.left - inset),
+              `${width}px drawer left edge`,
+            ).toBeLessThanOrEqual(1);
+            expect(
+              Math.abs(drawer.right - inset),
+              `${width}px drawer right edge`,
+            ).toBeLessThanOrEqual(1);
+          }
           const context = `${width}px, drawer ${drawerOpen ? "open" : "closed"}, reserved space ${reservedSpace}px`;
           for (const box of [layout.timeline, layout.divider]) {
             expect(Math.abs(box.left - layout.composer.left), context).toBeLessThanOrEqual(1);
@@ -126,7 +162,82 @@ describeBrowser("worker reply", () => {
           expect(layout.scrolls, context).toBe(true);
           expect(layout.overflows, context).toBe(false);
           expect(layout.pageOverflows, context).toBe(false);
-          if (drawerOpen) await page.click('#bench-drawer button[aria-label="Close drawer"]');
+          if (drawerOpen) {
+            await page.click('#bench-drawer button[aria-label="Close drawer"]');
+            await waitForLayout();
+          }
+        }
+        if (width >= 900) {
+          await page.click('.timeline-inner .chat-thread-message[data-author="me"] button');
+          await page.waitForSelector(".workbench-subthread");
+          await waitForLayout();
+          const replyLayout = await page.evaluate(() => {
+            const bounds = (selector: string) => {
+              const element = document.querySelector(selector);
+              if (element === null) throw new Error(`Missing layout element: ${selector}`);
+              return element.getBoundingClientRect();
+            };
+            const composer = bounds(".workbench-main-composer .chat-composer-box");
+            const scroll = document.querySelector(".workbench-main-scroll");
+            if (scroll === null) throw new Error("Missing scroll pane");
+            return {
+              gap: bounds(".workbench-subthread").left - composer.right,
+              dividerGap: composer.right - bounds(".timeline-inner .chat-day").right,
+              userInset: composer.right - bounds(".timeline-inner .chat-thread-own-bubble").right,
+              reservedWidth: scroll.getBoundingClientRect().width - scroll.clientWidth,
+              timelineLeft: bounds(".timeline-inner").left - composer.left,
+              leftGutter: composer.left - bounds(".workbench-main").left,
+              width: composer.width,
+              overflows: scroll.scrollWidth > scroll.clientWidth,
+              pageOverflows: document.documentElement.scrollWidth > innerWidth,
+            };
+          });
+          const context = `${width}px, replies open, reserved space ${reservedSpace}px`;
+          expect(Math.abs(replyLayout.gap - 16), context).toBeLessThanOrEqual(1);
+          expect(Math.abs(replyLayout.timelineLeft), context).toBeLessThanOrEqual(1);
+          expect(
+            Math.abs(replyLayout.dividerGap + 16 - replyLayout.reservedWidth),
+            context,
+          ).toBeLessThanOrEqual(1);
+          expect(
+            Math.abs(replyLayout.userInset - replyLayout.reservedWidth),
+            context,
+          ).toBeLessThanOrEqual(1);
+          expect(replyLayout.leftGutter, context).toBeGreaterThanOrEqual(32);
+          expect(replyLayout.width, context).toBeLessThanOrEqual(1200);
+          expect(replyLayout.overflows, context).toBe(false);
+          expect(replyLayout.pageOverflows, context).toBe(false);
+          await page.click(".bench-pill");
+          await waitForLayout();
+          const drawerWithReplies = await page.evaluate(() => {
+            const cell = document.querySelector(".drawer-cell")?.getBoundingClientRect();
+            const card = document.querySelector(".drawer")?.getBoundingClientRect();
+            const body = document.querySelector(".drawer-body");
+            if (cell === undefined || card === undefined || body === null) {
+              throw new Error("Missing drawer");
+            }
+            return {
+              left: card.left - cell.left,
+              right: cell.right - card.right,
+              overflows: body.scrollWidth > body.clientWidth,
+            };
+          });
+          expect(Math.abs(drawerWithReplies.left - 8), context).toBeLessThanOrEqual(1);
+          expect(Math.abs(drawerWithReplies.right - 8), context).toBeLessThanOrEqual(1);
+          expect(drawerWithReplies.overflows, context).toBe(false);
+          await page.click('#bench-drawer button[aria-label="Close drawer"]');
+          await page.click(".workbench-subthread-head button");
+          await page.waitForSelector(".workbench-subthread", { hidden: true });
+          await waitForLayout();
+          const restoredCenter = await page.evaluate(() => {
+            const main = document.querySelector(".workbench-main")?.getBoundingClientRect();
+            const composer = document
+              .querySelector(".workbench-main-composer .chat-composer-box")
+              ?.getBoundingClientRect();
+            if (main === undefined || composer === undefined) throw new Error("Missing layout");
+            return composer.left - main.left - (main.right - composer.right);
+          });
+          expect(Math.abs(restoredCenter), context).toBeLessThanOrEqual(1);
         }
       }
       await page.setViewport({ width: 1400, height: 900 });
