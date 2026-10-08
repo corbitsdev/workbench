@@ -12,9 +12,10 @@ import {
   type MailboxDb,
 } from "@corbits/mailbox";
 import { captureMailboxRequest, createMailboxDeliver } from "../../apps/hub/src/mailbox-send";
+import { e2eDatabaseUrl } from "../lib/database-url";
 import { dbGate } from "../lib/db-gate";
 
-const databaseUrl = process.env["DATABASE_URL"] ?? "";
+const databaseUrl = e2eDatabaseUrl() ?? "";
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const closers: (() => Promise<void>)[] = [];

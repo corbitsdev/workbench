@@ -14,6 +14,7 @@ import { eq } from "drizzle-orm";
 import { createDB, schema, type DB } from "@intx/db";
 import { generateId } from "@intx/hub-common";
 import { resolveRunSessionId } from "@intx/hub-sessions";
+import { e2eDatabaseUrl } from "../lib/database-url";
 import { dbGate } from "../lib/db-gate";
 
 import { ensureRunSession } from "../../packages/workflows/src/launch/agent-session";
@@ -29,7 +30,7 @@ function dbConfigFromUrl(databaseUrl: string) {
   };
 }
 
-const databaseUrl = process.env["DATABASE_URL"];
+const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 describeIfDb("ensureRunSession", () => {

@@ -2,10 +2,11 @@
 // from an ancestor tenant, grants never do. Booting the hub runs package
 // migrations, so the suite skips without a reachable DATABASE_URL.
 
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { type } from "arktype";
 import { dbGate } from "../lib/db-gate";
 import { bootHub } from "../lib/hub";
+import { cleanupTenants } from "../lib/tenant-cleanup";
 
 const describeIfDb = dbGate(process.env["DATABASE_URL"] ?? "", import.meta.path);
 
@@ -15,6 +16,10 @@ const Evaluation = type({ effect: "string", matchingGrants: type({ id: "string" 
 
 describeIfDb("grants are explicit per tenant", () => {
   const booted = bootHub();
+  const seededTenantIds: string[] = [];
+  afterAll(async () => {
+    await cleanupTenants(seededTenantIds);
+  });
 
   test("a credential resolves from a child tenant; a grant does not", async () => {
     const hub = booted();
@@ -64,6 +69,7 @@ describeIfDb("grants are explicit per tenant", () => {
         slug: `ws-${suffix}`,
       }),
     );
+    seededTenantIds.push(workspace);
     const bench = await created(
       await call("/api/tenants", alice.cookie, "POST", {
         name: "Bench",
@@ -71,6 +77,7 @@ describeIfDb("grants are explicit per tenant", () => {
         parentId: workspace,
       }),
     );
+    seededTenantIds.push(bench);
 
     // Bob is a member of both tenants with no role: his only authority is
     // whatever grant is assigned to his principal in that tenant.
