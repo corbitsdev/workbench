@@ -1,7 +1,7 @@
 // A fresh user connects an inference provider served by aimock, creates a
-// bench from /new, and the worker's reply lands in the thread while the
-// bench stops showing "working". The reply names the worker, which then shows
-// everywhere; a rename in the bench drawer survives a reload.
+// bench from /new, and the bench shows "working" from the first message
+// until the worker's reply lands. The reply names the worker, which then
+// shows everywhere; a rename in the bench drawer survives a reload.
 import { expect, test } from "bun:test";
 import { bootAimock, MOCK_REPLY } from "../lib/aimock";
 import { bootBrowserApp, browserGate } from "../lib/browser";
@@ -44,6 +44,10 @@ describeBrowser("worker reply", () => {
       await page.waitForFunction(`location.pathname.startsWith("/w/")`, {
         timeout: STEP_TIMEOUT,
       });
+
+      // The opening message is still waiting on the worker to start and
+      // reply, so the thread says so.
+      await page.waitForSelector(".chat-thread-working", { timeout: STEP_TIMEOUT });
 
       await waitForText(page, MOCK_REPLY);
       await page.waitForFunction(`!document.body.innerText.toLowerCase().includes("working")`, {
