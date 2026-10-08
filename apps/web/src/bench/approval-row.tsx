@@ -11,6 +11,7 @@ import { approveApproval, rejectApproval } from "../api";
 import { IdentityAvatar } from "../chat/avatar";
 import type { PendingApproval } from "../pending-approvals";
 import { tenantKeys } from "../query-client";
+import { markApprovalAnswered } from "../worker-status";
 
 // The hub answers 409 when the ask was already resolved or the run that
 // raised it has stopped (e.g. a hub restart); either way no retry helps.
@@ -29,6 +30,7 @@ export function ApprovalRow({
     mutationFn: (action: "approve" | "deny") =>
       action === "approve" ? approveApproval(tenantId, item.id) : rejectApproval(tenantId, item.id),
     onSuccess: () => {
+      markApprovalAnswered(queryClient, tenantId, item.id);
       void queryClient.invalidateQueries({
         queryKey: tenantKeys.pendingApprovals(tenantId),
       });

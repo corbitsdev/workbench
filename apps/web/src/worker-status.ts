@@ -18,6 +18,7 @@ import { workbenchKeys } from "./chat-path";
 import { TenantApprovalsSchema, apiQueryOptions } from "./api";
 import { createFetchStockHub } from "./needs-converge";
 import { pendingApprovalsPath } from "./pending-approvals";
+import { tenantKeys } from "./query-client";
 
 export type WorkerStatus = {
   readonly tone: AvatarStatus;
@@ -35,6 +36,24 @@ export function markTurnPending(queryClient: QueryClient, benchId: string): void
   queryClient.setQueryData<PendingTurn>(workbenchKeys.pendingTurn(benchId), {
     sentAt: Date.now(),
   });
+}
+
+/** Call once an approval is answered: the run resumes and may park again on
+ * its next call. The answered row leaves the cache first, or the stale list
+ * would settle the resumed turn before its refetch lands. */
+export function markApprovalAnswered(
+  queryClient: QueryClient,
+  benchId: string,
+  approvalId: string,
+): void {
+  queryClient.setQueryData<typeof TenantApprovalsSchema.infer>(
+    tenantKeys.pendingApprovals(benchId),
+    (list) =>
+      list === undefined
+        ? list
+        : { ...list, data: list.data.filter((row) => row.id !== approvalId) },
+  );
+  markTurnPending(queryClient, benchId);
 }
 
 function turnAnswered(timeline: readonly WorkbenchMessage[] | undefined, sentAt: number): boolean {
