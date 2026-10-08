@@ -1,6 +1,7 @@
 // The human-readable line an approval is described by. Pure string work, no
 // database dependency, so the browser can compose the same headline the
 // hub-side tools do.
+import { redactExtra, redactText } from "@corbits/error-sink";
 
 function stringField(source: object, field: string): string | undefined {
   if (!(field in source)) return undefined;
@@ -71,7 +72,9 @@ export function headlineFor(toolDefinition: unknown, toolArguments: unknown): st
     typeof toolArguments === "object" && toolArguments !== null
       ? stringField(toolArguments, "title")
       : undefined;
-  return title === undefined ? headline : `${headline}: "${title}"`;
+  // The title is a generic free-form field a caller can stuff a secret into;
+  // redact it the same way write_file's content preview is.
+  return title === undefined ? headline : `${headline}: "${redactText(title)}"`;
 }
 
 /** The bare tool name off a toolDefinition snapshot, for a row that wants to
@@ -89,14 +92,25 @@ function truncate(text: string, limit = ARGUMENT_PREVIEW_LIMIT): string {
 }
 
 function formatArgumentValue(value: unknown): string {
-  if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   if (value === null || value === undefined) return "";
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
+  // Default: redact a string (or a stringified object/array) structurally when
+  // it parses as JSON, so key-named secrets (`password`, `token`, ...) and
+  // nested JSON are caught; fall back to plain redactText for non-JSON strings.
+  if (typeof value === "string") {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (parsed !== null && typeof parsed === "object") {
+        return JSON.stringify(redactExtra(parsed as Record<string, unknown>));
+      }
+    } catch {
+      // not JSON; redact as a plain string below
+    }
+    return redactText(value);
   }
+  // A live object/array argument: redact it structurally, then serialize.
+  const redacted = redactExtra(value as Record<string, unknown>);
+  return JSON.stringify(redacted);
 }
 
 // `write_file`'s call is read as its target path plus a preview of what it
@@ -106,7 +120,7 @@ function writeFileArgumentsSummary(toolArguments: object): string | undefined {
   const path = stringField(toolArguments, "path");
   if (path === undefined) return undefined;
   const content = (toolArguments as Record<string, unknown>).content;
-  const preview = typeof content === "string" ? `: "${truncate(content)}"` : "";
+  const preview = typeof content === "string" ? `: "${truncate(redactText(content))}"` : "";
   return `${path}${preview}`;
 }
 
@@ -117,7 +131,13 @@ const ARGUMENT_SUMMARY_RENDERERS: Readonly<
 };
 
 function genericArgumentsSummary(toolArguments: object): string | undefined {
-  const entries = Object.entries(toolArguments as Record<string, unknown>);
+  // Redact the whole bag structurally first: this collapses key-named secrets
+  // (`password`, `token`, `apiKey`, ...) regardless of their value's shape and
+  // recurses into nested objects/strings, which the per-value format path
+  // below then renders (already-safe values pass through unchanged).
+  const redacted = redactExtra(toolArguments as Record<string, unknown>);
+  if (redacted === undefined) return undefined;
+  const entries = Object.entries(redacted);
   if (entries.length === 0) return undefined;
   return truncate(
     entries.map(([key, value]) => `${key}: ${formatArgumentValue(value)}`).join(", "),
