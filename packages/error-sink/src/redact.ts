@@ -7,13 +7,40 @@ const SECRET_KEY_PATTERN =
 const SECRET_VALUE_PATTERNS: readonly RegExp[] = [
   /bearer\s+\S+/gi,
   /authorization\s*:\s*\S+/gi,
-  // Provider key prefixes use either a hyphen (OpenAI's `sk-...`) or an
-  // underscore (GitHub's `ghp_...`) -- both must match.
-  /\b(sk|pk|rk|ghp|gho|ghu|ghs)[-_][a-z0-9]{8,}\b/gi,
+  // Provider key prefixes come in three shapes, matched by how distinctive the
+  // separator + value run is so ordinary hyphenated words/paths are NOT eaten
+  // (e.g. `pk-manifest.yaml`, `sk-parallel-copy` must stay intact):
+  //  1. GitHub-family PATs are `_`-separated (`ghp_...`, `github_pat_11...`).
+  //     Their short prefixes are not English words, so an 8+ base64-ish value
+  //     after the `_` is enough. A hyphen (`ghp-garbage-collector`) is never a
+  //     PAT, so `[-_]` here is deliberately just `_`.
+  /\b(?:github_pat|ghp|gho|ghu|ghs)_[a-z0-9_]{8,}\b/gi,
+  //  2. Segmented OpenAI-style keys (`sk-proj-...`, `pk-live-...`) put a known
+  //     short sub-label (`live`/`proj`/`test`/...) right after the hyphen, and
+  //     only then is the hyphen meaningful for masking.
+  /\b(?:sk|pk|rk)-(?:live|proj|test|dev|prod|org|key|secret)\b[_-][a-z0-9_]{4,}\b/gi,
+  //  3. Bare OpenAI-style keys (`sk-abcdefghijklmnop`) need a hyphen-free value
+  //     run long enough that it cannot be an ordinary word (`sk-manifest` and
+  //     `pk-abcdefgh` are 8 chars and MUST NOT redact; real keys are `sk-` +
+  //     a long base64 run). `(?![-_])` stops a segment boundary from ending the
+  //     match partway through a hyphenated word.
+  /\b(?:sk|pk|rk)-[a-z0-9_]{9,}(?![-_])\b/gi,
   // A raw JWT (header.payload.signature) carries no keyword prefix at all,
   // but its base64url header always starts with the literal `eyJ` (base64
   // of `{"`), which is distinctive enough to key off heuristically.
   /\beyJ[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,}\b/g,
+  // Free-text `keyword + space + value` forms (`use password supersecret123`,
+  // `api_key ABcdEf123456`, `secret hunter2-hunter2`) — the approval `title`
+  // is free-form caller input so a bare keyword followed by a secret-shaped
+  // run slips through the assignment/`=` paths. Two guards keep ordinary prose
+  // intact: the value must run at least 8 `[a-z0-9_-]` chars (spares short
+  // words like `sauce`/`ring`/`is`), and it must contain a digit, hyphen, or
+  // underscore — the one case-insensitive-safe distinguishing signal (pure
+  // `[A-Z0-9_-]` character classes are useless under `/i`, so `recovery` / a
+  // pure-English word would otherwise be eaten). The value charset excludes
+  // spaces/punctuation so the match stops at the end of the secret rather than
+  // swallowing the rest of the sentence.
+  /\b(?:password|passwd|secret|token|access_token|api[_-]?key)\s+(?=[a-z0-9_-]{8,}\b)[a-z0-9_-]*[\d_-][a-z0-9_-]*\b/gi,
 ];
 
 // A value's character set once past `name=`: covers hex/base64/JWT-shaped
