@@ -18,6 +18,50 @@ describe("redactText", () => {
     );
   });
 
+  test("redacts a segmented provider key with uppercase/mixed-case suffix", () => {
+    expect(redactText("using pk-live-ABCDEFGH12345678 to call provider")).toBe(
+      "using [redacted] to call provider",
+    );
+  });
+
+  test("redacts an uppercase sk- provider key", () => {
+    expect(redactText("failed calling with sk-proj-ABCDEFGH12345678")).toBe(
+      "failed calling with [redacted]",
+    );
+  });
+
+  test("redacts a github_pat_ personal access token", () => {
+    expect(redactText("auth failed github_pat_11abcdefghijklmnopGl000token")).toBe(
+      "auth failed [redacted]",
+    );
+  });
+
+  test("redacts a segmented rk- provider key", () => {
+    expect(redactText("auth failed sending via rk-proj-ABCDEFGH12345678").toLowerCase()).toContain(
+      "[redacted]",
+    );
+  });
+
+  test("does not redact benign hyphenated words and paths under a key-like prefix", () => {
+    // Over-redaction regression: the provider-key detector must not eat
+    // ordinary hyphenated words/paths that merely start with a key prefix.
+    expect(redactText("the build wrote pk-manifest.yaml to disk")).toBe(
+      "the build wrote pk-manifest.yaml to disk",
+    );
+    expect(redactText("ran the sk-parallel-copy job")).toBe("ran the sk-parallel-copy job");
+    expect(redactText("used pk-currency-converter to price it")).toBe(
+      "used pk-currency-converter to price it",
+    );
+    expect(redactText("stalled on rk-pipeline-run-abcd")).toBe("stalled on rk-pipeline-run-abcd");
+    expect(redactText("nudged the pk-abcdefgh record")).toBe("nudged the pk-abcdefgh record");
+  });
+
+  test("does not redact a hyphenated GitHub-prefixed word (never a PAT)", () => {
+    expect(redactText("turned on ghp-garbage-collector nightly")).toBe(
+      "turned on ghp-garbage-collector nightly",
+    );
+  });
+
   test("leaves ordinary text untouched", () => {
     expect(redactText("could not reach the hub")).toBe("could not reach the hub");
   });
@@ -69,6 +113,25 @@ describe("redactText", () => {
     expect(redactText("auth failed token=abc123).authenticate() at line 4")).toBe(
       "auth failed token=[redacted]).authenticate() at line 4",
     );
+  });
+
+  test("redacts free-text keyword+space secret-shaped values", () => {
+    // These forms slip past the assignment/`=` paths; a bare keyword followed
+    // by a long, non-pure-English run is a leaked secret (e.g. an approval
+    // title like "use password supersecret123 here").
+    expect(redactText("use password supersecret123 here")).toBe("use [redacted] here");
+    expect(redactText("use api_key ABcdEf123456 here")).toBe("use [redacted] here");
+    expect(redactText("use secret hunter2-hunter2 here")).toBe("use [redacted] here");
+    expect(redactText("use token xyzQWErtyuiop9 here")).toBe("use [redacted] here");
+    expect(redactText("use access_token Abcdefgh12345678 now")).toBe("use [redacted] now");
+  });
+
+  test("does not redact free-text keyword+space ordinary prose", () => {
+    // The value here is a short word or a pure-English word -- not a secret.
+    expect(redactText("use secret sauce")).toBe("use secret sauce");
+    expect(redactText("the token is here")).toBe("the token is here");
+    expect(redactText("password recovery options")).toBe("password recovery options");
+    expect(redactText("token ring protocol")).toBe("token ring protocol");
   });
 });
 
