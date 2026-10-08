@@ -10,7 +10,6 @@
 // handful of suites that do spawn the hub/sidecar keep one import.
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { assertDatabaseConfigured } from "./db-gate.ts";
 
 export const REPO_ROOT = path.resolve(import.meta.dir, "..", "..");
 
@@ -27,13 +26,20 @@ export const REPO_ROOT = path.resolve(import.meta.dir, "..", "..");
  * even when the shell sourced `.env`. Fall back to the same repo-root
  * `.env` file `bun run` would load.
  */
+
+/**
+ * The resolved DATABASE_URL redirected to the `_e2e` sibling, or undefined
+ * when no DATABASE_URL is configured. This is the one place a DB-gated suite
+ * learns the database it actually runs against — never the developer's own
+ * `DATABASE_URL`, always its `_e2e` sibling. Skip/hard-fail semantics live in
+ * `dbGate`; this resolver only answers "what DB would this suite own?".
+ */
 export function e2eDatabaseUrl(): string | undefined {
   const fromProcess = process.env["DATABASE_URL"];
   const url =
     fromProcess !== undefined && fromProcess !== "" ? fromProcess : databaseUrlFromRepoEnvFile();
-  if (url !== undefined && url !== "") return baseUrlToE2eUrl(url);
-  assertDatabaseConfigured(undefined, "walking-skeleton suite");
-  return undefined;
+  if (url === undefined || url === "") return undefined;
+  return baseUrlToE2eUrl(url);
 }
 
 /**
@@ -91,6 +97,9 @@ export function baseUrlToE2eUrl(databaseUrl: string): string {
         "Expected e.g. postgres://localhost:5432/workbench.",
     );
   }
+  // Idempotent: if the url already targets a `_e2e` sibling (a prior
+  // redirect), leave it alone rather than stacking `_e2e_e2e`.
+  if (database.endsWith("_e2e")) return url.toString();
   url.pathname = `/${database}_e2e`;
   return url.toString();
 }
