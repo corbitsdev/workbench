@@ -1,4 +1,12 @@
 .chat-thread-working {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 4px 0 4px 42px;
   font-size: 13px;
+}
+
+/* The mountain carries more visual weight below its SVG center. */
+.chat-thread-working-mark {
+  transform: translateY(-8%);
 }
