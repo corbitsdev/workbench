@@ -2,7 +2,7 @@
 // wrap) and sidebar rows go full-width with their radius intact.
 import { expect, test } from "bun:test";
 import { bootBrowserApp, browserGate } from "../lib/browser";
-import { clickText, STEP_TIMEOUT, waitForText } from "../lib/first-run";
+import { clickText, STEP_TIMEOUT, startWorkbench, waitForText } from "../lib/first-run";
 
 const describeBrowser = browserGate(import.meta.path);
 
@@ -69,9 +69,7 @@ describeBrowser("composer layout", () => {
 
       // Create the bench; its sidebar row is populated and active.
       await page.goto(`${app().origin}/new`, { waitUntil: "networkidle0" });
-      await page.waitForSelector(".chat-composer-input", { timeout: STEP_TIMEOUT });
-      await page.type(".chat-composer-input", "Summarize what shipped this week");
-      await page.click("button[aria-label='Start this workbench']");
+      await startWorkbench(page, "Summarize what shipped this week");
       await page.waitForFunction(`location.pathname.startsWith("/w/")`, {
         timeout: STEP_TIMEOUT,
       });

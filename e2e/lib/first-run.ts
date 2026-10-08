@@ -19,6 +19,30 @@ export async function clickText(page: Page, selector: string, label: string): Pr
   await page.evaluate(`(${script}).click()`);
 }
 
+/**
+ * Types `message` into the /new composer and starts the workbench. The
+ * composer and its send button stay disabled until workspace roles have
+ * loaded (CL-9780), so typing or clicking earlier is silently lost.
+ */
+export async function startWorkbench(page: Page, message: string): Promise<void> {
+  await page.waitForFunction(
+    `(() => {
+      const input = document.querySelector("textarea");
+      return input instanceof HTMLTextAreaElement && !input.disabled;
+    })()`,
+    { timeout: STEP_TIMEOUT },
+  );
+  await page.type("textarea", message);
+  await page.waitForFunction(
+    `(() => {
+      const send = document.querySelector("button[aria-label='Start this workbench']");
+      return send instanceof HTMLButtonElement && !send.disabled;
+    })()`,
+    { timeout: STEP_TIMEOUT },
+  );
+  await page.click("button[aria-label='Start this workbench']");
+}
+
 export async function runFirstRunFlow(page: Page, origin: string): Promise<void> {
   await page.goto(origin, { waitUntil: "networkidle0" });
 
@@ -38,23 +62,7 @@ export async function runFirstRunFlow(page: Page, origin: string): Promise<void>
 
   // Connecting hands off to the new-workbench prompt (a workspace with no
   // workbenches); the first bench's worker is the first worker.
-  // The composer stays disabled until workspace roles have loaded (CL-9780).
-  await page.waitForFunction(
-    `(() => {
-      const input = document.querySelector("textarea");
-      return input instanceof HTMLTextAreaElement && !input.disabled;
-    })()`,
-    { timeout: STEP_TIMEOUT },
-  );
-  await page.type("textarea", FIRST_WORKBENCH);
-  await page.waitForFunction(
-    `(() => {
-      const send = document.querySelector("button[aria-label='Start this workbench']");
-      return send instanceof HTMLButtonElement && !send.disabled;
-    })()`,
-    { timeout: STEP_TIMEOUT },
-  );
-  await page.click("button[aria-label='Start this workbench']");
+  await startWorkbench(page, FIRST_WORKBENCH);
 
   // Creating the workbench navigates to its own page, which shows the prompt.
   await page.waitForFunction(`location.pathname.startsWith("/w/")`, { timeout: STEP_TIMEOUT });

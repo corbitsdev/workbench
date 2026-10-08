@@ -4,7 +4,7 @@
 import { expect, test } from "bun:test";
 import { bootAimock, MOCK_REPLY, type Fixture } from "../lib/aimock";
 import { bootBrowserApp, browserGate } from "../lib/browser";
-import { clickText, STEP_TIMEOUT, waitForText } from "../lib/first-run";
+import { clickText, STEP_TIMEOUT, startWorkbench, waitForText } from "../lib/first-run";
 
 const describeBrowser = browserGate(import.meta.path);
 
@@ -98,9 +98,7 @@ describeBrowser("0-to-1 gate", () => {
       await fields[1]?.type("mock-model");
       await clickText(page, "button", "Connect");
 
-      await page.waitForSelector("textarea", { timeout: STEP_TIMEOUT });
-      await page.type("textarea", "Say hello");
-      await page.click("button[aria-label='Start this workbench']");
+      await startWorkbench(page, "Say hello");
       await page.waitForFunction(`location.pathname.startsWith("/w/")`, { timeout: STEP_TIMEOUT });
       await waitForText(page, MOCK_REPLY);
 

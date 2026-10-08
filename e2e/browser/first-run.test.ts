@@ -7,7 +7,7 @@
 import { expect, test } from "bun:test";
 import type { Page } from "puppeteer-core";
 import { bootBrowserApp, browserGate } from "../lib/browser";
-import { clickText, STEP_TIMEOUT, waitForText } from "../lib/first-run";
+import { clickText, STEP_TIMEOUT, startWorkbench, waitForText } from "../lib/first-run";
 
 const describeBrowser = browserGate(import.meta.path);
 const MESSAGES = [
@@ -40,9 +40,7 @@ async function signUp(page: Page, origin: string): Promise<void> {
 }
 
 async function createBench(page: Page, message: string): Promise<string> {
-  await page.waitForSelector("textarea", { timeout: STEP_TIMEOUT });
-  await page.type("textarea", message);
-  await page.click("button[aria-label='Start this workbench']");
+  await startWorkbench(page, message);
   await page.waitForFunction(`location.pathname.startsWith("/w/")`, { timeout: STEP_TIMEOUT });
   await waitForText(page, message);
   return new URL(page.url()).pathname.slice("/w/".length);

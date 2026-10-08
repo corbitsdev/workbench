@@ -5,6 +5,7 @@
 import { expect, test } from "bun:test";
 import type { Page } from "puppeteer-core";
 import { bootBrowserApp, browserGate } from "../lib/browser";
+import { startWorkbench } from "../lib/first-run";
 
 const describeBrowser = browserGate(import.meta.path);
 const STEP_TIMEOUT = 60_000;
@@ -92,8 +93,7 @@ describeBrowser("client setup", () => {
     expect(JSON.stringify(mine[0]?.["roles"])).toContain("owner");
 
     // The first bench carries the first worker.
-    await page.type("textarea", "Summarize what shipped this week");
-    await page.click("button[aria-label='Start this workbench']");
+    await startWorkbench(page, "Summarize what shipped this week");
     await page.waitForFunction(`location.pathname.startsWith("/w/")`, { timeout: STEP_TIMEOUT });
     const benchId = new URL(page.url()).pathname.slice("/w/".length);
 
