@@ -2,39 +2,10 @@
 // Succeeds when no package defines it, so root gates stay green while the
 // workspace is still empty.
 import { Glob } from "bun";
-import { availableParallelism } from "node:os";
 
-import { CONCURRENCY_ENV } from "./concurrency.ts";
+import { resolveConcurrency } from "./concurrency.ts";
 
 type Job = { readonly name: string; readonly dir: string };
-
-// `script` used to gate the test phase to concurrency 1 (see git history
-// for `scripts/sequential-scripts.ts`, removed once each test suite's own
-// isolation — a per-run HUB_DATA_DIR, a per-run scratch database, no
-// fixed ports — made fanning tests out across packages safe). Kept as a
-// parameter so a future script-specific override has somewhere to hang
-// without changing every call site again.
-export function resolveConcurrency(
-  script: string,
-  env: NodeJS.ProcessEnv = process.env,
-  cores: number = availableParallelism(),
-): number {
-  void script;
-  const raw = env[CONCURRENCY_ENV];
-  if (raw === undefined || raw === "") {
-    // Locally each job saturates about one core, so leave a couple free for
-    // the editor and type server a developer runs alongside the gate. CI
-    // runners have no editor — use every core so package fan-out is not
-    // artificially capped.
-    if (env["GITHUB_ACTIONS"] === "true") return Math.max(1, cores);
-    return Math.max(1, cores - 2);
-  }
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new Error(`${CONCURRENCY_ENV} must be a positive integer, got "${raw}"`);
-  }
-  return parsed;
-}
 
 // Bun's Glob silently matches nothing when a brace alternative contains a
 // slash (e.g. "{apps,vendor/intx}/*/package.json"), so each workspace root
@@ -117,7 +88,7 @@ if (import.meta.main) {
 
   let concurrency: number;
   try {
-    concurrency = resolveConcurrency(script);
+    concurrency = resolveConcurrency();
   } catch (cause) {
     console.error(cause instanceof Error ? cause.message : String(cause));
     process.exit(1);
