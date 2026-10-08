@@ -228,9 +228,10 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
   });
 
   // Invalidates rather than patches: the stream carries no thread
-  // identity. Also invalidates approvals, since a parked ask sends no
-  // mail but still ticks the stream. An agent reply may have saved an
-  // artifact too, so the panel and library counts stay in sync.
+  // identity. Also invalidates approvals, since new mail can follow a
+  // resolved ask; a parked ask itself ticks nothing (see worker-status.ts).
+  // An agent reply may have saved an artifact too, so the panel and library
+  // counts stay in sync.
   useEffect(
     () =>
       subscribeToInbox(workbenchTenantId, () => {

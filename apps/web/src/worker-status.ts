@@ -63,17 +63,20 @@ export function useBenchWorkerStatus(
       enabled: bench.domain !== "",
     })),
   });
-  const approvals = useQueries({
-    queries: benches.map((bench) => ({
-      ...apiQueryOptions(pendingApprovalsPath(bench.id), TenantApprovalsSchema),
-    })),
-  });
   const pending = useQueries({
     queries: benches.map((bench) => ({
       queryKey: workbenchKeys.pendingTurn(bench.id),
       queryFn: (): PendingTurn | null => null,
       enabled: false,
       gcTime: Infinity,
+    })),
+  });
+  // A parked ask sends no mail and ticks no stream, so a pending turn polls
+  // for it; every approvals surface shares this query and refreshes with it.
+  const approvals = useQueries({
+    queries: benches.map((bench, index) => ({
+      ...apiQueryOptions(pendingApprovalsPath(bench.id), TenantApprovalsSchema),
+      refetchInterval: pending[index]?.data != null ? PENDING_POLL_MS : false,
     })),
   });
   const timelines = useQueries({
