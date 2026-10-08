@@ -22,6 +22,7 @@ import { WorkbenchSchedulesPanel } from "../pages/workbench-schedules-panel";
 import { usePendingApprovals } from "../pending-approvals";
 import { benchLink } from "../shell/page-crumbs";
 import type { WorkerStatus } from "../worker-status";
+import { ApprovalRow } from "./approval-row";
 import { DrawerTabContext } from "./bench-drawer";
 import "./description.css";
 import { DESCRIPTION_MAX, useBenchDescription } from "./description";
@@ -257,21 +258,7 @@ export function InformationTab({
         {pendingApprovals !== null && pendingApprovals.length > 0 ? (
           <div className="drawer-list">
             {pendingApprovals.map((item) => (
-              <div key={item.id} className="drawer-li">
-                <IdentityAvatar
-                  kind="agent"
-                  name={item.agentName}
-                  principalId={item.agentAddress}
-                />
-                <span className="drawer-li-t">
-                  <b>{item.headline}</b>
-                  <span>
-                    {item.agentName}
-                    {item.toolName === undefined ? "" : ` · ${item.toolName}`}
-                  </span>
-                </span>
-                <span className="drawer-pill">Waiting</span>
-              </div>
+              <ApprovalRow key={item.id} item={item} tenantId={workbenchTenantId} />
             ))}
           </div>
         ) : null}
