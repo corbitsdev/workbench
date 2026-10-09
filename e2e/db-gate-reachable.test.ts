@@ -1,15 +1,15 @@
 // DB-gated reachability probe for the derived `_e2e` sibling database. Every
 // DB-gated suite redirects to `<DATABASE_URL's database>_e2e` (via
 // e2eDatabaseUrl / dbGate) and owns that sibling outright — but nothing in a
-// fresh CI e2e job provisions it except scripts/docker-e2e-init.sh and
-// scripts/db-setup.ts (see those). This suite is the "gate boot test": when
-// DATABASE_URL's base database is up but the `_e2e` sibling is missing, the
-// failure must carry a provisioning hint — not a raw `3D000` connect error —
-// so a miswired pipeline points at the exact fix instead of a terse Postgres
-// code. Beyond plain connectivity it also asserts the sibling's schema is
-// migrated (the platform `tenant` table exists), so a direct-DB suite like the
-// mailbox ones (which insert `tenant`/`principal` with no hub boot) is not
-// order-dependent on some hub-booting suite migrating first.
+// fresh CI e2e job provisions it except scripts/db-setup.ts (see it). This
+// suite is the "gate boot test": when DATABASE_URL's base database is up but
+// the `_e2e` sibling is missing, the failure must carry a provisioning hint —
+// not a raw `3D000` connect error — so a miswired pipeline points at the exact
+// fix instead of a terse Postgres code. Beyond plain connectivity it also
+// asserts the sibling's schema is migrated (the platform `tenant` table
+// exists), so a direct-DB suite like the mailbox ones (which insert
+// `tenant`/`principal` with no hub boot) is not order-dependent on some
+// hub-booting suite migrating first.
 import { expect, test } from "bun:test";
 import { sql } from "drizzle-orm";
 
@@ -24,9 +24,8 @@ function provisionHint(database: string): string {
   return (
     `The e2e sibling database ${JSON.stringify(database)} (the _e2e of your ` +
     `DATABASE_URL) is not provisioned. Provision it with \`bun scripts/db-setup.ts\` ` +
-    `(which creates AND migrates the sibling alongside the base database) or, for ` +
-    `the docker compose/CI postgres, by mounting scripts/docker-e2e-init.sh as an ` +
-    `initdb.d script (${TEST_COMPOSE_UP}). ${MISSING_DATABASE_HINT}`
+    `(which creates AND migrates the sibling alongside the base database) ` +
+    `(${TEST_COMPOSE_UP}). ${MISSING_DATABASE_HINT}`
   );
 }
 
