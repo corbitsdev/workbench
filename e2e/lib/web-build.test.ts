@@ -62,6 +62,29 @@ test("a new commit invalidates the marker", () => {
   expect(isWebBuildFresh(web, repo)).toBe(false);
 });
 
+test("an env flip invalidates the marker under an unchanged tree", () => {
+  const { repo, web } = initRepo();
+  const config = { baseUrl: "http://localhost:3000" };
+  writeWebBuildMarker(web, repo, config);
+  expect(isWebBuildFresh(web, repo, [], config)).toBe(true);
+  // Same tree, different effective build config (e.g. BASE_URL the vite
+  // build reads): the dist would differ, so it must read as stale even
+  // though HEAD and status are identical.
+  const flipped = { baseUrl: "http://localhost:4000" };
+  expect(isWebBuildFresh(web, repo, [], flipped)).toBe(false);
+  writeWebBuildMarker(web, repo, flipped);
+  expect(isWebBuildFresh(web, repo, [], flipped)).toBe(true);
+  // Back to the original config: stale again, not mistaken for fresh.
+  expect(isWebBuildFresh(web, repo, [], config)).toBe(false);
+});
+
+test("a non-serializable build config is rejected loudly", () => {
+  const { repo } = initRepo();
+  const circular: Record<string, unknown> = {};
+  circular["self"] = circular;
+  expect(() => webBuildFingerprint(repo, [], circular)).toThrow(/JSON-serializable/);
+});
+
 test("a missing build artifact means rebuild even with a matching marker", () => {
   const { repo, web } = initRepo();
   mkdirSync(path.join(repo, "pkg"), { recursive: true });
