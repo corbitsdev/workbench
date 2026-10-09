@@ -4,7 +4,7 @@
 // report's own `title`/`name`.
 import { describe, expect, test } from "bun:test";
 
-import { probeMcpServer } from "./mcp-servers";
+import { McpServerError, probeMcpServer } from "./mcp-servers";
 import { suggestMcpServerName } from "./mcp-server-name";
 
 const TOOL = {
@@ -54,5 +54,39 @@ describe("probeMcpServer", () => {
       name: "Acme",
       source: "url",
     });
+  });
+
+  test("marks a server that refused discovery as needing a bearer token", async () => {
+    const fetchImpl = async (): Promise<Response> =>
+      new Response(
+        JSON.stringify({
+          error:
+            "the MCP server at http://mcp.acme.test could not be discovered: the server refused the request",
+        }),
+        { status: 422 },
+      );
+    const error = await probeMcpServer(
+      { tenantId: "tnt_workspace", url: "https://mcp.acme.test/mcp" },
+      Object.assign(fetchImpl, { preconnect: () => {} }) as typeof fetch,
+    ).catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(McpServerError);
+    expect((error as McpServerError).needsBearer).toBe(true);
+  });
+
+  test("leaves an unreachable server unmarked as needing a bearer token", async () => {
+    const fetchImpl = async (): Promise<Response> =>
+      new Response(
+        JSON.stringify({
+          error:
+            "the MCP server at http://mcp.acme.test could not be discovered: the handshake failed",
+        }),
+        { status: 422 },
+      );
+    const error = await probeMcpServer(
+      { tenantId: "tnt_workspace", url: "https://mcp.acme.test/mcp" },
+      Object.assign(fetchImpl, { preconnect: () => {} }) as typeof fetch,
+    ).catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(McpServerError);
+    expect((error as McpServerError).needsBearer).toBe(false);
   });
 });

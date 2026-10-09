@@ -14,7 +14,7 @@ const describeBrowser = browserGate(import.meta.path);
 
 const NAME_INPUT = "input[aria-label='Server name']";
 const URL_INPUT = "input[aria-label='Server URL']";
-const HINT = ".tool-add-actions .tool-tile-hint";
+const HINT = ".tool-name-actions .tool-tile-hint";
 
 function startFakeKeylessMcpServer() {
   const json = (body: unknown, status = 200) =>
@@ -123,7 +123,7 @@ describeBrowser("mcp server name prefill", () => {
       expect(await hintText()).toContain("Suggested from the URL");
 
       // "Look up name" swaps in the server's self-reported serverInfo.
-      await clickText(page, ".tool-add-actions button", "Look up name");
+      await clickText(page, ".tool-name-actions button", "Look up name");
       await page.waitForFunction(
         `document.querySelector(${JSON.stringify(NAME_INPUT)}).value === "acme"`,
         { timeout: STEP_TIMEOUT },
@@ -136,6 +136,15 @@ describeBrowser("mcp server name prefill", () => {
       await Bun.sleep(500);
       expect(await nameValue()).toBe("Custom Acme");
       expect(await hintText()).toBe("Custom name.");
+
+      // Regression: typing then "Look up name" must keep the typed value, not
+      // flip back to the server-suggested name.
+      await clickText(page, ".tool-name-actions button", "Look up name");
+      await page.waitForFunction(
+        `document.querySelector(${JSON.stringify(NAME_INPUT)}).value === "Custom Acme"`,
+        { timeout: STEP_TIMEOUT },
+      );
+      expect(await nameValue()).toBe("Custom Acme");
 
       // Clearing falls back to the suggestion for the save.
       await clearName();
@@ -166,7 +175,7 @@ describeBrowser("mcp server name prefill", () => {
         `document.querySelector(${JSON.stringify(NAME_INPUT)}).value === "127.0.0.1"`,
         { timeout: STEP_TIMEOUT },
       );
-      await clickText(page, ".tool-add-actions button", "Look up name");
+      await clickText(page, ".tool-name-actions button", "Look up name");
       await page.waitForFunction(
         `document.querySelector(${JSON.stringify(NAME_INPUT)}).value === "acme 2"`,
         { timeout: STEP_TIMEOUT },

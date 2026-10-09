@@ -94,6 +94,13 @@ describe("suggestMcpServerName", () => {
     });
   });
 
+  test("reads an internationalized host back as its real name, not mojibake", () => {
+    expect(suggestMcpServerName({ url: "http://münchen.example.com/mcp" })).toEqual({
+      name: "München",
+      source: "url",
+    });
+  });
+
   test("falls back when the URL is empty or invalid", () => {
     expect(suggestMcpServerName({ url: "" })).toEqual({ name: "MCP server", source: "fallback" });
     expect(suggestMcpServerName({ url: "   " })).toEqual({
@@ -141,6 +148,15 @@ describe("handleFromUrl", () => {
     expect(handleFromUrl("  https://mcp.linear.app/mcp  ")).toBe("linear");
     expect(handleFromUrl("")).toBeNull();
     expect(handleFromUrl("not a url")).toBeNull();
+  });
+
+  test("gives an IPv6 loopback a meaningful handle instead of a degenerate one", () => {
+    expect(handleFromUrl("http://[::1]:3000/mcp")).toBe("localhost");
+    expect(handleFromUrl("http://[::1]:3000/mcp")).not.toBe("1");
+  });
+
+  test("keeps an internationalized handle slug ascii-safe", () => {
+    expect(handleFromUrl("http://münchen.example.com/mcp")).toBe("xn-mnchen-3ya");
   });
 });
 
