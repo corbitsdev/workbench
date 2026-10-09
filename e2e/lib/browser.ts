@@ -10,6 +10,7 @@ import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { dbGate } from "./db-gate";
 import { bootHub, type BootedHub } from "./hub";
 import { REPO_ROOT } from "./database-url";
+import { isWebBuildFresh, writeWebBuildMarker } from "./web-build";
 
 const DEFAULT_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const WEB_DIR = path.join(REPO_ROOT, "apps", "web");
@@ -44,14 +45,27 @@ export type BrowserApp = {
   newPage: () => Promise<{ page: Page; errors: string[] }>;
 };
 
-// Always rebuild: a leftover dist from an older checkout serves stale UI.
+// The web build also emits the worker bundle (see apps/web/vite.config.ts),
+// which non-browser suites consume without ever building the web bundle.
+const REQUIRED_ARTIFACTS = [
+  "packages/worker/bundle/workflow-bundle.js",
+  "packages/worker/bundle/directors-bundle.js",
+  "packages/worker/bundle/tool-names.json",
+];
+
+// One build per process: files in one `bun test e2e` run serially, so the
+// first browser suite builds and the rest reuse its dist while the tree is
+// unchanged. A stale dist still rebuilds — the marker only matches the tree
+// that produced it.
 async function ensureWebBuild(): Promise<void> {
+  if (isWebBuildFresh(WEB_DIR, REPO_ROOT, REQUIRED_ARTIFACTS)) return;
   const proc = Bun.spawn(["bun", "run", "build"], {
     cwd: WEB_DIR,
     stdout: "inherit",
     stderr: "inherit",
   });
   if ((await proc.exited) !== 0) throw new Error("apps/web build failed");
+  writeWebBuildMarker(WEB_DIR, REPO_ROOT);
 }
 
 /** Registers beforeAll/afterAll that boot and tear down hub + web + Chrome. */
@@ -100,7 +114,12 @@ export function bootBrowserApp(): () => BrowserApp {
     app = {
       origin,
       newPage: async () => {
-        const page = await launched.newPage();
+        // A fresh incognito context per page: tests sharing one boot must
+        // not share sessions — a second signup would land on an already
+        // signed-in shell instead of the signed-out screen. Contexts die
+        // with the browser in afterAll.
+        const context = await launched.createBrowserContext();
+        const page = await context.newPage();
         const errors: string[] = [];
         page.on("console", (msg) => {
           if (msg.type() === "error") errors.push(msg.text());
