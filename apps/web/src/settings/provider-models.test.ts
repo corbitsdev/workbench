@@ -6,6 +6,8 @@ import { PROVIDER_MODELS } from "./provider-models";
 // the same cli-chat-proxy.grok.com the xai provider option mints offerings
 // against): the default first, then the rest of the listed catalog.
 const GROK_CLI_1_0_46_CATALOG = [
+  { id: "grok-4.7", label: "Grok 4.7" },
+  { id: "grok-4.7-build-fast", label: "Grok 4.7 Build Fast" },
   { id: "grok-4.6", label: "Grok 4.6" },
   { id: "grok-4.5", label: "Grok 4.5" },
 ] as const;
