@@ -18,6 +18,7 @@ import { workbenchKeys } from "./chat-path";
 import { TenantApprovalsSchema, apiQueryOptions } from "./api";
 import { createFetchStockHub } from "./needs-converge";
 import { pendingApprovalsPath } from "./pending-approvals";
+import { tenantKeys } from "./query-client";
 
 export type WorkerStatus = {
   readonly tone: AvatarStatus;
@@ -35,6 +36,24 @@ export function markTurnPending(queryClient: QueryClient, benchId: string): void
   queryClient.setQueryData<PendingTurn>(workbenchKeys.pendingTurn(benchId), {
     sentAt: Date.now(),
   });
+}
+
+/** Call once an approval is answered: the run resumes and may park again on
+ * its next call. The answered row leaves the cache first, or the stale list
+ * would settle the resumed turn before its refetch lands. */
+export function markApprovalAnswered(
+  queryClient: QueryClient,
+  benchId: string,
+  approvalId: string,
+): void {
+  queryClient.setQueryData<typeof TenantApprovalsSchema.infer>(
+    tenantKeys.pendingApprovals(benchId),
+    (list) =>
+      list === undefined
+        ? list
+        : { ...list, data: list.data.filter((row) => row.id !== approvalId) },
+  );
+  markTurnPending(queryClient, benchId);
 }
 
 function turnAnswered(timeline: readonly WorkbenchMessage[] | undefined, sentAt: number): boolean {
@@ -63,17 +82,20 @@ export function useBenchWorkerStatus(
       enabled: bench.domain !== "",
     })),
   });
-  const approvals = useQueries({
-    queries: benches.map((bench) => ({
-      ...apiQueryOptions(pendingApprovalsPath(bench.id), TenantApprovalsSchema),
-    })),
-  });
   const pending = useQueries({
     queries: benches.map((bench) => ({
       queryKey: workbenchKeys.pendingTurn(bench.id),
       queryFn: (): PendingTurn | null => null,
       enabled: false,
       gcTime: Infinity,
+    })),
+  });
+  // A parked ask sends no mail and ticks no stream, so a pending turn polls
+  // for it; every approvals surface shares this query and refreshes with it.
+  const approvals = useQueries({
+    queries: benches.map((bench, index) => ({
+      ...apiQueryOptions(pendingApprovalsPath(bench.id), TenantApprovalsSchema),
+      refetchInterval: pending[index]?.data != null ? PENDING_POLL_MS : false,
     })),
   });
   const timelines = useQueries({

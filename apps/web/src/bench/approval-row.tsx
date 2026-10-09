@@ -1,14 +1,22 @@
-// One pending approval with its approve/deny buttons. Shared by the
-// workbench workbench's info column and the chat transcript, so a person can
-// answer an agent's ask wherever they are looking when it lands.
+// One pending approval in the bench drawer's "Needs you" section: who is
+// asking, the exact call it is gating, and the approve/deny buttons that
+// unpark the run.
 
 import { Button, formatRelativeTime } from "@corbits/react-ui";
 import { toast } from "@corbits/react-ui/ui/toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
+import { ApiQueryError } from "@/lib/api-query";
 import { approveApproval, rejectApproval } from "../api";
+import { IdentityAvatar } from "../chat/avatar";
 import type { PendingApproval } from "../pending-approvals";
 import { tenantKeys } from "../query-client";
+import { markApprovalAnswered } from "../worker-status";
+
+// The hub answers 409 when the ask was already resolved or the run that
+// raised it has stopped (e.g. a hub restart); either way no retry helps.
+const STALE_APPROVAL =
+  "This request can't be answered anymore: it was already resolved or its worker stopped.";
 
 export function ApprovalRow({
   item,
@@ -22,11 +30,16 @@ export function ApprovalRow({
     mutationFn: (action: "approve" | "deny") =>
       action === "approve" ? approveApproval(tenantId, item.id) : rejectApproval(tenantId, item.id),
     onSuccess: () => {
+      markApprovalAnswered(queryClient, tenantId, item.id);
       void queryClient.invalidateQueries({
         queryKey: tenantKeys.pendingApprovals(tenantId),
       });
     },
     onError: (cause, action) => {
+      if (cause instanceof ApiQueryError && cause.status === 409) {
+        toast(STALE_APPROVAL);
+        return;
+      }
       toast(
         cause instanceof Error
           ? cause.message
@@ -37,25 +50,23 @@ export function ApprovalRow({
   const pending = resolveMutation.isPending ? resolveMutation.variables : null;
 
   return (
-    <li className="workbench-info-approval-row">
-      <div>
-        <span className="workbench-info-cell-primary">{item.headline}</span>
-        <br />
-        {item.toolName !== undefined && (
-          <>
-            {/* Arguments are untrusted agent output: rendered as plain text
-             * nodes only, never as markup. */}
-            <span className="workbench-info-cell-context">
-              {item.toolName}
-              {item.argumentsSummary !== undefined ? `: ${item.argumentsSummary}` : ""}
-            </span>
-            <br />
-          </>
-        )}
-        <span className="workbench-info-cell-context">
-          {item.agentName} · {formatRelativeTime(item.createdAt)}
+    <div className="drawer-approval">
+      <div className="drawer-li">
+        <IdentityAvatar kind="agent" name={item.agentName} principalId={item.agentAddress} />
+        <span className="drawer-li-t">
+          <b>{item.headline}</b>
+          <span>
+            {item.agentName}
+            {item.toolName === undefined ? "" : ` · ${item.toolName}`} ·{" "}
+            {formatRelativeTime(item.createdAt)}
+          </span>
         </span>
       </div>
+      {/* Arguments are untrusted agent output: rendered as a plain text node
+       * only, never as markup. */}
+      {item.argumentsSummary !== undefined ? (
+        <code className="drawer-approval-call">{item.argumentsSummary}</code>
+      ) : null}
       <div className="workbench-info-row-actions">
         <Button
           variant="ghost"
@@ -75,6 +86,6 @@ export function ApprovalRow({
           {pending === "approve" ? "Approving…" : "Approve"}
         </Button>
       </div>
-    </li>
+    </div>
   );
 }

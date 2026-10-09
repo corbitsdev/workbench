@@ -1733,7 +1733,6 @@ tr.insights-row-clickable:hover {
   justify-content: flex-end;
   gap: 0.4rem;
 }
-.workbench-info-approval-list,
 .workbench-info-schedule-list {
   display: flex;
   flex-direction: column;
@@ -1746,11 +1745,6 @@ tr.insights-row-clickable:hover {
 .workbench-info-schedule-list > li[data-stopped="true"] .workbench-info-cell-primary {
   color: var(--muted-foreground);
   text-decoration: line-through;
-}
-.workbench-info-approval-row {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
 }
 
 /* A message's attachments: a package gets a Deploy card, anything else a

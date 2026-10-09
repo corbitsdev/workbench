@@ -55,6 +55,7 @@ import { PROVIDER_SETTINGS_PATH, ProviderSkipBanner } from "../provider-skip-ban
 import { useNavigate } from "../navigation";
 import { isClassifiedInferenceFailureText } from "@/chat/inference-failure";
 import { AgentRedeployer } from "../agent-redeployer";
+import { ThreadApprovals } from "../bench/thread-approvals";
 import { useRestartAgent } from "../use-restart-agent";
 import { workbenchIdFromPath } from "../workbench-path";
 
@@ -228,9 +229,10 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
   });
 
   // Invalidates rather than patches: the stream carries no thread
-  // identity. Also invalidates approvals, since a parked ask sends no
-  // mail but still ticks the stream. An agent reply may have saved an
-  // artifact too, so the panel and library counts stay in sync.
+  // identity. Also invalidates approvals, since new mail can follow a
+  // resolved ask; a parked ask itself ticks nothing (see worker-status.ts).
+  // An agent reply may have saved an artifact too, so the panel and library
+  // counts stay in sync.
   useEffect(
     () =>
       subscribeToInbox(workbenchTenantId, () => {
@@ -270,9 +272,9 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
   const workerStatus = useWorkerStatus(workbenchTenantId, agents[0]?.id);
   const restart = useRestartAgent();
   // Only a live agent can be addressed, so only one can be mentioned.
-  const mentionables = agents
-    .filter((agent) => agent.address.includes("@"))
-    .map((agent) => ({ id: agent.id, name: agent.name }));
+  const liveAgents = agents.filter((agent) => agent.address.includes("@"));
+  const liveAgentAddresses = liveAgents.map((agent) => agent.address);
+  const mentionables = liveAgents.map((agent) => ({ id: agent.id, name: agent.name }));
   const send = useMutation({
     mutationFn: ({
       content,
@@ -393,6 +395,10 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                   <PendingOpeningMessage
                     workbenchTenantId={workbenchTenantId}
                     participants={roster}
+                  />
+                  <ThreadApprovals
+                    workbenchTenantId={workbenchTenantId}
+                    agentAddresses={liveAgentAddresses}
                   />
                   {workerStatus.tone === "working" ? <WorkingLabel /> : null}
                 </div>
