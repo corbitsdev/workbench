@@ -68,6 +68,12 @@ jobs:
       - run: |
           mkdir -p "$RUNNER_TEMP/hub-data"
           echo "HUB_DATA_DIR=$RUNNER_TEMP/hub-data" >> "$GITHUB_ENV"
+      # Browser/mcp suites set DATABASE_URL and go through dbGate, which
+      # redirects the resolved url onto the derived _e2e sibling (see e2e/lib/
+      # database-url.ts). Provision + migrate that sibling here (idempotent,
+      # CREATE IF NOT EXISTS + migrateHub) so the browser shards do not fail on
+      # 'database workbench_e2e does not exist'.
+      - run: bun scripts/db-setup.ts
       - run: |
           LC_ALL=C
           i=0

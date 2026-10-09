@@ -212,9 +212,17 @@ async function migrateTarget(target: DbTarget, schema: string): Promise<boolean>
   await sql.end();
 
   const config = { ...target, schema };
-  const { db } = createDB(config);
-  const migrateHub = await loadMigrateHub();
-  await migrateHub(config, db);
+  const { db, close } = createDB(config);
+  try {
+    const migrateHub = await loadMigrateHub();
+    await migrateHub(config, db);
+  } finally {
+    // The migration opens a drizzle connection pool that holds the event loop
+    // open; leaving it undrained makes the CLI hang indefinitely after the
+    // migration NOTICEs print (seen as a 20-min stall in CI). Close it so the
+    // script's top-level await can resolve and the process exits.
+    await close();
+  }
   return createdDatabase;
 }
 
@@ -339,6 +347,10 @@ if (import.meta.main) {
           "(e2e suites run against this, not DATABASE_URL's own database)",
       );
     }
+    // Bounded exit: drain/close everything above, then terminate explicitly so
+    // a stray un-awaited connection pool cannot keep the process alive and
+    // stall CI for the full job timeout.
+    process.exit(0);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
