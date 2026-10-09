@@ -113,7 +113,10 @@ jobs:
           echo "HUB_DATA_DIR=$RUNNER_TEMP/hub-data" >> "$GITHUB_ENV"
       # The worker bundle is gitignored build output (see packages/worker):
       # browser shards get it as a side effect of the web build, so the hub
-      # job builds it directly.
+      # job builds it directly. The web-build freshness unit suite lives in
+      # e2e/lib (no Chrome, no DB), which no shard glob and no package test
+      # root would otherwise run.
       - run: bun run build
         working-directory: packages/worker
+      - run: bun test e2e/lib/web-build.test.ts
       - run: bun test e2e/grants e2e/hub e2e/install e2e/workflows
