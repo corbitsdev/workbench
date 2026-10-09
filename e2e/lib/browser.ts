@@ -16,16 +16,6 @@ const DEFAULT_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Ch
 const WEB_DIR = path.join(REPO_ROOT, "apps", "web");
 const DIST_DIR = path.join(WEB_DIR, "dist");
 
-// The effective configuration the vite build bakes into dist: the build
-// (apps/web/vite.config.ts:41) reads process.env.BASE_URL, so an env flip
-// changes the dist under an identical tree. Stamping it into the fingerprint
-// (via the config default) makes such a flip rebuild.
-function webBuildConfig(): unknown {
-  return {
-    baseUrl: process.env["BASE_URL"] ?? "http://localhost:3000",
-  };
-}
-
 export function chromePath(): string | undefined {
   const candidates = [process.env["CHROME_PATH"], DEFAULT_CHROME].filter(
     (p): p is string => p !== undefined && p !== "",
@@ -68,14 +58,14 @@ const REQUIRED_ARTIFACTS = [
 // unchanged. A stale dist still rebuilds — the marker only matches the tree
 // that produced it.
 async function ensureWebBuild(): Promise<void> {
-  if (isWebBuildFresh(WEB_DIR, REPO_ROOT, REQUIRED_ARTIFACTS, webBuildConfig())) return;
+  if (isWebBuildFresh(WEB_DIR, REPO_ROOT, REQUIRED_ARTIFACTS)) return;
   const proc = Bun.spawn(["bun", "run", "build"], {
     cwd: WEB_DIR,
     stdout: "inherit",
     stderr: "inherit",
   });
   if ((await proc.exited) !== 0) throw new Error("apps/web build failed");
-  writeWebBuildMarker(WEB_DIR, REPO_ROOT, webBuildConfig());
+  writeWebBuildMarker(WEB_DIR, REPO_ROOT);
 }
 
 /** Registers beforeAll/afterAll that boot and tear down hub + web + Chrome. */

@@ -1,12 +1,10 @@
 // Freshness gate for the apps/web production bundle the browser suites
 // serve: files in one `bun test e2e` process run serially, so the first
 // browser suite builds and the rest reuse its dist when the tree hasn't
-// changed since. The fingerprint is HEAD, the full worktree status, and the
-// build's effective configuration (`buildConfig`, e.g. the BASE_URL the
-// vite build reads), so any tracked change, new file, new commit, or env
-// change rebuilds; ignored paths (node_modules, .worktrees) never
-// participate. Without git there is no fingerprint, and the caller always
-// rebuilds — the old behavior.
+// changed since. The fingerprint is HEAD plus the full worktree status, so
+// any tracked change, new file, or new commit rebuilds; ignored paths
+// (node_modules, .worktrees) never participate. Without git there is no
+// fingerprint, and the caller always rebuilds — the old behavior.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -24,26 +22,11 @@ function gitOutput(repoRoot: string, args: readonly string[]): string | null {
 
 export function webBuildFingerprint(
   repoRoot: string,
-  // Repo-root-relative path whose marker must not participate in the
-  // fingerprint it records (the dist marker itself, see markerStatusPath).
   excludeStatusPaths: readonly string[] = [],
-  // The build's effective configuration (e.g. BASE_URL baked in by
-  // apps/web/vite.config.ts): an env flip changes the dist without touching
-  // the tree, so it must invalidate the fingerprint too.
-  buildConfig: unknown = null,
 ): string | null {
   const head = gitOutput(repoRoot, ["rev-parse", "HEAD"]);
   const status = gitOutput(repoRoot, ["status", "--porcelain=v1", "--untracked-files=all"]);
   if (head === null || status === null) return null;
-  let config: string;
-  try {
-    config = JSON.stringify(buildConfig);
-  } catch (cause) {
-    throw new Error(
-      "webBuildFingerprint: buildConfig must be JSON-serializable; got a circular or non-serializable value",
-      { cause },
-    );
-  }
   const excluded = new Set(excludeStatusPaths);
   const lines = status.split("\n").filter((line) => {
     if (line === "") return false;
@@ -55,7 +38,7 @@ export function webBuildFingerprint(
         : quoted;
     return !excluded.has(unquoted);
   });
-  return `${head.trim()}\n${lines.join("\n")}${lines.length > 0 ? "\n" : ""}config:${config}`;
+  return `${head.trim()}\n${lines.join("\n")}${lines.length > 0 ? "\n" : ""}`;
 }
 
 function markerPath(webDir: string): string {
@@ -75,14 +58,8 @@ export function isWebBuildFresh(
   // dist (today the worker bundle): the marker matches the tree, but a
   // deleted artifact still means rebuild.
   requiredArtifacts: readonly string[] = [],
-  // The build's effective configuration (see webBuildFingerprint).
-  buildConfig: unknown = null,
 ): boolean {
-  const fingerprint = webBuildFingerprint(
-    repoRoot,
-    [markerStatusPath(webDir, repoRoot)],
-    buildConfig,
-  );
+  const fingerprint = webBuildFingerprint(repoRoot, [markerStatusPath(webDir, repoRoot)]);
   if (fingerprint === null) return false;
   let marker: string;
   try {
@@ -94,16 +71,8 @@ export function isWebBuildFresh(
   return requiredArtifacts.every((artifact) => existsSync(path.join(repoRoot, artifact)));
 }
 
-export function writeWebBuildMarker(
-  webDir: string,
-  repoRoot: string,
-  buildConfig: unknown = null,
-): void {
-  const fingerprint = webBuildFingerprint(
-    repoRoot,
-    [markerStatusPath(webDir, repoRoot)],
-    buildConfig,
-  );
+export function writeWebBuildMarker(webDir: string, repoRoot: string): void {
+  const fingerprint = webBuildFingerprint(repoRoot, [markerStatusPath(webDir, repoRoot)]);
   if (fingerprint === null) return;
   writeFileSync(markerPath(webDir), fingerprint);
 }
