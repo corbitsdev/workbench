@@ -21,7 +21,9 @@ const BRIEF = "Brief: nothing shipped this week.";
 // fallback — which the gate's own first reply still falls through to.
 const ADA_REPLY: Fixture = {
   match: { predicate: () => true },
-  response: { content: `${MOCK_REPLY}\n\nName: Ada` },
+  response: {
+    content: `${MOCK_REPLY}\n\n${"This longer reply keeps the conversation scrolling while its prose stays readable.\n\n".repeat(16)}Name: Ada`,
+  },
 };
 
 const FIXTURES: Fixture[] = [
@@ -139,6 +141,212 @@ describeBrowser("0-to-1 gate", () => {
       await waitForText(page, "Ada");
       await page.goto(benchUrl, { waitUntil: "networkidle0" });
 
+      await page.emulateMediaFeatures([{ name: "prefers-reduced-motion", value: "reduce" }]);
+      const waitForLayout = () =>
+        page.evaluate(
+          () =>
+            new Promise<void>((resolve) =>
+              requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+            ),
+        );
+      for (const { width, reservedSpace } of [
+        { width: 2048, reservedSpace: 0 },
+        { width: 1800, reservedSpace: 0 },
+        { width: 1200, reservedSpace: 0 },
+        { width: 900, reservedSpace: 0 },
+        { width: 861, reservedSpace: 0 },
+        { width: 860, reservedSpace: 0 },
+        { width: 800, reservedSpace: 0 },
+        { width: 390, reservedSpace: 0 },
+        { width: 1800, reservedSpace: 16 },
+        { width: 900, reservedSpace: 16 },
+        { width: 1800, reservedSpace: 20 },
+        { width: 900, reservedSpace: 20 },
+      ]) {
+        await page.setViewport({ width, height: 900 });
+        // Simulate reserved scrollbar space on hosts with overlay scrollbars.
+        await page.$eval(
+          ".workbench-main-scroll",
+          (element, space) => {
+            if (!(element instanceof HTMLElement)) throw new Error("Missing scroll pane");
+            element.style.borderInlineEnd = `${space}px solid transparent`;
+          },
+          reservedSpace,
+        );
+        for (const drawerOpen of [false, true]) {
+          if (drawerOpen) {
+            await page.click(".bench-pill");
+            await waitForLayout();
+          }
+          const layout = await page.evaluate(() => {
+            const element = (selector: string) => {
+              const found = document.querySelector(selector);
+              if (found === null) throw new Error(`Missing layout element: ${selector}`);
+              return found;
+            };
+            const bounds = (selector: string) => {
+              const { left, right, width } = element(selector).getBoundingClientRect();
+              return { left, right, width };
+            };
+            const scroll = element(".workbench-main-scroll");
+            const prose = element(
+              '.timeline-inner .chat-thread-message:not([data-author="me"]) .chat-thread-body',
+            );
+            return {
+              main: bounds(".workbench-main"),
+              timeline: bounds(".timeline-inner"),
+              divider: bounds(".timeline-inner .chat-day"),
+              composer: bounds(".workbench-main-composer .chat-composer-box"),
+              worker: bounds(".timeline-inner .chat-thread-avatar"),
+              user: bounds(".timeline-inner .chat-thread-own-bubble"),
+              proseWidth: prose.getBoundingClientRect().width,
+              proseLimit: Number.parseFloat(getComputedStyle(prose).maxWidth),
+              reservedWidth: scroll.getBoundingClientRect().width - scroll.clientWidth,
+              scrolls: scroll.scrollHeight > scroll.clientHeight,
+              overflows: scroll.scrollWidth > scroll.clientWidth,
+              pageOverflows: document.documentElement.scrollWidth > innerWidth,
+            };
+          });
+          if (drawerOpen) {
+            const drawer = await page.evaluate(() => {
+              const cell = document.querySelector(".drawer-cell")?.getBoundingClientRect();
+              const element = document.querySelector(".drawer");
+              if (cell === undefined || element === null) throw new Error("Missing drawer");
+              const card = element.getBoundingClientRect();
+              const style = getComputedStyle(element);
+              return {
+                left: card.left - cell.left,
+                right: cell.right - card.right,
+                shadow: style.boxShadow,
+                radius: Number.parseFloat(style.borderRadius),
+                divider: Number.parseFloat(style.borderLeftWidth),
+              };
+            });
+            expect(Math.abs(drawer.left), `${width}px drawer left edge`).toBeLessThanOrEqual(1);
+            expect(Math.abs(drawer.right), `${width}px drawer right edge`).toBeLessThanOrEqual(1);
+            if (width > 860) {
+              expect(drawer.shadow, `${width}px nested drawer surface`).toBe("none");
+              expect(drawer.radius, `${width}px flat drawer edge`).toBe(0);
+              expect(drawer.divider, `${width}px visible drawer divider`).toBe(1);
+            }
+          }
+          const context = `${width}px, drawer ${drawerOpen ? "open" : "closed"}, reserved space ${reservedSpace}px`;
+          for (const box of [layout.timeline, layout.divider]) {
+            expect(Math.abs(box.left - layout.composer.left), context).toBeLessThanOrEqual(1);
+            const offset = drawerOpen ? 16 - layout.reservedWidth : 0;
+            expect(
+              Math.abs(box.right - layout.composer.right - offset),
+              context,
+            ).toBeLessThanOrEqual(1);
+          }
+          const leftGutter = layout.composer.left - layout.main.left;
+          const rightGutter = layout.main.right - layout.composer.right;
+          expect(
+            Math.abs(drawerOpen ? rightGutter - 16 : leftGutter - rightGutter),
+            context,
+          ).toBeLessThanOrEqual(1);
+          expect(leftGutter, context).toBeGreaterThanOrEqual(32);
+          expect(layout.composer.width, context).toBeLessThanOrEqual(1200);
+          expect(Math.abs(layout.worker.left - layout.composer.left), context).toBeLessThanOrEqual(
+            1,
+          );
+          expect(
+            Math.abs(
+              layout.composer.right - layout.user.right - (drawerOpen ? layout.reservedWidth : 16),
+            ),
+            context,
+          ).toBeLessThanOrEqual(1);
+          expect(layout.proseWidth, context).toBeLessThanOrEqual(layout.proseLimit + 1);
+          expect(layout.scrolls, context).toBe(true);
+          expect(layout.overflows, context).toBe(false);
+          expect(layout.pageOverflows, context).toBe(false);
+          if (drawerOpen) {
+            await page.click('#bench-drawer button[aria-label="Close drawer"]');
+            await waitForLayout();
+          }
+        }
+        if (width >= 900) {
+          await page.click('.timeline-inner .chat-thread-message[data-author="me"] button');
+          await page.waitForSelector(".workbench-subthread");
+          await waitForLayout();
+          const replyLayout = await page.evaluate(() => {
+            const bounds = (selector: string) => {
+              const element = document.querySelector(selector);
+              if (element === null) throw new Error(`Missing layout element: ${selector}`);
+              return element.getBoundingClientRect();
+            };
+            const composer = bounds(".workbench-main-composer .chat-composer-box");
+            const scroll = document.querySelector(".workbench-main-scroll");
+            if (scroll === null) throw new Error("Missing scroll pane");
+            return {
+              gap: bounds(".workbench-subthread").left - composer.right,
+              dividerGap: composer.right - bounds(".timeline-inner .chat-day").right,
+              userInset: composer.right - bounds(".timeline-inner .chat-thread-own-bubble").right,
+              reservedWidth: scroll.getBoundingClientRect().width - scroll.clientWidth,
+              timelineLeft: bounds(".timeline-inner").left - composer.left,
+              leftGutter: composer.left - bounds(".workbench-main").left,
+              width: composer.width,
+              overflows: scroll.scrollWidth > scroll.clientWidth,
+              pageOverflows: document.documentElement.scrollWidth > innerWidth,
+            };
+          });
+          const context = `${width}px, replies open, reserved space ${reservedSpace}px`;
+          expect(Math.abs(replyLayout.gap - 16), context).toBeLessThanOrEqual(1);
+          expect(Math.abs(replyLayout.timelineLeft), context).toBeLessThanOrEqual(1);
+          expect(
+            Math.abs(replyLayout.dividerGap + 16 - replyLayout.reservedWidth),
+            context,
+          ).toBeLessThanOrEqual(1);
+          expect(
+            Math.abs(replyLayout.userInset - replyLayout.reservedWidth),
+            context,
+          ).toBeLessThanOrEqual(1);
+          expect(replyLayout.leftGutter, context).toBeGreaterThanOrEqual(32);
+          expect(replyLayout.width, context).toBeLessThanOrEqual(1200);
+          expect(replyLayout.overflows, context).toBe(false);
+          expect(replyLayout.pageOverflows, context).toBe(false);
+          await page.click(".bench-pill");
+          await waitForLayout();
+          const drawerWithReplies = await page.evaluate(() => {
+            const cell = document.querySelector(".drawer-cell")?.getBoundingClientRect();
+            const card = document.querySelector(".drawer")?.getBoundingClientRect();
+            const body = document.querySelector(".drawer-body");
+            if (cell === undefined || card === undefined || body === null) {
+              throw new Error("Missing drawer");
+            }
+            return {
+              left: card.left - cell.left,
+              right: cell.right - card.right,
+              overflows: body.scrollWidth > body.clientWidth,
+            };
+          });
+          expect(Math.abs(drawerWithReplies.left), context).toBeLessThanOrEqual(1);
+          expect(Math.abs(drawerWithReplies.right), context).toBeLessThanOrEqual(1);
+          expect(drawerWithReplies.overflows, context).toBe(false);
+          await page.click('#bench-drawer button[aria-label="Close drawer"]');
+          await page.click(".workbench-subthread-head button");
+          await page.waitForSelector(".workbench-subthread", { hidden: true });
+          await waitForLayout();
+          const restoredCenter = await page.evaluate(() => {
+            const main = document.querySelector(".workbench-main")?.getBoundingClientRect();
+            const composer = document
+              .querySelector(".workbench-main-composer .chat-composer-box")
+              ?.getBoundingClientRect();
+            if (main === undefined || composer === undefined) throw new Error("Missing layout");
+            return composer.left - main.left - (main.right - composer.right);
+          });
+          expect(Math.abs(restoredCenter), context).toBeLessThanOrEqual(1);
+        }
+      }
+      await page.setViewport({ width: 1400, height: 900 });
+
+      await page.$eval(".workbench-main-scroll", (element) => {
+        if (!(element instanceof HTMLElement)) throw new Error("Missing scroll pane");
+        element.style.removeProperty("border-inline-end");
+      });
+      await page.emulateMediaFeatures([]);
+      await waitForLayout();
+
       await send(page, FOLLOW_UP);
       await waitForText(page, FOLLOW_UP_REPLY);
 
@@ -187,6 +395,7 @@ describeBrowser("0-to-1 gate", () => {
       );
       throw cause;
     }
+    expect(errors).toEqual([]);
     await page.close();
   }, 300_000);
 });

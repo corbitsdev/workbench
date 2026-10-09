@@ -1845,13 +1845,8 @@ tr.insights-row-clickable:hover {
 }
 .drawer {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  bottom: 8px;
-  width: calc(min(420px, 42vw) - 8px);
+  inset: 0;
   background: var(--surface);
-  border-radius: var(--r-lg);
-  box-shadow: var(--overlay);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -1869,6 +1864,11 @@ tr.insights-row-clickable:hover {
 }
 .drawer-scrim {
   display: none;
+}
+@media (min-width: 861px) {
+  .drawer {
+    border-left: 1px solid var(--border);
+  }
 }
 .drawer-head {
   display: flex;
