@@ -202,6 +202,23 @@ export interface DbSetupReport {
 }
 
 /**
+ * Create the database at `target` if missing, then apply every migration the
+ * hub itself applies at boot (`migrateHub`) against its schema. Idempotent:
+ * every migration is safe to re-run and reports the same thing either way.
+ * Returns whether the database had to be created.
+ */
+async function migrateTarget(target: DbTarget, schema: string): Promise<boolean> {
+  const { sql, createdDatabase } = await ensureDatabase(target);
+  await sql.end();
+
+  const config = { ...target, schema };
+  const { db } = createDB(config);
+  const migrateHub = await loadMigrateHub();
+  await migrateHub(config, db);
+  return createdDatabase;
+}
+
+/**
  * Make the database in `databaseUrl` runnable: create it if missing,
  * then apply every migration the hub itself applies at boot
  * (`migrateHub`). Every migration is idempotent, so re-running this is
@@ -213,13 +230,7 @@ export async function setupDatabase(
 ): Promise<DbSetupReport> {
   const schema = options.schema ?? "public";
   const target = dbTargetFromUrl(databaseUrl);
-  const { sql, createdDatabase } = await ensureDatabase(target);
-  await sql.end();
-
-  const config = { ...target, schema };
-  const { db } = createDB(config);
-  const migrateHub = await loadMigrateHub();
-  await migrateHub(config, db);
+  const createdDatabase = await migrateTarget(target, schema);
 
   return { database: target.database, schema, createdDatabase };
 }
@@ -316,14 +327,15 @@ if (import.meta.main) {
     console.log(describeReport(report));
     // DB-gated e2e suites run against the derived `_e2e` sibling, never the
     // developer's own database (see e2e/lib/database-url.ts). Provision it
-    // alongside so a fresh CI e2e job (which provisions only `workbench`) can
-    // boot those suites with reachability guaranteed from the start.
+    // alongside, including the hub schema, so direct-DB suites (e.g. the
+    // mailbox suites that insert `tenant`/`principal` with no hub boot) are
+    // not order-dependent on a hub-booting suite migrating first.
     const sibling = e2eSiblingTarget(target);
     if (sibling.database !== target.database) {
-      const { sql: siblingSql } = await ensureDatabase(sibling);
-      await siblingSql.end();
+      const created = await migrateTarget(sibling, "public");
       console.log(
         `db-setup: ensured e2e sibling database ${JSON.stringify(sibling.database)} ` +
+          `(${created ? "created + migrated" : "already existed; migrations idempotent"}) ` +
           "(e2e suites run against this, not DATABASE_URL's own database)",
       );
     }
