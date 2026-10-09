@@ -62,27 +62,29 @@ test("a new commit invalidates the marker", () => {
   expect(isWebBuildFresh(web, repo)).toBe(false);
 });
 
-test("an env flip invalidates the marker under an unchanged tree", () => {
+test("the fingerprint does not depend on BASE_URL", () => {
+  // The production dist does not bake any env: apps/web/vite.config.ts reads
+  // BASE_URL only for the dev-server proxy, and apps/web/src has no
+  // process.env / import.meta.env references. But e2e/lib/hub.ts sets
+  // process.env.BASE_URL to each hub's port at boot and never restores it;
+  // with every browser file in one `bun test` process, a leaked BASE_URL
+  // must not flip the fingerprint or the shared-build freshness gate would
+  // rebuild apps/web per suite. Guard exactly that.
   const { repo, web } = initRepo();
-  const config = { baseUrl: "http://localhost:3000" };
-  writeWebBuildMarker(web, repo, config);
-  expect(isWebBuildFresh(web, repo, [], config)).toBe(true);
-  // Same tree, different effective build config (e.g. BASE_URL the vite
-  // build reads): the dist would differ, so it must read as stale even
-  // though HEAD and status are identical.
-  const flipped = { baseUrl: "http://localhost:4000" };
-  expect(isWebBuildFresh(web, repo, [], flipped)).toBe(false);
-  writeWebBuildMarker(web, repo, flipped);
-  expect(isWebBuildFresh(web, repo, [], flipped)).toBe(true);
-  // Back to the original config: stale again, not mistaken for fresh.
-  expect(isWebBuildFresh(web, repo, [], config)).toBe(false);
-});
-
-test("a non-serializable build config is rejected loudly", () => {
-  const { repo } = initRepo();
-  const circular: Record<string, unknown> = {};
-  circular["self"] = circular;
-  expect(() => webBuildFingerprint(repo, [], circular)).toThrow(/JSON-serializable/);
+  const previous = process.env["BASE_URL"];
+  writeWebBuildMarker(web, repo);
+  expect(isWebBuildFresh(web, repo)).toBe(true);
+  // Capture the fingerprint after the marker exists so both sides of the
+  // comparison see the same (marker-present) tree.
+  const before = webBuildFingerprint(repo);
+  try {
+    process.env["BASE_URL"] = "http://localhost:4000";
+    expect(webBuildFingerprint(repo)).toBe(before);
+    expect(isWebBuildFresh(web, repo)).toBe(true);
+  } finally {
+    if (previous === undefined) delete process.env["BASE_URL"];
+    else process.env["BASE_URL"] = previous;
+  }
 });
 
 test("a missing build artifact means rebuild even with a matching marker", () => {
