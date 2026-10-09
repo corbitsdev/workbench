@@ -67,7 +67,10 @@ export function buildCommandPaletteGroups(
     } else if (scope !== null && scope.kind !== source.kind) {
       continue;
     }
-    const items = filterItems(source.items, query);
+    // ponytail: scan the small palette; use a Set if result counts grow.
+    const items = filterItems(source.items, query).filter(
+      (item) => !groups.some((group) => group.items.some((existing) => existing.id === item.id)),
+    );
     if (items.length > 0) {
       groups.push({ id: source.id, heading: source.heading, items });
     }
