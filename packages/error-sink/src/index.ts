@@ -64,5 +64,6 @@ export function reportError(error: unknown, context: ErrorContextInput): string 
 
 export type { ErrorContext } from "./context";
 export { generateRefId } from "./ref-id";
+export { redactExtra, redactText } from "./redact";
 export { ErrorEnvelopeShape, makeErrorEnvelope, parseErrorEnvelope } from "./error-envelope";
 export type { ErrorEnvelope } from "./error-envelope";

@@ -259,7 +259,7 @@ export function ProviderConnectStep({
           : option.canonicalName;
   const resolvedLabel = models.find((model) => model.id === resolvedModel)?.label ?? resolvedModel;
   const urlCheck = baseUrlSchema(baseURL);
-  const urlError = customURL && baseURL.trim() !== "" && urlCheck instanceof type.errors;
+  const urlError = customURL && (baseURL.trim() === "" || urlCheck instanceof type.errors);
 
   // Fetched straight from the browser to the user-supplied base URL — this
   // never touches the hub. Validates the base URL is actually an Ollama

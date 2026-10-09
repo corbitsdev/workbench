@@ -62,13 +62,46 @@ async function request<T>(path: string, schema: Validator<T>, init?: RequestInit
   if (!response.ok) {
     throw new TenancyApiError(`The hub answered ${response.status} for ${path}.`, response.status);
   }
-  if (response.status === 204) return undefined as T;
   const body: unknown = await response.json().catch(() => undefined);
   const parsed = schema(body);
   if (parsed instanceof type.errors) {
     throw new TenancyApiError(`Unexpected response shape from ${path}: ${parsed.summary}`);
   }
   return parsed;
+}
+
+/** For a route whose success response is `204 No Content` — nothing to
+ * validate against a schema, so this is the one place a call is allowed
+ * to end without a parsed body, rather than every `request<T>` caller
+ * having to accept an unsound `undefined as T`. */
+async function requestVoid(path: string, init?: RequestInit): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      ...init,
+      headers: { "content-type": "application/json", ...init?.headers },
+    });
+  } catch (cause) {
+    throw new TenancyApiError(cause instanceof Error ? cause.message : String(cause));
+  }
+  if (response.status === 401) {
+    throw new UnauthenticatedError();
+  }
+  if (response.status === 403) {
+    throw new TenancyApiError(`Not permitted to view ${path}.`, 403);
+  }
+  if (!response.ok) {
+    throw new TenancyApiError(`The hub answered ${response.status} for ${path}.`, response.status);
+  }
+  // A void route answers `204 No Content` by contract. Any other 2xx (e.g. a
+  // 200/201-with-body the route drifted into returning where 204 is expected)
+  // is a contract mismatch and must fail loudly.
+  if (response.status !== 204) {
+    throw new TenancyApiError(
+      `The hub answered ${response.status} for ${path}; expected 204 No Content.`,
+      response.status,
+    );
+  }
 }
 
 // -- Principals --------------------------------------------------------
@@ -89,11 +122,7 @@ export function updatePrincipalStatus(
 }
 
 export function removePrincipal(tenantId: string, principalId: string): Promise<void> {
-  return request<void>(
-    `/api/tenants/${tenantId}/principals/${principalId}`,
-    (data) => data as void,
-    { method: "DELETE" },
-  );
+  return requestVoid(`/api/tenants/${tenantId}/principals/${principalId}`, { method: "DELETE" });
 }
 
 export type InviteMemberInput = typeof InviteMember.infer;
@@ -135,25 +164,19 @@ export function renameRole(
 }
 
 export function deleteRole(tenantId: string, roleId: string): Promise<void> {
-  return request<void>(`/api/tenants/${tenantId}/roles/${roleId}`, (data) => data as void, {
-    method: "DELETE",
-  });
+  return requestVoid(`/api/tenants/${tenantId}/roles/${roleId}`, { method: "DELETE" });
 }
 
 export function assignRole(tenantId: string, principalId: string, roleId: string): Promise<void> {
-  return request<void>(
-    `/api/tenants/${tenantId}/principals/${principalId}/roles/${roleId}`,
-    (data) => data as void,
-    { method: "POST" },
-  );
+  return requestVoid(`/api/tenants/${tenantId}/principals/${principalId}/roles/${roleId}`, {
+    method: "POST",
+  });
 }
 
 export function unassignRole(tenantId: string, principalId: string, roleId: string): Promise<void> {
-  return request<void>(
-    `/api/tenants/${tenantId}/principals/${principalId}/roles/${roleId}`,
-    (data) => data as void,
-    { method: "DELETE" },
-  );
+  return requestVoid(`/api/tenants/${tenantId}/principals/${principalId}/roles/${roleId}`, {
+    method: "DELETE",
+  });
 }
 
 // -- Grants ----------------------------------------------------------------
@@ -213,9 +236,7 @@ export function updateGrant(
 }
 
 export function revokeGrant(tenantId: string, grantId: string): Promise<void> {
-  return request<void>(`/api/tenants/${tenantId}/grants/${grantId}`, (data) => data as void, {
-    method: "DELETE",
-  });
+  return requestVoid(`/api/tenants/${tenantId}/grants/${grantId}`, { method: "DELETE" });
 }
 
 // The one grant-checked route that itself requires no grant, so it

@@ -101,6 +101,19 @@ export function dbTargetFromUrl(databaseUrl: string): DbTarget {
   };
 }
 
+/**
+ * The derived `_e2e` sibling of a DATABASE_URL's database: the same server,
+ * the same DB name suffixed `_e2e`. This is the database every DB-gated e2e
+ * suite owns outright (see e2e/lib/database-url.ts's `baseUrlToE2eUrl`), so
+ * provisioning it here is what makes a fresh CI e2e job able to boot those
+ * suites at all. Idempotent: a URL whose database already ends `_e2e` is its
+ * own sibling.
+ */
+export function e2eSiblingTarget(target: DbTarget): DbTarget {
+  const database = target.database.endsWith("_e2e") ? target.database : `${target.database}_e2e`;
+  return { ...target, database };
+}
+
 async function connect(target: DbTarget): Promise<SqlClient> {
   const postgres = await loadPostgres();
   return postgres({
@@ -189,6 +202,31 @@ export interface DbSetupReport {
 }
 
 /**
+ * Create the database at `target` if missing, then apply every migration the
+ * hub itself applies at boot (`migrateHub`) against its schema. Idempotent:
+ * every migration is safe to re-run and reports the same thing either way.
+ * Returns whether the database had to be created.
+ */
+async function migrateTarget(target: DbTarget, schema: string): Promise<boolean> {
+  const { sql, createdDatabase } = await ensureDatabase(target);
+  await sql.end();
+
+  const config = { ...target, schema };
+  const { db, close } = createDB(config);
+  try {
+    const migrateHub = await loadMigrateHub();
+    await migrateHub(config, db);
+  } finally {
+    // The migration opens a drizzle connection pool that holds the event loop
+    // open; leaving it undrained makes the CLI hang indefinitely after the
+    // migration NOTICEs print (seen as a 20-min stall in CI). Close it so the
+    // script's top-level await can resolve and the process exits.
+    await close();
+  }
+  return createdDatabase;
+}
+
+/**
  * Make the database in `databaseUrl` runnable: create it if missing,
  * then apply every migration the hub itself applies at boot
  * (`migrateHub`). Every migration is idempotent, so re-running this is
@@ -200,13 +238,7 @@ export async function setupDatabase(
 ): Promise<DbSetupReport> {
   const schema = options.schema ?? "public";
   const target = dbTargetFromUrl(databaseUrl);
-  const { sql, createdDatabase } = await ensureDatabase(target);
-  await sql.end();
-
-  const config = { ...target, schema };
-  const { db } = createDB(config);
-  const migrateHub = await loadMigrateHub();
-  await migrateHub(config, db);
+  const createdDatabase = await migrateTarget(target, schema);
 
   return { database: target.database, schema, createdDatabase };
 }
@@ -298,8 +330,27 @@ if (import.meta.main) {
       await resetSchema(databaseUrl);
       console.log("db-setup: dropped existing schema");
     }
+    const target = dbTargetFromUrl(databaseUrl);
     const report = await setupDatabase(databaseUrl);
     console.log(describeReport(report));
+    // DB-gated e2e suites run against the derived `_e2e` sibling, never the
+    // developer's own database (see e2e/lib/database-url.ts). Provision it
+    // alongside, including the hub schema, so direct-DB suites (e.g. the
+    // mailbox suites that insert `tenant`/`principal` with no hub boot) are
+    // not order-dependent on a hub-booting suite migrating first.
+    const sibling = e2eSiblingTarget(target);
+    if (sibling.database !== target.database) {
+      const created = await migrateTarget(sibling, "public");
+      console.log(
+        `db-setup: ensured e2e sibling database ${JSON.stringify(sibling.database)} ` +
+          `(${created ? "created + migrated" : "already existed; migrations idempotent"}) ` +
+          "(e2e suites run against this, not DATABASE_URL's own database)",
+      );
+    }
+    // Bounded exit: drain/close everything above, then terminate explicitly so
+    // a stray un-awaited connection pool cannot keep the process alive and
+    // stall CI for the full job timeout.
+    process.exit(0);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);

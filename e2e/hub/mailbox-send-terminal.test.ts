@@ -12,14 +12,18 @@ import {
   type MailboxDb,
 } from "@corbits/mailbox";
 import { captureMailboxRequest, createMailboxDeliver } from "../../apps/hub/src/mailbox-send";
+import { e2eDatabaseUrl } from "../lib/database-url";
 import { dbGate } from "../lib/db-gate";
+import { cleanupTenants } from "../lib/tenant-cleanup";
 
-const databaseUrl = process.env["DATABASE_URL"] ?? "";
+const databaseUrl = e2eDatabaseUrl() ?? "";
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 const closers: (() => Promise<void>)[] = [];
+const seededTenantIds: string[] = [];
 afterAll(async () => {
   for (const close of closers) await close();
+  await cleanupTenants(seededTenantIds);
 });
 
 function dbConfigFromUrl(url: string) {
@@ -45,6 +49,7 @@ describeIfDb("mailbox send through the real mount", () => {
     closers.push(closeHub);
     const suffix = crypto.randomUUID().slice(0, 8);
     const tenantId = `tnt_term_${suffix}`;
+    seededTenantIds.push(tenantId);
     const principalId = `prn_term_${suffix}`;
     await hubDb.insert(tenant).values({
       id: tenantId,

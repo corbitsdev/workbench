@@ -7,6 +7,7 @@ import { eq, inArray } from "drizzle-orm";
 import { createDB, schema, type DB } from "@intx/db";
 import { generateId } from "@intx/hub-common";
 import { createEventCollectorRegistry } from "@intx/hub-sessions";
+import { e2eDatabaseUrl } from "../lib/database-url";
 import { dbGate } from "../lib/db-gate";
 
 import { createHubPersistMailWithSessionEnsure } from "../../apps/hub/src/mailbox-persist";
@@ -26,7 +27,7 @@ function dbConfigFromUrl(databaseUrl: string) {
   };
 }
 
-const databaseUrl = process.env["DATABASE_URL"];
+const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 describeIfDb("first reply of a run", () => {

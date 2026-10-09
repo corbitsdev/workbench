@@ -8,6 +8,8 @@
 // provision Postgres) — throws instead of skipping.
 import { afterAll, describe } from "bun:test";
 
+import { e2eDatabaseUrl } from "./database-url";
+
 export const TEST_COMPOSE_FILE = "compose.test.yml";
 export const TEST_COMPOSE_UP = `docker compose -f ${TEST_COMPOSE_FILE} up -d`;
 export const TEST_DATABASE_URL = "postgres://postgres:postgres@localhost:5432/workbench";
@@ -72,11 +74,37 @@ function printSummary(): void {
 }
 
 /**
- * databaseUrl: the resolved DATABASE_URL (or "" / undefined when absent).
- * label: identifies the skipped suite in the summary — pass import.meta.path.
+ * databaseUrl: the raw configured DATABASE_URL (or "" / undefined when
+ * absent). label: identifies the skipped suite in the summary — pass
+ * import.meta.path.
+ *
+ * Every DB-gated suite runs against the `_e2e` sibling database, never the
+ * developer's own `DATABASE_URL`: when a database is configured, dbGate
+ * redirects the resolved url (via e2eDatabaseUrl) onto the derived `_e2e`
+ * database and propagates it onto process.env.DATABASE_URL so bootHub and
+ * every direct-DB read hit the sibling the suite owns outright. When
+ * DATABASE_URL is unset the suite skips (hard failure in CI that provisions
+ * Postgres), exactly as before.
  */
 export function dbGate(databaseUrl: string | undefined, label: string): typeof describe {
-  if (databaseUrl !== undefined && databaseUrl !== "") return describe;
+  if (databaseUrl !== undefined && databaseUrl !== "") {
+    const e2eUrl = e2eDatabaseUrl();
+    if (e2eUrl !== undefined) {
+      // Fail closed: a DB-gated suite must only ever run against the derived
+      // `_e2e` sibling, never the developer's own database. If the resolver
+      // ever regresses into returning a non-`_e2e` URL, refuse to redirect
+      // rather than silently run e2e against the real DB.
+      const e2eDatabase = new URL(e2eUrl).pathname.replace(/^\//, "");
+      if (!e2eDatabase.endsWith("_e2e")) {
+        throw new Error(
+          `Resolved e2e database does not target a _e2e sibling: ${e2eUrl}. ` +
+            "Refusing to run a DB-gated suite against a non-_e2e database.",
+        );
+      }
+      process.env["DATABASE_URL"] = e2eUrl;
+    }
+    return describe;
+  }
   if (databaseIsRequired()) throw missingDatabaseError(label);
   skipped.push(label);
   afterAll(printSummary);
