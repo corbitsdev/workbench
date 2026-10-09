@@ -21,7 +21,18 @@ import { type } from "arktype";
 export { MCP_SERVER_CATALOG };
 export type { McpCatalogEntry } from "@corbits/worker/workflow-ids";
 
-export class McpServerError extends Error {}
+export class McpServerError extends Error {
+  /** True when the hub said the server refused the request (typically a
+   * token-protected server answering discovery with a 401/403). Distinct from
+   * a server that simply cannot be reached, so the Tools page can tell "add a
+   * token" from "check the URL". */
+  readonly needsBearer: boolean;
+  constructor(message: string, needsBearer = false) {
+    super(message);
+    this.name = "McpServerError";
+    this.needsBearer = needsBearer;
+  }
+}
 
 const ProviderShape = type({ id: "string", name: "string", plugin: "string" });
 const ProvidersPage = type({ data: ProviderShape.array() });
@@ -255,11 +266,16 @@ async function postDiscovery(
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => undefined);
     const envelope = type({ error: "string" })(body);
-    throw new McpServerError(
+    const message =
       envelope instanceof type.errors
         ? `this server could not be reached (HTTP ${String(response.status)})`
-        : envelope.error,
-    );
+        : envelope.error;
+    // The hub answers every discovery failure with a single 422 whose copy is
+    // the only sign of why: "refused the request" when a token-protected server
+    // answered with a 4xx, "the handshake failed" when it never answered. Read
+    // that sign here so the Tools page can tell "add a token" from "check the
+    // URL". (Mirrors the pinned @corbits/mcp wording.)
+    throw new McpServerError(message, message.includes("refused the request"));
   }
   return (await readJson(response, DiscoveryShape, "the MCP server's catalog")).data;
 }

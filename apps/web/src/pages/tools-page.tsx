@@ -26,7 +26,12 @@ import { QueryView } from "@/lib/api-query";
 import { CircleNotch, MagnifyingGlass, Plugs, type Icon } from "@/lib/icons";
 
 import { describeApiError } from "@/lib/api-query";
-import { MCP_SERVER_CATALOG, probeMcpServer, resolveWorkspaceTenantId } from "../mcp-servers";
+import {
+  MCP_SERVER_CATALOG,
+  McpServerError,
+  probeMcpServer,
+  resolveWorkspaceTenantId,
+} from "../mcp-servers";
 import type { McpCatalogEntry } from "../mcp-servers";
 import { toolCountLabel } from "../tools/tool-count";
 import {
@@ -259,14 +264,19 @@ function AddByUrl({
     setProbing(true);
     try {
       const info = await onProbeName(trimmed);
-      const next = suggestMcpServerName({ url: trimmed, serverInfo: info, existingNames });
       setServerInfo(info);
-      setEdited(false);
-      if (next.source !== "server") {
-        toast("That server didn't share a name — the URL suggestion stands.");
+      // A suggestion never clobbers what was typed: only hand the name field
+      // back to the suggestion when the user had not already edited it.
+      if (!edited) setEdited(false);
+    } catch (cause) {
+      // The hub answers an auth-gated server's discovery with "refused the
+      // request" (it answered but needs a token), which reads differently from
+      // a server that never answered at all.
+      if (cause instanceof McpServerError && cause.needsBearer) {
+        toast("That server needs a token — add it below.");
+      } else {
+        toast("That server didn't answer — check the URL.");
       }
-    } catch {
-      toast("That server didn't answer — check the URL.");
     } finally {
       setProbing(false);
     }
@@ -305,28 +315,32 @@ function AddByUrl({
           changeUrl(event.target.value);
         }}
       />
-      <Input
-        aria-label="Server name"
-        placeholder="A name for this server"
-        value={shown}
-        onChange={(event) => {
-          setName(event.target.value);
-          setEdited(true);
-        }}
-      />
-      <div className="tool-add-actions">
-        <span className="tool-tile-hint">{hint}</span>
-        <span style={{ flex: 1 }} />
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={probing || !hasUrl}
-          onClick={() => {
-            void lookUp();
+      <div className="tool-name-group">
+        <Input
+          aria-label="Server name"
+          aria-describedby="tool-name-hint"
+          placeholder="A name for this server"
+          value={shown}
+          onChange={(event) => {
+            setName(event.target.value);
+            setEdited(true);
           }}
-        >
-          {probing ? "Looking up…" : "Look up name"}
-        </Button>
+        />
+        <div className="tool-name-actions">
+          <span id="tool-name-hint" className="tool-tile-hint">
+            {hint}
+          </span>
+          <Button
+            size="lg"
+            variant="outline"
+            disabled={probing || !hasUrl}
+            onClick={() => {
+              void lookUp();
+            }}
+          >
+            {probing ? "Looking up…" : "Look up name"}
+          </Button>
+        </div>
       </div>
       <Input
         aria-label="Bearer token"

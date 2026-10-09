@@ -36,12 +36,79 @@ const GENERIC_HOST_LABELS = new Set([
   "servers",
 ]);
 
+/** RFC 3492 Punycode decoding, kept inline because no punycode package ships
+ * in the browser bundle this module runs in. A URL parser already handed us an
+ * ASCII `xn--…` label, so a decoding failure (unreachable) falls back to the
+ * raw label rather than throwing — the label a caller sees is never worse than
+ * the codepoint garble it replaces. */
+function decodePunycodeLabel(label: string): string {
+  if (!label.startsWith("xn--")) return label;
+  const base = 36;
+  const tmin = 1;
+  const tmax = 26;
+  const skew = 38;
+  const damp = 700;
+  const initialBias = 72;
+  const initialN = 128;
+  const digitFor = (code: number): number => {
+    if (code >= 48 && code <= 57) return code - 22; // 0-9
+    if (code >= 65 && code <= 90) return code - 65; // A-Z
+    if (code >= 97 && code <= 122) return code - 97; // a-z
+    throw new Error("not a punycode digit");
+  };
+  const adapt = (delta: number, numPoints: number, first: boolean): number => {
+    let d = first ? Math.floor(delta / damp) : delta >> 1;
+    d += Math.floor(d / numPoints);
+    let k = 0;
+    while (d > Math.floor(((base - tmin) * tmax) / 2)) {
+      d = Math.floor(d / (base - tmin));
+      k += base;
+    }
+    return k + Math.floor(((base - tmin + 1) * d) / (d + skew));
+  };
+  try {
+    const payload = label.slice(4);
+    const hyphen = payload.lastIndexOf("-");
+    let output = hyphen > 0 ? payload.slice(0, hyphen) : "";
+    const tail = hyphen > 0 ? payload.slice(hyphen + 1) : payload;
+    let n = initialN;
+    let i = 0;
+    let bias = initialBias;
+    let pos = 0;
+    while (pos < tail.length) {
+      const oldi = i;
+      let w = 1;
+      for (let k = base; ; k += base) {
+        const digit = digitFor(tail.charCodeAt(pos));
+        pos += 1;
+        i += digit * w;
+        const threshold = k <= bias ? tmin : k >= bias + tmax ? tmax : k - bias;
+        if (digit < threshold) break;
+        w *= base - threshold;
+      }
+      const outputLength = output.length;
+      bias = adapt(i - oldi, outputLength + 1, oldi === 0);
+      n += Math.floor(i / (outputLength + 1));
+      i %= outputLength + 1;
+      output = output.slice(0, i) + String.fromCodePoint(n) + output.slice(i);
+      i += 1;
+    }
+    return output;
+  } catch {
+    return label;
+  }
+}
+
 /** The host label that names the server: the first label, unless it is a
  * generic prefix with a more distinctive label behind it. Bare hosts and
  * literal IPs come back whole. Null when there is no host at all. */
 function distinctiveHostLabel(hostname: string): string | null {
   const bare = hostname.replace(/^www\./i, "");
   if (bare === "") return null;
+  // `new URL().hostname` reports an IPv6 literal bracketed (`[::1]`); the
+  // loopback one is a local server a name can mean, so it reads as
+  // "localhost" instead of collapsing to a degenerate slug like "1".
+  if (bare === "[::1]" || bare === "::1") return "localhost";
   if (!bare.includes(".") || /^[\d.]+$/.test(bare) || bare.includes(":")) return bare;
   const labels = bare.split(".");
   const first = labels[0] ?? "";
@@ -52,9 +119,13 @@ function distinctiveHostLabel(hostname: string): string | null {
 }
 
 function humanizeHostLabel(label: string): string | null {
-  const words = label
+  // A URL parser hands international host names back as Punycode (`xn--…`),
+  // which would otherwise read as codepoint garble once split into words;
+  // decode before humanizing so the label is meaningful.
+  const readable = decodePunycodeLabel(label);
+  const words = readable
     .toLocaleLowerCase()
-    .split(/[^a-z0-9]+/u)
+    .split(/[^\p{L}\p{N}]+/u)
     .filter((word) => word !== "");
   if (words.length === 0) return null;
   return words.map((word) => word.slice(0, 1).toLocaleUpperCase() + word.slice(1)).join(" ");
