@@ -91,13 +91,14 @@ export async function resetLocalState(
   }
   requireLocalDatabase(databaseUrl);
 
-  await deps.resetSchema(databaseUrl);
-
   const hubDataDir = env["HUB_DATA_DIR"];
   if (hubDataDir === undefined || hubDataDir === "") {
     throw new Error("HUB_DATA_DIR is not set. Set it in .env; see .env.example.");
   }
   const dirs = resolveLocalStateDirs(deps.root, hubDataDir);
+
+  await deps.resetSchema(databaseUrl);
+
   const removedDirs: string[] = [];
   for (const dir of [dirs.hubDataDir]) {
     if (!deps.exists(dir)) continue;

@@ -31,6 +31,7 @@ import {
 } from "../../packages/workflows/src/client";
 import { dbGate } from "../lib/db-gate";
 import { bootHub } from "../lib/hub";
+import { cleanupTenants } from "../lib/tenant-cleanup";
 
 const describeIfDb = dbGate(process.env["DATABASE_URL"] ?? "", import.meta.path);
 
@@ -74,6 +75,7 @@ function installAmbientClientShims(origin: string, cookie: string): () => void {
 
 describeIfDb("agent redeploy on provider change", () => {
   let server: ReturnType<typeof Bun.serve> | undefined;
+  const seededTenantIds: string[] = [];
   beforeAll(() => {
     // Bound before the hub boots so BASE_URL names the real port.
     server = Bun.serve({ port: 0, fetch: () => new Response("booting", { status: 503 }) });
@@ -85,6 +87,7 @@ describeIfDb("agent redeploy on provider change", () => {
   });
 
   afterAll(async () => {
+    await cleanupTenants(seededTenantIds);
     await server?.stop(true);
   });
 
@@ -132,6 +135,7 @@ describeIfDb("agent redeploy on provider change", () => {
     const tenantId = await created(
       await post("/api/tenants", { name: "Workspace", slug: tenantSlug }),
     );
+    seededTenantIds.push(tenantId);
     const domain = `${tenantSlug}.localhost`;
 
     // A model offering is the one thing a deployment needs from the tenant.

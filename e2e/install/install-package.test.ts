@@ -11,6 +11,7 @@ import { renderBundledWorkflowSourceTree } from "../../packages/workflows/src/cl
 import { installPackage } from "../../apps/web/src/install-package";
 import { dbGate } from "../lib/db-gate";
 import { bootHub } from "../lib/hub";
+import { cleanupTenants } from "../lib/tenant-cleanup";
 
 const describeIfDb = dbGate(process.env["DATABASE_URL"] ?? "", import.meta.path);
 
@@ -30,6 +31,7 @@ async function bundle(entry: string): Promise<string> {
 
 describeIfDb("installPackage", () => {
   let server: ReturnType<typeof Bun.serve> | undefined;
+  const seededTenantIds: string[] = [];
   beforeAll(() => {
     // Bound before the hub boots so BASE_URL names the real port.
     server = Bun.serve({ port: 0, fetch: () => new Response("booting", { status: 503 }) });
@@ -41,6 +43,7 @@ describeIfDb("installPackage", () => {
   });
 
   afterAll(async () => {
+    await cleanupTenants(seededTenantIds);
     await server?.stop(true);
   });
 
@@ -87,6 +90,7 @@ describeIfDb("installPackage", () => {
     const tenantId = await created(
       await post("/api/tenants", { name: "Workspace", slug: `ws-${suffix}` }),
     );
+    seededTenantIds.push(tenantId);
 
     // A model offering is the one thing a deployment needs from the tenant.
     const t = `/api/tenants/${tenantId}`;

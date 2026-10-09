@@ -12,10 +12,12 @@ import { type } from "arktype";
 import { createDB } from "@intx/db";
 import { principal } from "@intx/db/schema";
 import { generateId } from "@intx/hub-common";
+import { e2eDatabaseUrl } from "../lib/database-url";
 import { dbGate } from "../lib/db-gate";
 import { bootHub } from "../lib/hub";
+import { cleanupTenants } from "../lib/tenant-cleanup";
 
-const databaseUrl = process.env["DATABASE_URL"];
+const databaseUrl = e2eDatabaseUrl();
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
 
 function dbConfigFromUrl(url: string) {
@@ -46,8 +48,10 @@ const PrincipalPage = type({
 describeIfDb("settings roles flow allows people and agents alike", () => {
   const booted = bootHub();
   const closers: (() => Promise<void>)[] = [];
+  const seededTenantIds: string[] = [];
   afterAll(async () => {
     for (const close of closers) await close();
+    await cleanupTenants(seededTenantIds);
   });
 
   test("create-role, grant, assign (person and agent), evaluate", async () => {
@@ -103,6 +107,7 @@ describeIfDb("settings roles flow allows people and agents alike", () => {
         slug: `ws-${suffix}`,
       }),
     );
+    seededTenantIds.push(tenant);
     const role = await created(
       await call(`/api/tenants/${tenant}/roles`, alice.cookie, "POST", {
         name: `Billing ${suffix}`,

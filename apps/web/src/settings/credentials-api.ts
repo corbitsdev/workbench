@@ -10,7 +10,7 @@ import {
 } from "@intx/types";
 export { credentialTypes } from "@intx/types";
 
-import { apiRequest, type Validator } from "./api-request";
+import { apiRequest, requestVoid, type Validator } from "./api-request";
 
 export type Credential = typeof CredentialResponse.infer;
 export type Provider = typeof ProviderResponse.infer;
@@ -80,10 +80,10 @@ export function createCredential(
 }
 
 export function deleteCredential(tenantId: string, credentialId: string): Promise<void> {
-  return request<void>(
+  return requestVoid(
     `/api/tenants/${tenantId}/credentials/${credentialId}`,
-    (data) => data as void,
     "revoking that credential",
+    CredentialsApiError,
     { method: "DELETE" },
   );
 }

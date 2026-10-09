@@ -18,7 +18,7 @@
 .tools-grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
 }
 
 .tool-tile {
@@ -139,10 +139,39 @@
   align-self: flex-start;
 }
 
+/* The name row's fields stay tightly bound while its long hint wraps on full
+ * width; both the name row and the footer row share the card's left edge. */
+.tool-name-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tool-name-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tool-name-actions .tool-tile-hint {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The touch target for a secondary action: react-ui's "lg" button is 40px,
+ * so an explicit 44px floor keeps it on the app's minimum target size
+ * alongside its sibling actions in the card. */
+.tool-name-actions button {
+  min-height: 44px;
+  flex: none;
+}
+
 .tool-card {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 16px;
   padding: 16px;
 }
 
