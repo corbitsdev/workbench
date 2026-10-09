@@ -4,9 +4,10 @@
 const SECRET_KEY_PATTERN =
   /token|secret|password|passwd|api[-_]?key|apikey|credential|authorization|cookie/i;
 
-// A key that itself is shaped like a provider key — `{"sk-ant-api03-...":
-// "value"}` — leaks the shape even if the value is trivially repeated. The
-// value is redacted wholesale for any field named like a real key format.
+// A key that itself is shaped like a provider key — a field literally named
+// `sk-` plus a hyphenated label + value (`{"sk-...": "value"}`) — leaks the
+// shape even if the value is trivially repeated. The value is redacted
+// wholesale for any field named like a real key format.
 const PROVIDER_KEY_SHAPE =
   /\b(?:sk|pk|rk)(?:-(?:ant|svcacct|dc|live|proj|test|dev|prod|org|key|secret)|_(?:live|test))[-_][a-z0-9_-]{4,}\b/i;
 
@@ -31,19 +32,19 @@ const SECRET_VALUE_PATTERNS: readonly RegExp[] = [
   //     a long base64 run). `(?![-_])` stops a segment boundary from ending the
   //     match partway through a hyphenated word.
   /\b(?:sk|pk|rk)-[a-z0-9_]{9,}(?![-_])\b/gi,
-  //  4. Anthropic (`sk-ant-api03-...`), OpenAI service-account
-  //     (`sk-svcacct-...`), and data-control (`sk-dc-...`) keys are `sk-` plus
-  //     a distinctive hyphenated label then a long value run. The label never
-  //     occurs as an English-word boundary (`sk-antenna` does not start with
-  //     `sk-ant-`), so a hyphen-bearing value run after it is safe to mask.
+  //  4. Anthropic, OpenAI service-account, and data-control keys are `sk-` plus
+  //     a distinctive hyphenated label then a long value run (`sk-ant-`,
+  //     `sk-svcacct-`, `sk-dc-`). The label never occurs as an English-word
+  //     boundary (`sk-antenna` does not start with the anthropic label), so a
+  //     hyphen-bearing value run after it is safe to mask.
   /\bsk-(?:ant|svcacct|dc)[-_][a-z0-9_-]{8,}\b/gi,
   //  5. Stripe keys are `_`-separated with a `live`/`test` environment label
-  //     (`sk_live_...`, `pk_live_...`, `rk_test_...`). `_` never joins ordinary
+  //     (`_sk_..._live_...`, the underscore spelling). `_` never joins ordinary
   //     hyphenated words, so a bare long run after the env label is enough.
   /\b(?:sk|pk|rk)_(?:live|test)_[a-z0-9]{8,}\b/gi,
-  //  6. Gemini keys are the fixed literal `AIzaSy` + base64url; the literal
-  //     prefix is not an English word, so a long base64url run after it (no
-  //     `/i`; the mixed-case prefix is the signal) is enough.
+  //  6. Gemini keys begin with a fixed mixed-case ASCII prefix then a base64url
+  //     value run; the prefix is not an English word, so a long base64url run
+  //     after it (no `/i`; the mixed-case prefix is the signal) is enough.
   /\bAIzaSy[A-Za-z0-9_-]{10,}\b/g,
   // A raw JWT (header.payload.signature) carries no keyword prefix at all,
   // but its base64url header always starts with the literal `eyJ` (base64
