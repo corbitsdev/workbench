@@ -6,7 +6,7 @@
 // OLLAMA_MODEL (default qwen2.5:7b).
 import { expect, test } from "bun:test";
 import { bootBrowserApp, browserGate } from "../lib/browser";
-import { clickText, STEP_TIMEOUT, waitForText } from "../lib/first-run";
+import { clickText, STEP_TIMEOUT, startWorkbench, waitForText } from "../lib/first-run";
 
 const describeBrowser = browserGate(import.meta.path);
 
@@ -75,9 +75,7 @@ describeBrowser("ollama chat", () => {
       );
       await clickText(page, "button", "Connect");
 
-      await page.waitForSelector("textarea", { timeout: STEP_TIMEOUT });
-      await page.type("textarea", PROMPT);
-      await page.click("button[aria-label='Start this workbench']");
+      await startWorkbench(page, PROMPT);
       await page.waitForFunction(`location.pathname.startsWith("/w/")`, {
         timeout: STEP_TIMEOUT,
       });

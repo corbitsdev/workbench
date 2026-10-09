@@ -5,7 +5,7 @@
 import { expect, test } from "bun:test";
 import { bootAimock, MOCK_REPLY, type Fixture } from "../lib/aimock";
 import { bootBrowserApp, browserGate } from "../lib/browser";
-import { clickText, STEP_TIMEOUT, waitForText } from "../lib/first-run";
+import { clickText, STEP_TIMEOUT, startWorkbench, waitForText } from "../lib/first-run";
 
 const describeBrowser = browserGate(import.meta.path);
 
@@ -110,23 +110,14 @@ describeBrowser("0-to-1 gate", () => {
       expect(inputs.length).toBeGreaterThanOrEqual(3);
       await clickText(page, "button", "Connect");
 
-      await page.waitForSelector("textarea", { timeout: STEP_TIMEOUT });
-      await page.type("textarea", "Say hello");
-      // Wait for the composer's enabled state before clicking: the send
-      // button enables after the workspace roles load (CL-9780), and a
-      // click while the first bench is still bootstrapping races the
-      // navigate-to-/w/ assertion below (a known non-deterministic flake).
-      await page.waitForFunction(
-        `(() => {
-          const send = document.querySelector("button[aria-label='Start this workbench']");
-          return send instanceof HTMLButtonElement && !send.disabled;
-        })()`,
-        { timeout: STEP_TIMEOUT },
-      );
-      await page.click("button[aria-label='Start this workbench']");
+      await startWorkbench(page, "Say hello");
       await page.waitForFunction(`location.pathname.startsWith("/w/")`, { timeout: STEP_TIMEOUT });
       const benchUrl = page.url();
+      await page.waitForSelector(".chat-thread-working", { timeout: STEP_TIMEOUT });
       await waitForText(page, MOCK_REPLY);
+      await page.waitForFunction(`!document.querySelector(".chat-thread-working")`, {
+        timeout: STEP_TIMEOUT,
+      });
       // The worker reply proves the scripted inference provider was dialed,
       // not just the UI shell loading.
       expect(aimock().journal().length).toBeGreaterThan(0);

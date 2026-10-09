@@ -7,8 +7,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { sendToWorkbench, type WorkbenchParticipant } from "@/chat/threads-api";
+import { WorkingLabel } from "@/chat/working-label";
 import { workbenchKeys } from "../chat-path";
 import { clearOpeningMessage, readOpeningMessage } from "../opening-message";
+import { markTurnPending } from "../worker-status";
 import "./pending-opening-message.css";
 
 const CAP_MS = 60_000;
@@ -37,11 +39,13 @@ export function PendingOpeningMessage({
         participants,
         content,
       }),
+    onMutate: () => markTurnPending(queryClient, workbenchTenantId),
     onSuccess: () => {
       clearOpeningMessage(workbenchTenantId);
       setText(null);
       void queryClient.invalidateQueries({ queryKey: workbenchKeys.scope(workbenchTenantId) });
     },
+    onError: () => queryClient.setQueryData(workbenchKeys.pendingTurn(workbenchTenantId), null),
   });
 
   const live = participants.some((p) => p.kind === "agent" && p.address.includes("@"));
@@ -60,32 +64,37 @@ export function PendingOpeningMessage({
   const failed = send.isError || (timedOut && !live);
 
   return (
-    <div className="chat-thread-message" data-author="me" data-pending="true">
-      <div className="chat-thread-body">
-        <div className="chat-thread-own-bubble">{text}</div>
-        {failed ? (
-          <p className="chat-thread-error">
-            This message hasn&apos;t been sent yet.{" "}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                if (live) send.mutate(text);
-                else
-                  void queryClient.invalidateQueries({
-                    queryKey: workbenchKeys.participants(workbenchTenantId),
-                  });
-                setTimedOut(false);
-              }}
-            >
-              Retry
-            </Button>
-          </p>
-        ) : (
-          <p className="chat-thread-status">Sending once the agent is ready…</p>
-        )}
+    <>
+      <div className="chat-thread-message" data-author="me" data-pending="true">
+        <div className="chat-thread-body">
+          <div className="chat-thread-own-bubble">{text}</div>
+          {failed ? (
+            <p className="chat-thread-error">
+              This message hasn&apos;t been sent yet.{" "}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (live) send.mutate(text);
+                  else
+                    void queryClient.invalidateQueries({
+                      queryKey: workbenchKeys.participants(workbenchTenantId),
+                    });
+                  setTimedOut(false);
+                }}
+              >
+                Retry
+              </Button>
+            </p>
+          ) : (
+            <p className="chat-thread-status">Sending once the agent is ready…</p>
+          )}
+        </div>
       </div>
-    </div>
+      {/* Once live, the send marks the turn pending and the page's own
+          working label takes over until the reply lands. */}
+      {failed || live ? null : <WorkingLabel />}
+    </>
   );
 }

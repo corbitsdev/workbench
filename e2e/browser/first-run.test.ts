@@ -8,7 +8,7 @@
 import { expect, test } from "bun:test";
 import type { Page } from "puppeteer-core";
 import { bootBrowserApp, browserGate } from "../lib/browser";
-import { clickText, STEP_TIMEOUT, waitForText } from "../lib/first-run";
+import { clickText, STEP_TIMEOUT, startWorkbench, waitForText } from "../lib/first-run";
 
 const describeBrowser = browserGate(import.meta.path);
 
@@ -95,9 +95,7 @@ async function signUp(page: Page, origin: string): Promise<void> {
 }
 
 async function createBench(page: Page, message: string): Promise<string> {
-  await page.waitForSelector("textarea", { timeout: STEP_TIMEOUT });
-  await page.type("textarea", message);
-  await page.click("button[aria-label='Start this workbench']");
+  await startWorkbench(page, message);
   await page.waitForFunction(`location.pathname.startsWith("/w/")`, { timeout: STEP_TIMEOUT });
   await waitForText(page, message);
   return new URL(page.url()).pathname.slice("/w/".length);
@@ -214,8 +212,7 @@ describeBrowser("first run", () => {
     expect(JSON.stringify(mine[0]?.["roles"])).toContain("owner");
 
     // The first bench carries the first worker.
-    await page.type("textarea", "Summarize what shipped this week");
-    await page.click("button[aria-label='Start this workbench']");
+    await startWorkbench(page, "Summarize what shipped this week");
     await page.waitForFunction(`location.pathname.startsWith("/w/")`, { timeout: STEP_TIMEOUT });
     const benchId = new URL(page.url()).pathname.slice("/w/".length);
 
@@ -294,9 +291,7 @@ describeBrowser("first run", () => {
 
       // Create the bench; its sidebar row is populated and active.
       await page.goto(`${app().origin}/new`, { waitUntil: "networkidle0" });
-      await page.waitForSelector(".chat-composer-input", { timeout: STEP_TIMEOUT });
-      await page.type(".chat-composer-input", "Summarize what shipped this week");
-      await page.click("button[aria-label='Start this workbench']");
+      await startWorkbench(page, "Summarize what shipped this week");
       await page.waitForFunction(`location.pathname.startsWith("/w/")`, {
         timeout: STEP_TIMEOUT,
       });
