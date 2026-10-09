@@ -38,7 +38,11 @@ function workflowDeployHeadline(toolArguments: object): string | undefined {
   const pins = toolPackagePinsField(toolArguments, "toolPackagePins");
   const toolsText =
     pins.length > 0 ? pins.map((pin) => `${pin.name}@${pin.version}`).join(", ") : "none declared";
-  return `Deploy workflow ${packageName} @ ${sha7} — tools: ${toolsText}`;
+  // The package name, commit/sha, and any pin name/version are free-form caller
+  // input a secret could be smuggled into; redact the assembled line the same
+  // way write_file's content preview is, so a secret-shaped package or pin
+  // never reaches the headline.
+  return redactText(`Deploy workflow ${packageName} @ ${sha7} — tools: ${toolsText}`);
 }
 
 /** Per-tool headline renderers, keyed by tool name — registering here avoids
@@ -73,8 +77,10 @@ export function headlineFor(toolDefinition: unknown, toolArguments: unknown): st
       ? stringField(toolArguments, "title")
       : undefined;
   // The title is a generic free-form field a caller can stuff a secret into;
-  // redact it the same way write_file's content preview is.
-  return title === undefined ? headline : `${headline}: "${redactText(title)}"`;
+  // redact it the same way generic arguments are, so a JSON string smuggled in
+  // the title goes through the same structural (key-named) redaction as
+  // `formatArgumentValue`, not just the flat assignment/keyword pass.
+  return title === undefined ? headline : `${headline}: "${formatArgumentValue(title)}"`;
 }
 
 /** The bare tool name off a toolDefinition snapshot, for a row that wants to

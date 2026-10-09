@@ -23,6 +23,7 @@ import { createHubSessionLookups, type AgentRepoStore } from "@intx/hub-sessions
 import { createHubMailboxAuthorizeSender } from "../../apps/hub/src/mailbox-persist";
 import { e2eDatabaseUrl } from "../lib/database-url";
 import { dbGate } from "../lib/db-gate";
+import { cleanupTenants } from "../lib/tenant-cleanup";
 
 const databaseUrl = e2eDatabaseUrl() ?? "";
 const describeIfDb = dbGate(databaseUrl, import.meta.path);
@@ -39,8 +40,10 @@ function dbConfigFromUrl(url: string) {
 }
 
 const closers: (() => Promise<void>)[] = [];
+const seededTenantIds: string[] = [];
 afterAll(async () => {
   for (const close of closers) await close();
+  await cleanupTenants(seededTenantIds);
 });
 
 function uid(label: string): string {
@@ -71,6 +74,7 @@ async function setup(opts: { withSession?: boolean } = {}) {
 
   const domain = `${uid("mailbox-persist-wrap")}.test`;
   const tenantId = uid("tnt_mbxpw");
+  seededTenantIds.push(tenantId);
   const definitionId = uid("wfd_mbxpw");
   const senderRunId = uid("run_mbxpw_sender");
   const senderAddress = `${senderRunId}@${domain}`;

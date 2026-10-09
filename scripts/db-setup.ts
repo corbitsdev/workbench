@@ -101,6 +101,19 @@ export function dbTargetFromUrl(databaseUrl: string): DbTarget {
   };
 }
 
+/**
+ * The derived `_e2e` sibling of a DATABASE_URL's database: the same server,
+ * the same DB name suffixed `_e2e`. This is the database every DB-gated e2e
+ * suite owns outright (see e2e/lib/database-url.ts's `baseUrlToE2eUrl`), so
+ * provisioning it here is what makes a fresh CI e2e job able to boot those
+ * suites at all. Idempotent: a URL whose database already ends `_e2e` is its
+ * own sibling.
+ */
+export function e2eSiblingTarget(target: DbTarget): DbTarget {
+  const database = target.database.endsWith("_e2e") ? target.database : `${target.database}_e2e`;
+  return { ...target, database };
+}
+
 async function connect(target: DbTarget): Promise<SqlClient> {
   const postgres = await loadPostgres();
   return postgres({
@@ -298,8 +311,22 @@ if (import.meta.main) {
       await resetSchema(databaseUrl);
       console.log("db-setup: dropped existing schema");
     }
+    const target = dbTargetFromUrl(databaseUrl);
     const report = await setupDatabase(databaseUrl);
     console.log(describeReport(report));
+    // DB-gated e2e suites run against the derived `_e2e` sibling, never the
+    // developer's own database (see e2e/lib/database-url.ts). Provision it
+    // alongside so a fresh CI e2e job (which provisions only `workbench`) can
+    // boot those suites with reachability guaranteed from the start.
+    const sibling = e2eSiblingTarget(target);
+    if (sibling.database !== target.database) {
+      const { sql: siblingSql } = await ensureDatabase(sibling);
+      await siblingSql.end();
+      console.log(
+        `db-setup: ensured e2e sibling database ${JSON.stringify(sibling.database)} ` +
+          "(e2e suites run against this, not DATABASE_URL's own database)",
+      );
+    }
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
