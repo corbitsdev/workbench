@@ -22,9 +22,10 @@ export const PROVIDER_MODELS: Readonly<Record<string, readonly ProviderModel[]>>
     { id: "x-ai/grok-4", label: "Grok 4" },
   ],
   xai: [
+    { id: "grok-4.7", label: "Grok 4.7" },
+    { id: "grok-4.7-build-fast", label: "Grok 4.7 Build Fast" },
     { id: "grok-4.6", label: "Grok 4.6" },
-    { id: "grok-4", label: "Grok 4" },
-    { id: "grok-4-fast", label: "Grok 4 Fast" },
+    { id: "grok-4.5", label: "Grok 4.5" },
   ],
   codex: [{ id: "gpt-5.5", label: "GPT-5.5" }],
   custom: [],
