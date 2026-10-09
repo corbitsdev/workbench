@@ -11,7 +11,6 @@ import { removePrincipal, TenancyApiError } from "./tenancy-api";
 
 const TENANT = "tenant-1";
 const PRINCIPAL = "prn-1";
-const REMOVE_PATH = `/api/tenants/${TENANT}/principals/${PRINCIPAL}`;
 
 function stubFetch(status: number, body?: unknown): typeof fetch {
   return (async (_input: string | URL | Request, _init?: RequestInit) => {
