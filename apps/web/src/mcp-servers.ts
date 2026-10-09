@@ -21,7 +21,18 @@ import { type } from "arktype";
 export { MCP_SERVER_CATALOG };
 export type { McpCatalogEntry } from "@corbits/worker/workflow-ids";
 
-export class McpServerError extends Error {}
+export class McpServerError extends Error {
+  /** True when the hub said the server refused the request (typically a
+   * token-protected server answering discovery with a 401/403). Distinct from
+   * a server that simply cannot be reached, so the Tools page can tell "add a
+   * token" from "check the URL". */
+  readonly needsBearer: boolean;
+  constructor(message: string, needsBearer = false) {
+    super(message);
+    this.name = "McpServerError";
+    this.needsBearer = needsBearer;
+  }
+}
 
 const ProviderShape = type({ id: "string", name: "string", plugin: "string" });
 const ProvidersPage = type({ data: ProviderShape.array() });
@@ -237,12 +248,13 @@ async function deleteCredential(
   });
 }
 
-/** Read a server's catalog through the hub, which is the only side that may
- * hold the bearer. `credentialId` names the stored secret to send. */
-export async function discoverMcpCatalog(
+/** One POST to the hub's discovery route, shared by the add flow (which needs
+ * only the tools) and the name lookup (which needs the self-reported
+ * `serverInfo` too). Stores nothing. */
+async function postDiscovery(
   args: { readonly tenantId: string; readonly url: string; readonly credentialId?: string },
-  fetchImpl: typeof fetch = fetch,
-): Promise<readonly McpTool[]> {
+  fetchImpl: typeof fetch,
+): Promise<{ readonly serverInfo: Record<string, unknown>; readonly tools: readonly McpTool[] }> {
   const response = await fetchImpl(tenantPath(args.tenantId, "/mcp/discover"), {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -254,13 +266,54 @@ export async function discoverMcpCatalog(
   if (!response.ok) {
     const body: unknown = await response.json().catch(() => undefined);
     const envelope = type({ error: "string" })(body);
-    throw new McpServerError(
+    const message =
       envelope instanceof type.errors
         ? `this server could not be reached (HTTP ${String(response.status)})`
-        : envelope.error,
-    );
+        : envelope.error;
+    // The hub answers every discovery failure with a single 422 whose copy is
+    // the only sign of why: "refused the request" when a token-protected server
+    // answered with a 4xx, "the handshake failed" when it never answered. Read
+    // that sign here so the Tools page can tell "add a token" from "check the
+    // URL". (Mirrors the pinned @corbits/mcp wording.)
+    throw new McpServerError(message, message.includes("refused the request"));
   }
-  return (await readJson(response, DiscoveryShape, "the MCP server's catalog")).data.tools;
+  return (await readJson(response, DiscoveryShape, "the MCP server's catalog")).data;
+}
+
+/** Read a server's catalog through the hub, which is the only side that may
+ * hold the bearer. `credentialId` names the stored secret to send. */
+export async function discoverMcpCatalog(
+  args: { readonly tenantId: string; readonly url: string; readonly credentialId?: string },
+  fetchImpl: typeof fetch = fetch,
+): Promise<readonly McpTool[]> {
+  return (await postDiscovery(args, fetchImpl)).tools;
+}
+
+/** The hub nests the server's self-report beside the negotiated protocol
+ * version (`{ protocolVersion, serverInfo? }`); the name lookup wants the
+ * inner report itself. A report-shaped object passes through untouched, and
+ * an envelope with no inner report stays whole — callers fall back to the
+ * URL suggestion either way. */
+function unwrapDiscoveredName(discovered: Record<string, unknown>): unknown {
+  if (typeof discovered["name"] === "string" || typeof discovered["title"] === "string") {
+    return discovered;
+  }
+  const inner = discovered["serverInfo"];
+  return inner !== null && typeof inner === "object" ? inner : discovered;
+}
+
+/** Asks a server what it calls itself without storing anything: the Tools
+ * page pre-fills the name field from the returned `serverInfo` before the
+ * server is added. `serverInfo` stays unknown — callers parse what they
+ * display. Keyless servers answer directly; token-protected ones cannot
+ * answer until they hold a credential, so callers keep the URL suggestion
+ * when this rejects. */
+export async function probeMcpServer(
+  args: { readonly tenantId: string; readonly url: string },
+  fetchImpl: typeof fetch = fetch,
+): Promise<{ readonly serverInfo: unknown; readonly tools: readonly McpTool[] }> {
+  const { serverInfo, tools } = await postDiscovery(args, fetchImpl);
+  return { serverInfo: unwrapDiscoveredName(serverInfo), tools };
 }
 
 export type AddMcpServerInput = {

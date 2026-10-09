@@ -30,6 +30,7 @@
 // reference it — never the ancestor's credential.
 
 import { type } from "arktype";
+import { reportError } from "@corbits/error-sink";
 import {
   CreateCredential,
   CreateModel,
@@ -143,6 +144,15 @@ async function requestVoid(
       envelope instanceof type.errors
         ? `The server answered ${response.status} while ${verb}.`
         : envelope.error.userMessage,
+      response.status,
+    );
+  }
+  // A void route answers `204 No Content` by contract. Any other 2xx (e.g. a
+  // 200/201-with-body the route drifted into returning where 204 is expected)
+  // is a contract mismatch and must fail loudly.
+  if (response.status !== 204) {
+    throw new InferenceSettingsApiError(
+      `The server answered ${response.status} while ${verb}; expected 204 No Content.`,
       response.status,
     );
   }
@@ -365,7 +375,9 @@ export async function shadowOffering(
         "rolling back the just-minted provider",
         { method: "DELETE" },
         fetchImpl,
-      ).catch(() => undefined);
+      ).catch((rollbackCause: unknown) => {
+        reportError(rollbackCause, { operation: "shadowOffering.rollback", tenantId });
+      });
     }
     throw cause;
   }

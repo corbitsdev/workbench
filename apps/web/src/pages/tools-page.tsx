@@ -26,8 +26,21 @@ import { QueryView } from "@/lib/api-query";
 import { CircleNotch, MagnifyingGlass, Plugs, type Icon } from "@/lib/icons";
 
 import { describeApiError } from "@/lib/api-query";
-import { MCP_SERVER_CATALOG, type McpCatalogEntry } from "../mcp-servers";
+import {
+  MCP_SERVER_CATALOG,
+  McpServerError,
+  probeMcpServer,
+  resolveWorkspaceTenantId,
+} from "../mcp-servers";
+import type { McpCatalogEntry } from "../mcp-servers";
 import { toolCountLabel } from "../tools/tool-count";
+import {
+  dedupeMcpHandle,
+  dedupeMcpName,
+  handleFromUrl,
+  redirectUrlName,
+  suggestMcpServerName,
+} from "../mcp-server-name";
 import {
   describeRedeployResult,
   useAddMcpServer,
@@ -45,16 +58,12 @@ import { StageTopBar } from "../shell/stage-top-bar";
 import { ConfirmButton } from "../components/confirm-button";
 import { ListCard, ListFilter } from "./library-list";
 
-/** The handle a pasted URL's server is stored under; the host's first label
- * reads better than a random id and is what a person would have typed. */
-function handleFromUrl(url: string): string {
-  const host = new URL(url).hostname.replace(/^www\./, "");
-  const label = host.split(".")[0] ?? host;
-  return label.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-");
-}
-
 function toolHost(url: string): string {
-  return new URL(url).hostname;
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
 }
 
 function ToolTile({
@@ -172,44 +181,124 @@ function PopularTile({
 function AddByUrl({
   onAdd,
   onSignIn,
+  onProbeName,
+  existingNames,
+  existingHandles,
   adding,
   waiting,
 }: {
   readonly onAdd: (input: { url: string; name: string; handle: string; token?: string }) => void;
   readonly onSignIn: (input: { url: string; name: string; handle: string }) => void;
+  /** The server's self-reported `serverInfo` for a pasted URL; rejects when
+   * the server cannot answer (bad URL, auth-gated, offline). */
+  readonly onProbeName: (url: string) => Promise<unknown>;
+  readonly existingNames: readonly string[];
+  readonly existingHandles: readonly string[];
   readonly adding: boolean;
   readonly waiting: boolean;
 }) {
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
+  const [name, setName] = useState("");
+  /** Typed text is never overwritten by a suggestion; clearing the field
+   * hands the suggestion back. */
+  const [edited, setEdited] = useState(false);
+  /** The last looked-up `serverInfo` for this URL; cleared with the URL, so
+   * a suggestion never leaks across servers. */
+  const [serverInfo, setServerInfo] = useState<unknown>(undefined);
+  const [probing, setProbing] = useState(false);
+
+  const hasUrl = url.trim() !== "";
+  const suggestion = suggestMcpServerName({ url, serverInfo, existingNames });
+  const shown = edited ? name : hasUrl ? suggestion.name : "";
+  const typed = shown.trim();
+  /** A URL pasted into the name field is never saved raw: the hint below
+   * says so, and the extracted suggestion is what gets stored. */
+  const typedUrlName = edited ? redirectUrlName(typed, existingNames) : null;
+  const finalName =
+    typedUrlName ?? (typed === "" ? suggestion.name : dedupeMcpName(typed, existingNames));
+
+  let hint: string;
+  if (!hasUrl) {
+    hint = "Paste a server URL and the name fills in.";
+  } else if (!edited) {
+    hint =
+      suggestion.source === "server"
+        ? "From the server itself — edit as you like."
+        : "Suggested from the URL — edit as you like.";
+  } else if (typedUrlName !== null) {
+    hint = `Looks like a URL — will be saved as "${typedUrlName}".`;
+  } else if (typed === "") {
+    hint = `Will be saved as "${suggestion.name}".`;
+  } else if (finalName !== typed) {
+    hint = `"${typed}" is taken — will be saved as "${finalName}".`;
+  } else {
+    hint = "Custom name.";
+  }
+
+  function changeUrl(value: string) {
+    setUrl(value);
+    setServerInfo(undefined);
+  }
 
   function parsedHandle(): string | null {
-    try {
-      return handleFromUrl(url);
-    } catch {
+    const base = handleFromUrl(url);
+    if (base === null) {
       toast("That doesn't look like a server URL.");
       return null;
+    }
+    return dedupeMcpHandle(base, existingHandles);
+  }
+
+  function reset() {
+    setUrl("");
+    setToken("");
+    setName("");
+    setEdited(false);
+    setServerInfo(undefined);
+  }
+
+  async function lookUp() {
+    const trimmed = url.trim();
+    if (trimmed === "" || probing) return;
+    setProbing(true);
+    try {
+      const info = await onProbeName(trimmed);
+      setServerInfo(info);
+      // A suggestion never clobbers what was typed: only hand the name field
+      // back to the suggestion when the user had not already edited it.
+      if (!edited) setEdited(false);
+    } catch (cause) {
+      // The hub answers an auth-gated server's discovery with "refused the
+      // request" (it answered but needs a token), which reads differently from
+      // a server that never answered at all.
+      if (cause instanceof McpServerError && cause.needsBearer) {
+        toast("That server needs a token — add it below.");
+      } else {
+        toast("That server didn't answer — check the URL.");
+      }
+    } finally {
+      setProbing(false);
     }
   }
 
   function signIn() {
     const handle = parsedHandle();
     if (handle === null) return;
-    onSignIn({ url, handle, name: handle });
-    setUrl("");
+    onSignIn({ url: url.trim(), handle, name: finalName });
+    reset();
   }
 
   function submit() {
     const handle = parsedHandle();
     if (handle === null) return;
     onAdd({
-      url,
+      url: url.trim(),
       handle,
-      name: handle,
+      name: finalName,
       ...(token === "" ? {} : { token }),
     });
-    setUrl("");
-    setToken("");
+    reset();
   }
 
   return (
@@ -223,9 +312,36 @@ function AddByUrl({
         placeholder="https://mcp.example.com/mcp"
         value={url}
         onChange={(event) => {
-          setUrl(event.target.value);
+          changeUrl(event.target.value);
         }}
       />
+      <div className="tool-name-group">
+        <Input
+          aria-label="Server name"
+          aria-describedby="tool-name-hint"
+          placeholder="A name for this server"
+          value={shown}
+          onChange={(event) => {
+            setName(event.target.value);
+            setEdited(true);
+          }}
+        />
+        <div className="tool-name-actions">
+          <span id="tool-name-hint" className="tool-tile-hint">
+            {hint}
+          </span>
+          <Button
+            size="lg"
+            variant="outline"
+            disabled={probing || !hasUrl}
+            onClick={() => {
+              void lookUp();
+            }}
+          >
+            {probing ? "Looking up…" : "Look up name"}
+          </Button>
+        </div>
+      </div>
       <Input
         aria-label="Bearer token"
         type="password"
@@ -312,6 +428,13 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
         toast(describeApiError(cause, "adding this server"));
       },
     });
+  }
+
+  /** The name lookup behind "Look up name": asks the pasted server what it
+   * calls itself, storing nothing. */
+  async function probeServerName(probeUrl: string): Promise<unknown> {
+    const workspaceTenantId = await resolveWorkspaceTenantId(tenantId as string);
+    return (await probeMcpServer({ tenantId: workspaceTenantId, url: probeUrl })).serverInfo;
   }
 
   return stage(
@@ -442,6 +565,9 @@ export function ToolsPage({ tenantId }: { readonly tenantId: string | null }) {
                       onSignIn={(server) => {
                         signIn.start.mutate(server);
                       }}
+                      onProbeName={probeServerName}
+                      existingNames={servers.map((server) => server.name)}
+                      existingHandles={servers.map((server) => server.handle)}
                       adding={add.isPending || signIn.busy}
                       waiting={signIn.waitingHandle !== null}
                     />
