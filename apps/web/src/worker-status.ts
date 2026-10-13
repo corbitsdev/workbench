@@ -60,6 +60,27 @@ function turnAnswered(timeline: readonly WorkbenchMessage[] | undefined, sentAt:
   return (timeline ?? []).some((m) => m.author === "other" && Date.parse(m.at) > sentAt);
 }
 
+type ApprovalRow = (typeof TenantApprovalsSchema.infer)["data"][number];
+
+// Only the live worker's own asks count: one left pending by a run that is
+// gone can't be answered and says nothing about the current turn.
+function parkedOnAsk(approvals: readonly ApprovalRow[], workerAddress: string): boolean {
+  return approvals.some(
+    (row) => row.status === "pending" && sameAddress(row.agentAddress, workerAddress),
+  );
+}
+
+/** A pending turn ends once the worker replies after it was sent, or parks
+ * on an ask. */
+export function turnSettled(
+  sentAt: number,
+  timeline: readonly WorkbenchMessage[] | undefined,
+  approvals: readonly ApprovalRow[],
+  workerAddress: string,
+): boolean {
+  return parkedOnAsk(approvals, workerAddress) || turnAnswered(timeline, sentAt);
+}
+
 const RANK: Record<string, number> = {
   "Needs you": 3,
   Working: 2,
@@ -120,10 +141,9 @@ export function useBenchWorkerStatus(
     if (agent.address === "") {
       return offer({ tone: "idle", text: agent.redeploy === "manual" ? "Stopped" : "Starting" });
     }
-    const needsYou = (approvals[index]?.data?.data ?? []).some(
-      (row) => row.status === "pending" && sameAddress(row.agentAddress, agent.address),
-    );
-    if (needsYou) return offer({ tone: "ready", text: "Needs you" });
+    if (parkedOnAsk(approvals[index]?.data?.data ?? [], agent.address)) {
+      return offer({ tone: "ready", text: "Needs you" });
+    }
     const sentAt = pending[index]?.data?.sentAt;
     if (sentAt !== undefined) {
       expiries.push({ id: bench.id, at: sentAt + PENDING_TURN_TIMEOUT_MS });
@@ -139,8 +159,14 @@ export function useBenchWorkerStatus(
   const settled = benches
     .map((bench, index) => {
       const sentAt = pending[index]?.data?.sentAt;
-      const approved = (approvals[index]?.data?.data ?? []).some((row) => row.status === "pending");
-      return sentAt !== undefined && (approved || turnAnswered(timelines[index]?.data, sentAt))
+      const agent = participants[index]?.data?.find((p) => p.kind === "agent" && isWorker(p));
+      return sentAt !== undefined &&
+        turnSettled(
+          sentAt,
+          timelines[index]?.data,
+          approvals[index]?.data?.data ?? [],
+          agent?.address ?? "",
+        )
         ? bench.id
         : null;
     })
