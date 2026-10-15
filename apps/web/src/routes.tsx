@@ -65,6 +65,12 @@ const SkillDetailRoute = lazy(async () => ({
 const RoutineDetailRoute = lazy(async () => ({
   default: (await import("./pages/routine-detail-page")).RoutineDetailRoute,
 }));
+const ChatPrototypeRoute = lazy(async () => ({
+  default: (await import("./chat-prototype/chat-prototype")).ChatPrototypeRoute,
+}));
+
+// The chat revamp playground: mock data only, never in a production build.
+const CHAT_PROTOTYPE_PATH = "/prototype/chat";
 
 // A real route, not a conditional swap, so a successful sign-in with
 // `?next=` returns to where the visitor meant to go.
@@ -263,6 +269,16 @@ export const APP_ROUTES: readonly AppRoute[] = [
     icon: <SlidersHorizontal />,
     render: () => <></>,
   },
+  ...(import.meta.env.DEV
+    ? [
+        {
+          path: CHAT_PROTOTYPE_PATH,
+          label: "Chat prototype",
+          icon: <ChatCircle />,
+          render: () => <ChatPrototypeRoute />,
+        },
+      ]
+    : []),
 ];
 
 function routesInOrder(paths: readonly string[]): readonly AppRoute[] {
