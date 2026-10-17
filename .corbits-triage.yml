@@ -1,0 +1,28 @@
+# Corbits Triage policy.
+rules:
+  - check: focused
+    text: Check the change is focused on one thing.
+    reason: Set in the portal before the policy file.
+    evidence:
+      - maintainer-stated
+  - check: linked-issue
+    text: Require a linked issue from GitHub or Linear.
+    tracker: either
+    reason: Set in the portal before the policy file.
+    evidence:
+      - maintainer-stated
+  - check: no-merge-conflicts
+    text: Flag merge conflicts with the base branch.
+    reason: Set in the portal before the policy file.
+    evidence:
+      - maintainer-stated
+  - check: ci-green
+    text: CI must pass before merge.
+    reason: Set in the portal before the policy file.
+    evidence:
+      - maintainer-stated
+actions:
+  unsure:
+    - do: request-review
+      target:
+        to: codeowners
