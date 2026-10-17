@@ -29,6 +29,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -36,9 +37,11 @@ import {
   type ClipboardEvent,
   type DragEvent,
   type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type RefObject,
 } from "react";
+import { flushSync } from "react-dom";
 
 import { Streamdown } from "streamdown";
 import "streamdown/styles.css";
@@ -57,7 +60,6 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowsOut,
-  ArrowsIn,
   Bell,
   BellOff,
   Brain,
@@ -81,6 +83,7 @@ import {
   FileText,
   FileVideo,
   FlowArrow,
+  GitDiff,
   Lightning,
   LinkSimple,
   ListChecks,
@@ -377,9 +380,31 @@ type Attachment = {
 /** What the next message is about, shown above the input. */
 type ComposerContext = { readonly label: string; readonly detail: string };
 
-type PanelState =
+/** What a side-panel tab shows. Its id comes from what it shows, so opening
+ * the same thing twice selects the tab already open. */
+type PanelTabRef =
   | { readonly kind: "thread"; readonly messageId: string }
-  | { readonly kind: "artifact"; readonly artifactId: string; readonly version: number };
+  | { readonly kind: "artifact"; readonly artifactId: string; readonly version: number }
+  | {
+      readonly kind: "changes";
+      readonly artifactId: string;
+      readonly from: number;
+      readonly to: number;
+    };
+
+function panelTabId(ref: PanelTabRef): string {
+  switch (ref.kind) {
+    case "thread":
+      return `thread:${ref.messageId}`;
+    case "artifact":
+      return `artifact:${ref.artifactId}`;
+    case "changes":
+      return `changes:${ref.artifactId}:${ref.from}-${ref.to}`;
+  }
+}
+
+/** The side panel's open tabs, in order, and the one in front. */
+type PanelState = { readonly tabs: readonly PanelTabRef[]; readonly activeId: string };
 
 function timeLabel(at: string): string {
   return new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -4266,10 +4291,8 @@ const MAIN_MIN = 440;
 const SNAP_PX = 12;
 const KEY_STEP = 16;
 
-function defaultPanelWidth(size: "narrow" | "wide"): number {
-  return size === "narrow"
-    ? 400
-    : Math.round(Math.min(760, Math.max(480, window.innerWidth * 0.46)));
+function defaultPanelWidth(): number {
+  return Math.round(Math.min(760, Math.max(480, window.innerWidth * 0.46)));
 }
 
 function panelBounds(panel: HTMLElement): { readonly min: number; readonly max: number } {
@@ -4291,7 +4314,6 @@ function PanelResizeHandle({
   metrics,
   remeasure,
   label,
-  size,
   onWidthChange,
 }: {
   readonly panelRef: RefObject<HTMLElement | null>;
@@ -4299,13 +4321,12 @@ function PanelResizeHandle({
   /** Re-reads the panel's size right after a change, so ARIA never lags. */
   readonly remeasure: () => void;
   readonly label: string;
-  readonly size: "narrow" | "wide";
   readonly onWidthChange: PanelSizing["onWidthChange"];
 }) {
   const handleRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState(false);
 
-  const fallback = defaultPanelWidth(size);
+  const fallback = defaultPanelWidth();
   const current = metrics?.width ?? fallback;
 
   const commit = (next: number | null) => {
@@ -4395,25 +4416,312 @@ function PanelResizeHandle({
   );
 }
 
-function SidePanel({
+/** One tab in a row of tabs: all the strip needs to draw it. */
+type TabItem = {
+  /** Stable and chosen by the surface: opening an id already open selects it. */
+  readonly id: string;
+  readonly label: string;
+  readonly icon?: ReactNode;
+};
+
+/** How the side panel and its tabs look. `ledger`: connected file tabs on
+ * a sunk strip. `index`: the bench drawer's bold labels over a gliding ink
+ * underline. `sheet`: a floating card with pill tabs in a track. */
+type TabsVariant = "ledger" | "index" | "sheet";
+
+const TABS_VARIANTS: readonly TabsVariant[] = ["ledger", "index", "sheet"];
+
+/** Which tab takes over when `closing` goes: the one to its right, else the
+ * one to its left, else none. */
+function tabAfterClosing(ids: readonly string[], closing: string): string | null {
+  const index = ids.indexOf(closing);
+  return ids[index + 1] ?? ids[index - 1] ?? null;
+}
+
+function tabDomId(prefix: string, tabId: string, part: "tab" | "panel"): string {
+  return `${prefix}-${part}-${tabId}`;
+}
+
+/** A row of tabs. It owns no state: the surface passes the tabs, which is
+ * active, and what to do on select, close and move.
+ *
+ * Keyboard: arrows, Home and End move between tabs (selecting as they go),
+ * Delete closes one, and Ctrl/Cmd+Shift with an arrow moves it along the
+ * row. Pointer: drag a tab to reorder (the others make room as it passes),
+ * middle-click to close. A long row scrolls, keeping the active tab in view. */
+function TabStrip({
   label,
-  size,
-  width,
-  onWidthChange,
-  header,
-  footer,
-  onDropFiles,
-  children,
+  idPrefix,
+  tabs,
+  activeId,
+  onSelect,
+  onClose,
+  onMove,
 }: {
   readonly label: string;
-  /** Threads read like chat; documents need a page's width. */
-  readonly size: "narrow" | "wide";
-  readonly header: ReactNode;
-  readonly footer?: ReactNode;
-  /** Makes the body a drop target for the panel's own composer. */
-  readonly onDropFiles: ((incoming: IncomingFiles) => void) | undefined;
-  readonly children: ReactNode;
+  /** Prefix for the ids tying each tab to its panel. */
+  readonly idPrefix: string;
+  readonly tabs: readonly TabItem[];
+  readonly activeId: string;
+  readonly onSelect: (id: string) => void;
+  readonly onClose: (id: string) => void;
+  readonly onMove: (id: string, toIndex: number) => void;
+}) {
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const focusTab = (id: string) => {
+    document.getElementById(tabDomId(idPrefix, id, "tab"))?.focus();
+  };
+
+  useEffect(() => {
+    document
+      .getElementById(tabDomId(idPrefix, activeId, "tab"))
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeId, idPrefix, tabs.length]);
+
+  // An underline the styles can show under the active tab, placed by
+  // transform only. Re-placed whenever tab widths change.
+  const indicatorRef = useRef<HTMLSpanElement | null>(null);
+  const order = tabs.map((tab) => tab.id).join("\n");
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    const indicator = indicatorRef.current;
+    if (list === null || indicator === null) return;
+    const place = () => {
+      const active = list.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(activeId)}"]`);
+      if (active === null) return;
+      indicator.style.transform = `translateX(${active.offsetLeft}px) scaleX(${active.offsetWidth})`;
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(list);
+    for (const item of list.querySelectorAll("[data-tab-id]")) observer.observe(item);
+    return () => observer.disconnect();
+  }, [activeId, order]);
+  /** Keyboard moves land at once: a glide would trail a held key. */
+  const instantly = () => {
+    const list = listRef.current;
+    if (list === null) return;
+    list.dataset.instant = "true";
+    requestAnimationFrame(() => requestAnimationFrame(() => delete list.dataset.instant));
+  };
+
+  // Moves and closes render before focus moves, so a held key always acts
+  // on the tab that has focus now.
+  const close = (id: string) => {
+    const next = tabAfterClosing(
+      tabs.map((tab) => tab.id),
+      id,
+    );
+    flushSync(() => onClose(id));
+    if (next !== null) focusTab(next);
+  };
+
+  /** Drags a tab along the row. Positions are written straight to the
+   * elements while it moves; the new order is committed once, on release. */
+  const startDrag = (event: ReactPointerEvent<HTMLDivElement>, id: string) => {
+    const list = listRef.current;
+    if (event.button !== 0 || list === null) return;
+    if (event.target instanceof Element && event.target.closest(".cp-tab-close") !== null) return;
+    const items = [...list.querySelectorAll<HTMLElement>("[data-tab-id]")];
+    const from = items.findIndex((item) => item.dataset.tabId === id);
+    const dragged = items[from];
+    const rects = items.map((item) => item.getBoundingClientRect());
+    const own = rects[from];
+    const first = rects[0];
+    const last = rects.at(-1);
+    if (dragged === undefined || own === undefined || first === undefined || last === undefined) {
+      return;
+    }
+    const gap = Number.parseFloat(getComputedStyle(list).columnGap);
+    const room = own.width + (Number.isFinite(gap) ? gap : 0);
+    const startX = event.clientX;
+    const pointerId = event.pointerId;
+    let target = from;
+    let dragging = false;
+
+    const move = (moveEvent: PointerEvent) => {
+      const dx = moveEvent.clientX - startX;
+      if (!dragging) {
+        if (Math.abs(dx) < 4) return;
+        dragging = true;
+        dragged.setPointerCapture(pointerId);
+        list.dataset.dragging = "true";
+        dragged.dataset.dragging = "true";
+      }
+      // Drawn within the row, but placed by where the pointer is: a wide
+      // tab still reaches past a narrow one at either end.
+      const offset = Math.min(Math.max(dx, first.left - own.left), last.right - own.right);
+      dragged.style.transform = `translateX(${offset}px)`;
+      const center = own.left + own.width / 2 + dx;
+      target = rects.filter(
+        (rect, index) => index !== from && rect.left + rect.width / 2 < center,
+      ).length;
+      items.forEach((item, index) => {
+        if (index === from) return;
+        const shift =
+          from < target && index > from && index <= target
+            ? -room
+            : from > target && index >= target && index < from
+              ? room
+              : 0;
+        item.style.transform = shift === 0 ? "" : `translateX(${shift}px)`;
+      });
+    };
+    const end = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      if (!dragging) return;
+      // Back to rest without animating, and the new order in the same
+      // frame, so nothing slides back before it lands.
+      for (const item of items) {
+        item.style.transition = "none";
+        item.style.transform = "";
+      }
+      delete list.dataset.dragging;
+      delete dragged.dataset.dragging;
+      if (target !== from) flushSync(() => onMove(id, target));
+      requestAnimationFrame(() => {
+        for (const item of items) item.style.transition = "";
+      });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+  };
+
+  return (
+    <div ref={listRef} className="cp-tabs" role="tablist" aria-label={label}>
+      {tabs.map((tab, index) => {
+        const active = tab.id === activeId;
+        return (
+          <div
+            key={tab.id}
+            className="cp-tab"
+            role="presentation"
+            data-tab-id={tab.id}
+            data-active={active ? "true" : undefined}
+            onPointerDown={(event) => startDrag(event, tab.id)}
+            onMouseDown={(event) => {
+              // Middle-click closes; without this it would start autoscroll.
+              if (event.button === 1) event.preventDefault();
+            }}
+            onAuxClick={(event) => {
+              if (event.button === 1) close(tab.id);
+            }}
+          >
+            <button
+              type="button"
+              id={tabDomId(idPrefix, tab.id, "tab")}
+              className="cp-tab-select"
+              role="tab"
+              aria-selected={active}
+              aria-controls={tabDomId(idPrefix, tab.id, "panel")}
+              aria-keyshortcuts="Delete Control+Shift+ArrowLeft Control+Shift+ArrowRight"
+              tabIndex={active ? 0 : -1}
+              title={tab.label}
+              onClick={() => onSelect(tab.id)}
+              onKeyDown={(event) => {
+                const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+                if (step !== 0 && (event.metaKey || event.ctrlKey) && event.shiftKey) {
+                  event.preventDefault();
+                  const to = Math.min(Math.max(index + step, 0), tabs.length - 1);
+                  if (to === index) return;
+                  flushSync(() => onMove(tab.id, to));
+                  focusTab(tab.id);
+                  return;
+                }
+                const next =
+                  step !== 0
+                    ? tabs[(index + step + tabs.length) % tabs.length]
+                    : event.key === "Home"
+                      ? tabs[0]
+                      : event.key === "End"
+                        ? tabs.at(-1)
+                        : undefined;
+                if (next !== undefined) {
+                  event.preventDefault();
+                  instantly();
+                  onSelect(next.id);
+                  focusTab(next.id);
+                  return;
+                }
+                if (event.key === "Delete") {
+                  event.preventDefault();
+                  close(tab.id);
+                }
+              }}
+            >
+              {tab.icon === undefined ? null : (
+                <span className="cp-tab-icon" aria-hidden="true">
+                  {tab.icon}
+                </span>
+              )}
+              <span className="cp-tab-label">{tab.label}</span>
+            </button>
+            <button
+              type="button"
+              className="cp-tab-close"
+              tabIndex={-1}
+              aria-label={`Close ${tab.label}`}
+              onClick={() => close(tab.id)}
+            >
+              <X aria-hidden="true" />
+            </button>
+          </div>
+        );
+      })}
+      <span ref={indicatorRef} className="cp-tab-indicator" aria-hidden="true" />
+    </div>
+  );
+}
+
+/** A tab in the side panel: what the strip draws, what it shows, and the
+ * header controls it brings while active. The surface decides all three, so
+ * any kind of content can be a tab. */
+type PanelTab = TabItem & {
+  readonly content: ReactNode;
+  readonly actions?: readonly PanelAction[];
+};
+
+/** A titled group of things the `+` beside the tabs can open. */
+type TabMenuSection = {
+  readonly id: string;
+  readonly label: string;
+  readonly items: readonly PanelMenuItem[];
+};
+
+/** The side panel: a row of tabs over their content, resizable from its
+ * left edge. With `addMenu`, a `+` after the tabs opens whatever the
+ * surface lists there. Every open tab stays mounted and only the active one shows, so
+ * a thread keeps its scroll position and its half-written reply while
+ * another tab is in front. */
+function TabbedPanel({
+  label,
+  tabs,
+  activeId,
+  onSelect,
+  onCloseTab,
+  onMoveTab,
+  onClose,
+  addMenu,
+  variant,
+  width,
+  onWidthChange,
+}: {
+  readonly label: string;
+  readonly tabs: readonly PanelTab[];
+  readonly activeId: string;
+  readonly onSelect: (id: string) => void;
+  readonly onCloseTab: (id: string) => void;
+  readonly onMoveTab: (id: string, toIndex: number) => void;
+  /** Closes the panel and every tab in it. */
+  readonly onClose: () => void;
+  /** What the `+` offers; without it there is no `+`. */
+  readonly addMenu?: readonly TabMenuSection[];
+  readonly variant: TabsVariant;
 } & PanelSizing) {
+  const idPrefix = useId();
   const panelRef = useRef<HTMLElement | null>(null);
   const [metrics, setMetrics] = useState<PanelMetrics | null>(null);
   // The width lives in a CSS variable so the narrow-screen overlay rule
@@ -4444,28 +4752,111 @@ function SidePanel({
     if (panel.parentElement !== null) observer.observe(panel.parentElement);
     return () => observer.disconnect();
   }, [measure]);
+  const active = tabs.find((tab) => tab.id === activeId);
   return (
-    <aside ref={panelRef} className="cp-panel" data-size={size} aria-label={label}>
+    <aside ref={panelRef} className="cp-panel" data-variant={variant} aria-label={label}>
       <PanelResizeHandle
         panelRef={panelRef}
         metrics={metrics}
         remeasure={measure}
         label={`Resize ${label.toLowerCase()} panel`}
-        size={size}
         onWidthChange={onWidthChange}
       />
-      <header className="cp-panel-head">{header}</header>
-      <DropZone onFiles={onDropFiles}>
-        <div className="cp-panel-body">{children}</div>
-        {footer === undefined ? null : <footer className="cp-panel-foot">{footer}</footer>}
-      </DropZone>
+      <header className="cp-panel-head">
+        <TabStrip
+          label={`${label} tabs`}
+          idPrefix={idPrefix}
+          tabs={tabs}
+          activeId={activeId}
+          onSelect={onSelect}
+          onClose={onCloseTab}
+          onMove={onMoveTab}
+        />
+        {addMenu === undefined ? null : <TabAddMenu sections={addMenu} />}
+        <PanelHeaderActions
+          label={active?.label ?? label}
+          actions={active?.actions ?? NO_PANEL_ACTIONS}
+          onClose={onClose}
+        />
+      </header>
+      <div className="cp-tab-panes">
+        {tabs.map((tab) => (
+          <div
+            key={tab.id}
+            id={tabDomId(idPrefix, tab.id, "panel")}
+            className="cp-tab-pane"
+            role="tabpanel"
+            aria-labelledby={tabDomId(idPrefix, tab.id, "tab")}
+            data-active={tab.id === activeId ? "true" : undefined}
+            inert={tab.id !== activeId}
+          >
+            {tab.content}
+          </div>
+        ))}
+      </div>
     </aside>
   );
 }
 
+/** The `+` after the tabs: a menu of what can open as a tab, in groups. */
+function TabAddMenu({ sections }: { readonly sections: readonly TabMenuSection[] }) {
+  const filled = sections.filter((section) => section.items.length > 0);
+  return (
+    <Menu>
+      <MenuTrigger asChild>
+        <button
+          type="button"
+          className="cp-tab-add cp-tip"
+          data-tip="Open a tab"
+          aria-label="Open a tab"
+          disabled={filled.length === 0}
+        >
+          <Plus aria-hidden="true" />
+        </button>
+      </MenuTrigger>
+      <MenuContent align="start" sideOffset={4} className="cp-more-menu cp-tab-menu">
+        {filled.map((section, index) => (
+          <MenuGroup key={section.id}>
+            {index === 0 ? null : <MenuSeparator />}
+            <MenuLabel className="cp-picker-label">{section.label}</MenuLabel>
+            {section.items.map((item) => (
+              <MenuItem key={item.id} onSelect={item.onSelect}>
+                {item.icon}
+                <span className="cp-tab-menu-text">{item.label}</span>
+              </MenuItem>
+            ))}
+          </MenuGroup>
+        ))}
+      </MenuContent>
+    </Menu>
+  );
+}
+
+/** One tab's frame: an optional bar of its own controls, the scrolling
+ * body, and a footer. With `onDropFiles` the whole pane takes dropped files. */
+function PanelPane({
+  bar,
+  footer,
+  onDropFiles,
+  children,
+}: {
+  readonly bar?: ReactNode;
+  readonly footer?: ReactNode;
+  readonly onDropFiles: ((incoming: IncomingFiles) => void) | undefined;
+  readonly children: ReactNode;
+}) {
+  return (
+    <DropZone onFiles={onDropFiles}>
+      {bar === undefined ? null : <div className="cp-pane-bar">{bar}</div>}
+      <div className="cp-panel-body">{children}</div>
+      {footer === undefined ? null : <footer className="cp-panel-foot">{footer}</footer>}
+    </DropZone>
+  );
+}
+
 /** One control in a panel's header row, beside Close: an icon button
- * (optionally on/off), or a menu of items. A panel's row is empty unless
- * the surface passes some. */
+ * (optionally on/off), or a menu of items. A tab's row is empty unless the
+ * surface passes some. */
 type PanelAction =
   | {
       readonly kind: "button";
@@ -4494,9 +4885,6 @@ type PanelMenuItem = {
 };
 
 const NO_PANEL_ACTIONS: readonly PanelAction[] = [];
-
-/** A thread panel widened from its header lands at this width. */
-const THREAD_WIDE = 640;
 
 /** A panel's header controls, then a hairline, then Close. */
 function PanelHeaderActions({
@@ -4551,26 +4939,21 @@ function PanelHeaderActions({
         ),
       )}
       {actions.length === 0 ? null : <span className="cp-panel-sep" aria-hidden="true" />}
-      <PanelClose onClose={onClose} />
+      <button
+        type="button"
+        className="cp-icon-btn cp-tip"
+        data-tip="Close panel"
+        aria-label="Close panel"
+        onClick={onClose}
+      >
+        <X aria-hidden="true" />
+      </button>
     </div>
   );
 }
 
-function PanelClose({ onClose }: { readonly onClose: () => void }) {
-  return (
-    <button
-      type="button"
-      className="cp-icon-btn cp-tip"
-      data-tip="Close"
-      aria-label="Close"
-      onClick={onClose}
-    >
-      <X aria-hidden="true" />
-    </button>
-  );
-}
-
-function ThreadPanel({
+/** A thread's replies with its own composer, as a panel tab. */
+function ThreadPane({
   parent,
   replies,
   participants,
@@ -4582,12 +4965,9 @@ function ThreadPanel({
   composer,
   working,
   awaitingFirstContent: waiting,
-  sizing,
   onDropFiles,
-  headerActions = NO_PANEL_ACTIONS,
   avatars = true,
   names = true,
-  onClose,
 }: {
   readonly parent: ChatMessage;
   readonly replies: readonly ChatMessage[];
@@ -4602,15 +4982,11 @@ function ThreadPanel({
   readonly working: boolean;
   /** Show the working label: a reply is on its way but nothing of it is visible. */
   readonly awaitingFirstContent: boolean;
-  readonly sizing: PanelSizing;
   readonly onDropFiles: ((incoming: IncomingFiles) => void) | undefined;
-  /** Controls in the header row beside Close; none by default. */
-  readonly headerActions?: readonly PanelAction[];
   /** The avatar column beside others' replies. */
   readonly avatars?: boolean;
   /** The name, role and time over others' replies. */
   readonly names?: boolean;
-  readonly onClose: () => void;
 }) {
   const latestId = latestAgentMessageId([parent, ...replies], participants);
   const row = (message: ChatMessage) => (
@@ -4632,21 +5008,7 @@ function ThreadPanel({
   );
   const sentReply = lastSentBy(replies, meId);
   return (
-    <SidePanel
-      label="Thread"
-      size="narrow"
-      {...sizing}
-      onDropFiles={onDropFiles}
-      header={
-        <>
-          <div className="cp-panel-title">
-            <b>Thread</b>
-          </div>
-          <PanelHeaderActions label="Thread" actions={headerActions} onClose={onClose} />
-        </>
-      }
-      footer={composer}
-    >
+    <PanelPane onDropFiles={onDropFiles} footer={composer}>
       <Conversation
         label="Thread"
         working={working}
@@ -4656,7 +5018,7 @@ function ThreadPanel({
         {replies.map(row)}
         {waiting ? <Working /> : null}
       </Conversation>
-    </SidePanel>
+    </PanelPane>
   );
 }
 
@@ -4684,48 +5046,34 @@ function CodeView({ code }: { readonly code: string }) {
   );
 }
 
-function ArtifactPanel({
+/** An artifact as a panel tab: which version, what it is, and the content.
+ * From v2 on, its changes from the version before are a click away. */
+function ArtifactPane({
   artifact,
   version,
   participants,
-  copied,
   onSelectVersion,
-  onCopy,
-  onDownload,
+  onCompare,
   onAskForChanges,
-  sizing,
-  onClose,
 }: {
   readonly artifact: Artifact;
   readonly version: ArtifactVersion;
   readonly participants: ReadonlyMap<string, Participant>;
-  readonly copied: boolean;
   readonly onSelectVersion: (version: number) => void;
-  readonly onCopy: () => void;
-  readonly onDownload: () => void;
+  readonly onCompare: (from: number, to: number) => void;
   readonly onAskForChanges: () => void;
-  readonly sizing: PanelSizing;
-  readonly onClose: () => void;
 }) {
   const author = participants.get(version.authorId);
   const latest = latestVersion(artifact);
+  const previous = artifact.versions.findLast((candidate) => candidate.version < version.version);
   return (
-    <SidePanel
-      label={artifact.title}
-      size="wide"
+    <PanelPane
       onDropFiles={undefined}
-      {...sizing}
-      header={
+      bar={
         <>
-          <span className="cp-tile" data-kind={artifact.kind}>
-            <KindIcon kind={artifact.kind} />
+          <span className="cp-pane-meta">
+            {KIND_LABEL[artifact.kind]} · {artifactMeta(artifact, version)}
           </span>
-          <div className="cp-panel-title">
-            <b>{artifact.title}</b>
-            <span>
-              {KIND_LABEL[artifact.kind]} · {artifactMeta(artifact, version)}
-            </span>
-          </div>
           {artifact.versions.length > 1 ? (
             <div className="cp-versions" role="tablist" aria-label="Versions">
               {artifact.versions.map((candidate) => (
@@ -4741,25 +5089,15 @@ function ArtifactPanel({
               ))}
             </div>
           ) : null}
-          <button
-            type="button"
-            className="cp-icon-btn cp-tip"
-            data-tip={copied ? "Copied" : "Copy"}
-            aria-label="Copy"
-            onClick={onCopy}
-          >
-            {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-          </button>
-          <button
-            type="button"
-            className="cp-icon-btn cp-tip"
-            data-tip="Download"
-            aria-label="Download"
-            onClick={onDownload}
-          >
-            <DownloadSimple aria-hidden="true" />
-          </button>
-          <PanelClose onClose={onClose} />
+          {previous === undefined ? null : (
+            <button
+              type="button"
+              className="cp-btn"
+              onClick={() => onCompare(previous.version, version.version)}
+            >
+              <GitDiff aria-hidden="true" /> Changes from v{previous.version}
+            </button>
+          )}
         </>
       }
       footer={
@@ -4782,7 +5120,158 @@ function ArtifactPanel({
         ) : null}
         {artifact.kind === "code" ? <CodeView code={version.content} /> : null}
       </div>
-    </SidePanel>
+    </PanelPane>
+  );
+}
+
+type DiffLine = {
+  readonly kind: "same" | "add" | "del";
+  readonly text: string;
+  /** Line number on the old side; absent for an added line. */
+  readonly before?: number;
+  /** Line number on the new side; absent for a removed line. */
+  readonly after?: number;
+};
+
+/** Line-by-line changes from `before` to `after`, by longest common
+ * subsequence. Quadratic, which is fine for a document or a file; a real
+ * surface brings its own diff. */
+function lineDiff(before: string, after: string): readonly DiffLine[] {
+  const left = before.split("\n");
+  const right = after.split("\n");
+  const width = right.length + 1;
+  // Common-run lengths from each pair of positions to the end.
+  const runs = new Int32Array((left.length + 1) * width);
+  const run = (i: number, j: number) => runs[i * width + j] ?? 0;
+  for (let i = left.length - 1; i >= 0; i -= 1) {
+    for (let j = right.length - 1; j >= 0; j -= 1) {
+      runs[i * width + j] =
+        left[i] === right[j] ? run(i + 1, j + 1) + 1 : Math.max(run(i + 1, j), run(i, j + 1));
+    }
+  }
+  const lines: DiffLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < left.length || j < right.length) {
+    const removed = left[i];
+    const added = right[j];
+    if (removed !== undefined && removed === added) {
+      lines.push({ kind: "same", text: removed, before: i + 1, after: j + 1 });
+      i += 1;
+      j += 1;
+    } else if (removed !== undefined && (added === undefined || run(i + 1, j) >= run(i, j + 1))) {
+      lines.push({ kind: "del", text: removed, before: i + 1 });
+      i += 1;
+    } else if (added !== undefined) {
+      lines.push({ kind: "add", text: added, after: j + 1 });
+      j += 1;
+    }
+  }
+  return lines;
+}
+
+type DiffRow =
+  | { readonly kind: "line"; readonly line: DiffLine }
+  | { readonly kind: "fold"; readonly id: number; readonly lines: readonly DiffLine[] };
+
+/** Unchanged lines more than `context` away from a change fold into one row. */
+function foldUnchanged(lines: readonly DiffLine[], context: number): readonly DiffRow[] {
+  const near = lines.map((_, index) =>
+    lines
+      .slice(Math.max(0, index - context), index + context + 1)
+      .some((line) => line.kind !== "same"),
+  );
+  const rows: DiffRow[] = [];
+  let folded: DiffLine[] = [];
+  const flush = () => {
+    if (folded.length > 0) rows.push({ kind: "fold", id: rows.length, lines: folded });
+    folded = [];
+  };
+  lines.forEach((line, index) => {
+    if (near[index] === true) {
+      flush();
+      rows.push({ kind: "line", line });
+    } else {
+      folded.push(line);
+    }
+  });
+  flush();
+  return rows;
+}
+
+const DIFF_SIGN: Record<DiffLine["kind"], string> = { same: " ", add: "+", del: "−" };
+
+/** Changes as a unified view: removed lines over added ones, with
+ * unchanged stretches folded away until asked for. */
+function DiffView({ lines }: { readonly lines: readonly DiffLine[] }) {
+  const rows = useMemo(() => foldUnchanged(lines, 3), [lines]);
+  const [opened, setOpened] = useState<ReadonlySet<number>>(() => new Set());
+  const line = (entry: DiffLine, key: string) => (
+    <div key={key} className="cp-diff-line" data-kind={entry.kind}>
+      <span className="cp-diff-no" aria-hidden="true">
+        {entry.before ?? ""}
+      </span>
+      <span className="cp-diff-no" aria-hidden="true">
+        {entry.after ?? ""}
+      </span>
+      <span className="cp-diff-sign">{DIFF_SIGN[entry.kind]}</span>
+      <code>{entry.text === "" ? " " : entry.text}</code>
+    </div>
+  );
+  return (
+    <div className="cp-diff">
+      {rows.map((row, index) =>
+        row.kind === "line" ? (
+          line(row.line, `line-${index}`)
+        ) : opened.has(row.id) ? (
+          row.lines.map((entry, offset) => line(entry, `fold-${row.id}-${offset}`))
+        ) : (
+          <button
+            key={`fold-${row.id}`}
+            type="button"
+            className="cp-diff-fold"
+            onClick={() => setOpened((current) => new Set(current).add(row.id))}
+          >
+            <DotsThree aria-hidden="true" />
+            {count(row.lines.length, "unchanged line", "unchanged lines")}
+          </button>
+        ),
+      )}
+    </div>
+  );
+}
+
+/** What changed between two versions of an artifact, as a panel tab. */
+function ChangesPane({
+  artifact,
+  from,
+  to,
+}: {
+  readonly artifact: Artifact;
+  readonly from: ArtifactVersion;
+  readonly to: ArtifactVersion;
+}) {
+  const lines = useMemo(() => lineDiff(from.content, to.content), [from.content, to.content]);
+  const added = lines.filter((line) => line.kind === "add").length;
+  const removed = lines.filter((line) => line.kind === "del").length;
+  return (
+    <PanelPane
+      onDropFiles={undefined}
+      bar={
+        <>
+          <span className="cp-pane-meta">
+            {artifact.title} · v{from.version} → v{to.version}
+          </span>
+          <span className="cp-diff-stat">
+            <span data-kind="add">+{added}</span> <span data-kind="del">−{removed}</span>
+          </span>
+        </>
+      }
+    >
+      <div className="cp-artifact-body" data-kind="code">
+        <DiffView lines={lines} />
+      </div>
+    </PanelPane>
   );
 }
 
@@ -6355,6 +6844,8 @@ type PlaygroundConfig = {
   readonly actions: readonly MessageActionId[];
   readonly showMap: boolean;
   readonly showThreadActions: boolean;
+  /** `?tabs=ledger|index|sheet`: the side panel's design. */
+  readonly tabsVariant: TabsVariant;
   readonly avatars: boolean;
   readonly names: boolean;
 };
@@ -6371,7 +6862,8 @@ function playgroundFromURL(): PlaygroundConfig {
     capabilities: capabilitiesFrom(listParam(params, "composer")),
     actions: actionsFrom(listParam(params, "actions")),
     showMap: params.get("map") !== "off",
-    showThreadActions: params.get("threadactions") !== "off",
+    showThreadActions: params.has("threadactions"),
+    tabsVariant: TABS_VARIANTS.find((variant) => variant === params.get("tabs")) ?? "ledger",
     avatars: !solo && params.get("avatars") !== "off",
     names: !solo && params.get("names") !== "off",
   };
@@ -6728,11 +7220,24 @@ function filePart(attachment: Attachment): FilePart {
   };
 }
 
-/** Where a turn runs: the main conversation or the open thread. Each has its
- * own composer, its own in-flight turn and its own Stop. */
-type Scope = "main" | "thread";
+/** Where a turn runs: the main conversation or one thread. Each has its own
+ * composer, its own in-flight turn and its own Stop. */
+type Scope = "main" | `thread:${string}`;
 
-const IDLE: Readonly<Record<Scope, ComposerStatus>> = { main: "ready", thread: "ready" };
+function threadScope(messageId: string): Scope {
+  return `thread:${messageId}`;
+}
+
+/** Which composer setup a scope gets: every thread shares the thread one. */
+function composerKind(scope: Scope): "main" | "thread" {
+  return scope === "main" ? "main" : "thread";
+}
+
+/** A thread's tab label: the start of the message it hangs off. */
+function threadTabLabel(parent: ChatMessage): string {
+  const excerpt = plainExcerpt(messageText(parent)).trim();
+  return excerpt === "" ? "Thread" : excerpt.slice(0, 60);
+}
 
 /** True while a turn is open but nothing of it is on screen yet: the gap
  * the live chat's working label covers. Once the turn streams, its own
@@ -6770,18 +7275,22 @@ export function ChatPrototypeRoute() {
   );
   const [artifacts, setArtifacts] = useState<ReadonlyMap<string, Artifact>>(baseArtifacts);
   const [panel, setPanel] = useState<PanelState | null>(null);
-  // Each panel kind remembers its own width across opens.
-  const [panelWidths, setPanelWidths] = useState<{
-    readonly thread: number | null;
-    readonly artifact: number | null;
-  }>({ thread: null, artifact: null });
-  const [main, setMain] = useState<DraftState>(EMPTY_DRAFT);
-  const [reply, setReply] = useState<DraftState>(EMPTY_DRAFT);
+  // One width for the panel, whichever tab is in front.
+  const [panelWidth, setPanelWidth] = useState<number | null>(null);
+  /** Every composer's draft. A scope with nothing written has no entry: its
+   * draft is empty. */
+  const [drafts, setDrafts] = useState<ReadonlyMap<Scope, DraftState>>(() => new Map());
+  const draftOf = (scope: Scope) => drafts.get(scope) ?? EMPTY_DRAFT;
+  const setDraft = useCallback((scope: Scope, update: (current: DraftState) => DraftState) => {
+    setDrafts((current) => new Map(current).set(scope, update(current.get(scope) ?? EMPTY_DRAFT)));
+  }, []);
   const [context, setContext] = useState<ComposerContext | null>(null);
-  const [capabilities] = useState<Readonly<Record<Scope, ComposerCapabilities>>>(() => ({
-    main: config.capabilities,
-    thread: THREAD_CAPABILITIES,
-  }));
+  const [capabilities] = useState<Readonly<Record<"main" | "thread", ComposerCapabilities>>>(
+    () => ({
+      main: config.capabilities,
+      thread: THREAD_CAPABILITIES,
+    }),
+  );
   const tokens = useMemo(
     () => ({ main: tokensFor(capabilities.main), thread: tokensFor(capabilities.thread) }),
     [capabilities],
@@ -6811,19 +7320,18 @@ export function ChatPrototypeRoute() {
     }
   }, []);
   // Model and mode outlive a sent draft, so they live beside it.
-  const [prefs, setPrefs] = useState<Readonly<Record<Scope, ComposerPrefs>>>({
+  const [prefs, setPrefs] = useState<Readonly<Record<"main" | "thread", ComposerPrefs>>>({
     main: DEFAULT_PREFS,
     thread: DEFAULT_PREFS,
   });
-  const [turns, setTurns] = useState<Readonly<Record<Scope, ComposerStatus>>>(IDLE);
+  /** Turns in flight. A scope with no entry is ready. */
+  const [turns, setTurns] = useState<ReadonlyMap<Scope, ComposerStatus>>(() => new Map());
+  const turnOf = (scope: Scope) => turns.get(scope) ?? "ready";
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const entriesRef = useRef(entries);
   const turnsRef = useRef(turns);
-  const turnTimers = useRef<Record<Scope, ReturnType<typeof setTimeout>[]>>({
-    main: [],
-    thread: [],
-  });
-  const streamingIds = useRef<Record<Scope, string | null>>({ main: null, thread: null });
+  const turnTimers = useRef(new Map<Scope, ReturnType<typeof setTimeout>[]>());
+  const streamingIds = useRef(new Map<Scope, string>());
   const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const retryTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
 
@@ -6833,19 +7341,23 @@ export function ChatPrototypeRoute() {
   }, [entries, turns]);
 
   const setTurn = useCallback((scope: Scope, value: ComposerStatus) => {
-    turnsRef.current = { ...turnsRef.current, [scope]: value };
-    setTurns((current) => ({ ...current, [scope]: value }));
+    turnsRef.current = new Map(turnsRef.current).set(scope, value);
+    setTurns((current) => new Map(current).set(scope, value));
+  }, []);
+
+  const schedule = useCallback((scope: Scope, run: () => void, delayMs: number) => {
+    const timers = turnTimers.current.get(scope) ?? [];
+    turnTimers.current.set(scope, [...timers, setTimeout(run, delayMs)]);
   }, []);
 
   const clearTurn = useCallback((scope: Scope) => {
-    turnTimers.current[scope].forEach(clearTimeout);
-    turnTimers.current[scope] = [];
+    turnTimers.current.get(scope)?.forEach(clearTimeout);
+    turnTimers.current.delete(scope);
   }, []);
 
   useEffect(
     () => () => {
-      clearTurn("main");
-      clearTurn("thread");
+      for (const scope of [...turnTimers.current.keys()]) clearTurn(scope);
       clearTimeout(copyTimer.current);
       retryTimers.current.forEach(clearTimeout);
     },
@@ -6860,7 +7372,7 @@ export function ChatPrototypeRoute() {
       target: { readonly create: ChatMessage } | { readonly resume: string },
     ) => {
       const id = "create" in target ? target.create.id : target.resume;
-      streamingIds.current[scope] = id;
+      streamingIds.current.set(scope, id);
       setTurn(scope, "streaming");
       if ("create" in target) {
         setEntries((current) => [...current, target.create]);
@@ -6872,8 +7384,9 @@ export function ChatPrototypeRoute() {
       let elapsed = 0;
       for (const frame of frames) {
         elapsed += frame.delayMs;
-        turnTimers.current[scope].push(
-          setTimeout(() => {
+        schedule(
+          scope,
+          () => {
             const { artifact } = frame;
             if (artifact !== undefined) {
               setArtifacts((current) => new Map(current).set(artifact.id, artifact));
@@ -6886,14 +7399,15 @@ export function ChatPrototypeRoute() {
               })),
             );
             if (frame.done === true) {
-              streamingIds.current[scope] = null;
+              streamingIds.current.delete(scope);
               setTurn(scope, "ready");
             }
-          }, elapsed),
+          },
+          elapsed,
         );
       }
     },
-    [setTurn],
+    [setTurn, schedule],
   );
 
   // `?scenario=streaming` opens on a turn already running. Every frame is a
@@ -6914,12 +7428,12 @@ export function ChatPrototypeRoute() {
     );
   };
 
-  const send = (draft: DraftState, threadId?: string) => {
-    const scope: Scope = threadId === undefined ? "main" : "thread";
+  const send = (threadId?: string) => {
+    const scope = threadId === undefined ? "main" : threadScope(threadId);
+    const draft = draftOf(scope);
     const trimmed = draft.text.trim();
-    if ((trimmed === "" && draft.attachments.length === 0) || turnsRef.current[scope] !== "ready") {
-      return;
-    }
+    const busy = (turnsRef.current.get(scope) ?? "ready") !== "ready";
+    if ((trimmed === "" && draft.attachments.length === 0) || busy) return;
     const at = new Date().toISOString();
     // Files lead, as in Claude: what was shared, then what was said about it.
     const parts: ChatPart[] = [
@@ -6931,17 +7445,14 @@ export function ChatPrototypeRoute() {
       ...(threadId === undefined ? {} : { threadId }),
     });
     setEntries((current) => [...current, sent]);
-    if (threadId === undefined) {
-      setMain(EMPTY_DRAFT);
-      setContext(null);
-    } else {
-      setReply(EMPTY_DRAFT);
-      noteReply(threadId, at);
-    }
+    setDraft(scope, () => EMPTY_DRAFT);
+    if (threadId === undefined) setContext(null);
+    else noteReply(threadId, at);
     setTurn(scope, "submitting");
     const addressed = AGENTS.find((agent) => trimmed.includes(`@${agent.name}`)) ?? ADA;
-    turnTimers.current[scope].push(
-      setTimeout(() => {
+    schedule(
+      scope,
+      () => {
         setEntries((current) =>
           replaceMessage(current, sent.id, (existing) => ({ ...existing, status: "sent" })),
         );
@@ -6959,21 +7470,22 @@ export function ChatPrototypeRoute() {
           );
         } else {
           noteReply(threadId, new Date().toISOString());
-          play("thread", scriptThreadReply(), {
+          play(scope, scriptThreadReply(), {
             create: newAgentMessage(addressed.id, threadId),
           });
         }
-      }, 450),
+      },
+      450,
     );
   };
 
   const stop = useCallback(
     (scope: Scope) => {
       clearTurn(scope);
-      const id = streamingIds.current[scope];
-      streamingIds.current[scope] = null;
+      const id = streamingIds.current.get(scope);
+      streamingIds.current.delete(scope);
       setTurn(scope, "ready");
-      if (id === null) return;
+      if (id === undefined) return;
       setEntries((current) =>
         replaceMessage(current, id, (existing) => ({ ...existing, status: "sent" })),
       );
@@ -6990,18 +7502,56 @@ export function ChatPrototypeRoute() {
     copyTimer.current = setTimeout(() => setCopiedId(null), 1500);
   }, []);
 
+  /** Opens a tab, or selects it (with what it shows brought up to date)
+   * when it is already open. */
+  const openTab = useCallback((ref: PanelTabRef) => {
+    const id = panelTabId(ref);
+    setPanel((current) => {
+      const tabs = current?.tabs ?? [];
+      const at = tabs.findIndex((tab) => panelTabId(tab) === id);
+      return {
+        tabs: at === -1 ? [...tabs, ref] : tabs.map((tab, index) => (index === at ? ref : tab)),
+        activeId: id,
+      };
+    });
+  }, []);
+  const closeTab = useCallback((id: string) => {
+    setPanel((current) => {
+      if (current === null) return null;
+      const ids = current.tabs.map(panelTabId);
+      const tabs = current.tabs.filter((tab) => panelTabId(tab) !== id);
+      if (tabs.length === 0) return null;
+      const activeId =
+        current.activeId === id ? (tabAfterClosing(ids, id) ?? current.activeId) : current.activeId;
+      return { tabs, activeId };
+    });
+  }, []);
+  const moveTab = useCallback((id: string, toIndex: number) => {
+    setPanel((current) => {
+      if (current === null) return null;
+      const tabs = [...current.tabs];
+      const [moved] = tabs.splice(
+        tabs.findIndex((tab) => panelTabId(tab) === id),
+        1,
+      );
+      if (moved === undefined) return current;
+      tabs.splice(toIndex, 0, moved);
+      return { ...current, tabs };
+    });
+  }, []);
+
   // One stable object, so memoized rows never re-render for a new callback.
   const handlers = useMemo<MessageHandlers>(
     () => ({
-      onOpenThread: (target) => setPanel({ kind: "thread", messageId: target.id }),
+      onOpenThread: (target) => openTab({ kind: "thread", messageId: target.id }),
       onCopy: (target) => copyText(target.id, messageText(target)),
       onRetry: (target) => {
         setEntries((current) => current.filter((entry) => entry.id !== target.id));
-        setMain({ ...EMPTY_DRAFT, text: messageText(target) });
+        setDraft("main", () => ({ ...EMPTY_DRAFT, text: messageText(target) }));
       },
       onRegenerate: (target) => {
-        const scope: Scope = target.threadId === undefined ? "main" : "thread";
-        if (turnsRef.current[scope] !== "ready") return;
+        const scope = target.threadId === undefined ? "main" : threadScope(target.threadId);
+        if ((turnsRef.current.get(scope) ?? "ready") !== "ready") return;
         // The mock replays the same answer in its own order, and the old
         // rating no longer applies to the new one.
         setEntries((current) =>
@@ -7039,11 +7589,11 @@ export function ChatPrototypeRoute() {
         ),
       onCopyLink: (messageId) =>
         copyText(messageId, `${location.origin}${location.pathname}#${messageId}`),
-      onOpenArtifact: (artifactId, version) => setPanel({ kind: "artifact", artifactId, version }),
+      onOpenArtifact: (artifactId, version) => openTab({ kind: "artifact", artifactId, version }),
       onStartPlan: (messageId) => {
         // One run at a time in the main conversation; the button is disabled
         // too, this guards a click that lands as a turn starts.
-        if (turnsRef.current.main !== "ready") return;
+        if ((turnsRef.current.get("main") ?? "ready") !== "ready") return;
         const target = entriesRef.current.find(
           (entry): entry is ChatMessage => entry.type === "message" && entry.id === messageId,
         );
@@ -7092,7 +7642,7 @@ export function ChatPrototypeRoute() {
         retryTimers.current.add(timer);
       },
     }),
-    [copyText, play, openFiles],
+    [copyText, play, openFiles, openTab, setDraft],
   );
 
   const topLevel = useMemo(
@@ -7130,23 +7680,21 @@ export function ChatPrototypeRoute() {
 
   const turnMap = useMemo(() => conversationMap(shown, PARTICIPANTS), [shown]);
   const lastSentId = lastSentBy(topLevel, ME.id);
-  const activeArtifactId = panel?.kind === "artifact" ? panel.artifactId : null;
-  const openThreadId = panel?.kind === "thread" ? panel.messageId : null;
+  const activeTab = panel?.tabs.find((tab) => panelTabId(tab) === panel.activeId);
+  const activeArtifactId = activeTab?.kind === "artifact" ? activeTab.artifactId : null;
+  const openThreadId = activeTab?.kind === "thread" ? activeTab.messageId : null;
 
   // The drafts as of the last change, so files arriving in quick succession
   // (two drops, a drop and a paste) are each weighed against what the one
   // before them added, not against a render that hasn't happened yet.
-  const draftsRef = useRef<Readonly<Record<Scope, DraftState>>>({ main, thread: reply });
+  const draftsRef = useRef(drafts);
   useLayoutEffect(() => {
-    draftsRef.current = { main, thread: reply };
-  }, [main, reply]);
+    draftsRef.current = drafts;
+  }, [drafts]);
   // Every file's preview is a blob URL; leaving the page lets them all go.
   useEffect(
     () => () => {
-      const drafted = [
-        ...draftsRef.current.main.attachments,
-        ...draftsRef.current.thread.attachments,
-      ];
+      const drafted = [...draftsRef.current.values()].flatMap((draft) => draft.attachments);
       const sent = entriesRef.current.flatMap((entry) =>
         entry.type === "message" ? entry.parts.filter((part) => part.type === "file") : [],
       );
@@ -7160,18 +7708,14 @@ export function ChatPrototypeRoute() {
   /** Files offered to a draft: `intakeFiles` decides which join and words
    * the notice. Text and code files are then read for their preview. */
   const addFiles = (scope: Scope, incoming: IncomingFiles) => {
-    const setDraft = scope === "main" ? setMain : setReply;
-    const held = draftsRef.current[scope];
+    const held = draftsRef.current.get(scope) ?? EMPTY_DRAFT;
     const { accepted, notice } = intakeFiles(incoming, held.attachments);
     const added = accepted.map((file) => ({ file, attachment: attachmentFromFile(file) }));
-    draftsRef.current = {
-      ...draftsRef.current,
-      [scope]: {
-        ...held,
-        attachments: [...held.attachments, ...added.map((entry) => entry.attachment)],
-      },
-    };
-    setDraft((current) => ({
+    draftsRef.current = new Map(draftsRef.current).set(scope, {
+      ...held,
+      attachments: [...held.attachments, ...added.map((entry) => entry.attachment)],
+    });
+    setDraft(scope, (current) => ({
       ...current,
       attachments: [...current.attachments, ...added.map((entry) => entry.attachment)],
       notice,
@@ -7183,7 +7727,7 @@ export function ChatPrototypeRoute() {
         .text()
         .then((content) => {
           // Removed before it finished reading: the map finds nothing.
-          setDraft((current) => ({
+          setDraft(scope, (current) => ({
             ...current,
             attachments: current.attachments.map((item) =>
               item.id === attachment.id
@@ -7214,99 +7758,105 @@ export function ChatPrototypeRoute() {
 
   const composerFor = (
     scope: Scope,
-    draft: DraftState,
-    setDraft: (update: (current: DraftState) => DraftState) => void,
     options: { readonly placeholder: string; readonly onSubmit: () => void },
-  ) => (
-    <Composer
-      capabilities={capabilities[scope]}
-      {...(capabilities[scope].note ? { note: COMPOSER_NOTE } : {})}
-      value={draft.text}
-      onValueChange={(value) =>
-        setDraft((current) => ({ ...current, text: value, suggestionIndex: 0, notice: null }))
-      }
-      onSubmit={options.onSubmit}
-      onStop={() => stop(scope)}
-      status={turns[scope]}
-      placeholder={options.placeholder}
-      menuOpen={draft.menuOpen}
-      onMenuOpenChange={(open) => setDraft((current) => ({ ...current, menuOpen: open }))}
-      attachments={draft.attachments}
-      onAddFiles={(files) => addFiles(scope, { files, folders: [] })}
-      onPasteText={(value) => {
-        const attachment = attachmentFromText(value);
-        setDraft((current) => ({
-          ...current,
-          attachments: [...current.attachments, attachment],
-          notice: null,
-        }));
-      }}
-      onOpenAttachment={(id) =>
-        openFiles(
-          draft.attachments.map(filePart),
-          draft.attachments.findIndex((item) => item.id === id),
-        )
-      }
-      onRemoveAttachment={(id) => {
-        const removed = draft.attachments.find((item) => item.id === id);
-        if (removed?.previewUrl !== undefined) URL.revokeObjectURL(removed.previewUrl);
-        setDraft((current) => ({
-          ...current,
-          attachments: current.attachments.filter((item) => item.id !== id),
-          notice: null,
-        }));
-      }}
-      onRemoveAllAttachments={() => {
-        for (const item of draft.attachments) {
-          if (item.previewUrl !== undefined) URL.revokeObjectURL(item.previewUrl);
+  ) => {
+    const draft = draftOf(scope);
+    const kind = composerKind(scope);
+    return (
+      <Composer
+        capabilities={capabilities[kind]}
+        {...(capabilities[kind].note ? { note: COMPOSER_NOTE } : {})}
+        value={draft.text}
+        onValueChange={(value) =>
+          setDraft(scope, (current) => ({
+            ...current,
+            text: value,
+            suggestionIndex: 0,
+            notice: null,
+          }))
         }
-        setDraft((current) => ({ ...current, attachments: [], notice: null }));
-      }}
-      notice={draft.notice}
-      context={scope === "main" ? context : null}
-      onClearContext={() => setContext(null)}
-      suggestions={suggestionsFor(draft.text, capabilities[scope])}
-      suggestionIndex={draft.suggestionIndex}
-      onSuggestionIndexChange={(index) =>
-        setDraft((current) => ({ ...current, suggestionIndex: index }))
-      }
-      onPickSuggestion={(option) =>
-        setDraft((current) => ({
-          ...current,
-          text: current.text.replace(/([@/])([\w-]*)$/, `${option.token} `),
-          suggestionIndex: 0,
-        }))
-      }
-      tokens={tokens[scope]}
-      onStartToken={(prefix) =>
-        setDraft((current) => ({
-          ...current,
-          text:
-            current.text === "" || /\s$/.test(current.text)
-              ? `${current.text}${prefix}`
-              : `${current.text} ${prefix}`,
-        }))
-      }
-      onVoice={() => undefined}
-      models={MODELS}
-      reasoningLevels={REASONING_LEVELS}
-      modelChoice={prefs[scope].model}
-      onModelChoiceChange={(model) =>
-        setPrefs((current) => ({ ...current, [scope]: { ...current[scope], model } }))
-      }
-      modes={MODES}
-      modeId={prefs[scope].modeId}
-      onModeChange={(modeId) =>
-        setPrefs((current) => ({ ...current, [scope]: { ...current[scope], modeId } }))
-      }
-    />
-  );
+        onSubmit={options.onSubmit}
+        onStop={() => stop(scope)}
+        status={turnOf(scope)}
+        placeholder={options.placeholder}
+        menuOpen={draft.menuOpen}
+        onMenuOpenChange={(open) => setDraft(scope, (current) => ({ ...current, menuOpen: open }))}
+        attachments={draft.attachments}
+        onAddFiles={(files) => addFiles(scope, { files, folders: [] })}
+        onPasteText={(value) => {
+          const attachment = attachmentFromText(value);
+          setDraft(scope, (current) => ({
+            ...current,
+            attachments: [...current.attachments, attachment],
+            notice: null,
+          }));
+        }}
+        onOpenAttachment={(id) =>
+          openFiles(
+            draft.attachments.map(filePart),
+            draft.attachments.findIndex((item) => item.id === id),
+          )
+        }
+        onRemoveAttachment={(id) => {
+          const removed = draft.attachments.find((item) => item.id === id);
+          if (removed?.previewUrl !== undefined) URL.revokeObjectURL(removed.previewUrl);
+          setDraft(scope, (current) => ({
+            ...current,
+            attachments: current.attachments.filter((item) => item.id !== id),
+            notice: null,
+          }));
+        }}
+        onRemoveAllAttachments={() => {
+          for (const item of draft.attachments) {
+            if (item.previewUrl !== undefined) URL.revokeObjectURL(item.previewUrl);
+          }
+          setDraft(scope, (current) => ({ ...current, attachments: [], notice: null }));
+        }}
+        notice={draft.notice}
+        context={scope === "main" ? context : null}
+        onClearContext={() => setContext(null)}
+        suggestions={suggestionsFor(draft.text, capabilities[kind])}
+        suggestionIndex={draft.suggestionIndex}
+        onSuggestionIndexChange={(index) =>
+          setDraft(scope, (current) => ({ ...current, suggestionIndex: index }))
+        }
+        onPickSuggestion={(option) =>
+          setDraft(scope, (current) => ({
+            ...current,
+            text: current.text.replace(/([@/])([\w-]*)$/, `${option.token} `),
+            suggestionIndex: 0,
+          }))
+        }
+        tokens={tokens[kind]}
+        onStartToken={(prefix) =>
+          setDraft(scope, (current) => ({
+            ...current,
+            text:
+              current.text === "" || /\s$/.test(current.text)
+                ? `${current.text}${prefix}`
+                : `${current.text} ${prefix}`,
+          }))
+        }
+        onVoice={() => undefined}
+        models={MODELS}
+        reasoningLevels={REASONING_LEVELS}
+        modelChoice={prefs[kind].model}
+        onModelChoiceChange={(model) =>
+          setPrefs((current) => ({ ...current, [kind]: { ...current[kind], model } }))
+        }
+        modes={MODES}
+        modeId={prefs[kind].modeId}
+        onModeChange={(modeId) =>
+          setPrefs((current) => ({ ...current, [kind]: { ...current[kind], modeId } }))
+        }
+      />
+    );
+  };
 
-  /** The playground's thread header controls: a mute toggle, a width
-   * toggle, and a menu with a link and a destructive delete. */
+  /** The playground's thread header controls: a mute toggle and a menu
+   * with a link and a destructive delete. */
   const threadActionsFor = (parent: ChatMessage): readonly PanelAction[] => {
     const muted = mutedThreads.has(parent.id);
-    const wide = panelWidths.thread !== null && panelWidths.thread >= THREAD_WIDE;
     return [
       {
         kind: "button",
@@ -7321,14 +7871,6 @@ export function ChatPrototypeRoute() {
             else next.add(parent.id);
             return next;
           }),
-      },
-      {
-        kind: "button",
-        id: "width",
-        label: wide ? "Narrow panel" : "Widen panel",
-        icon: wide ? <ArrowsIn aria-hidden="true" /> : <ArrowsOut aria-hidden="true" />,
-        onSelect: () =>
-          setPanelWidths((current) => ({ ...current, thread: wide ? null : THREAD_WIDE })),
       },
       {
         kind: "menu",
@@ -7352,7 +7894,7 @@ export function ChatPrototypeRoute() {
             icon: <Trash aria-hidden="true" />,
             danger: true,
             onSelect: () => {
-              setPanel(null);
+              closeTab(panelTabId({ kind: "thread", messageId: parent.id }));
               setEntries((current) =>
                 current
                   .filter((entry) => entry.type !== "message" || entry.threadId !== parent.id)
@@ -7369,88 +7911,213 @@ export function ChatPrototypeRoute() {
     ];
   };
 
-  let panelNode: ReactNode = null;
-  if (panel?.kind === "thread") {
-    const parent = entries.find(
-      (entry): entry is ChatMessage => entry.type === "message" && entry.id === panel.messageId,
-    );
-    if (parent !== undefined) {
-      const replies = entries.filter(
-        (entry): entry is ChatMessage => entry.type === "message" && entry.threadId === parent.id,
-      );
-      panelNode = (
-        <ThreadPanel
-          parent={parent}
-          replies={replies}
-          participants={PARTICIPANTS}
-          artifacts={artifacts}
-          meId={ME.id}
-          copiedId={copiedId}
-          actions={actions}
-          handlers={handlers}
-          working={turns.thread !== "ready"}
-          awaitingFirstContent={awaitingFirstContent(turns.thread, replies)}
-          onDropFiles={
-            capabilities.thread.files ? (incoming) => addFiles("thread", incoming) : undefined
-          }
-          sizing={{
-            width: panelWidths.thread,
-            onWidthChange: (width) => setPanelWidths((current) => ({ ...current, thread: width })),
-          }}
-          avatars={config.avatars}
-          names={config.names}
-          {...(showThreadActions ? { headerActions: threadActionsFor(parent) } : {})}
-          onClose={() => setPanel(null)}
-          composer={composerFor("thread", reply, setReply, {
-            placeholder: "Reply…",
-            onSubmit: () => send(reply, parent.id),
-          })}
-        />
-      );
-    }
-  } else if (panel?.kind === "artifact") {
-    const artifact = artifacts.get(panel.artifactId);
-    const version = artifact === undefined ? undefined : artifactVersion(artifact, panel.version);
-    if (artifact !== undefined && version !== undefined) {
-      const copyId = `artifact-${artifact.id}`;
-      panelNode = (
-        <ArtifactPanel
-          artifact={artifact}
-          version={version}
-          participants={PARTICIPANTS}
-          copied={copiedId === copyId}
-          onSelectVersion={(next) => setPanel({ ...panel, version: next })}
-          onCopy={() => copyText(copyId, version.content)}
-          onDownload={() => {
-            const url = URL.createObjectURL(new Blob([version.content], { type: "text/plain" }));
-            const link = document.createElement("a");
-            link.href = url;
-            link.download =
-              artifact.kind === "code"
-                ? artifact.title
-                : `${artifact.title}.${artifact.kind === "sheet" ? "csv" : "md"}`;
-            link.click();
-            URL.revokeObjectURL(url);
-          }}
-          onAskForChanges={() => {
-            setContext({ label: artifact.title, detail: `v${version.version}` });
-            setMain((current) => ({
-              ...current,
-              text: current.text === "" ? "@Ada " : current.text,
-            }));
-          }}
-          sizing={{
-            width: panelWidths.artifact,
-            onWidthChange: (width) =>
-              setPanelWidths((current) => ({ ...current, artifact: width })),
-          }}
-          onClose={() => setPanel(null)}
-        />
-      );
-    }
-  }
+  /** Copy and Download for an artifact tab's header. */
+  const artifactActionsFor = (artifact: Artifact, version: ArtifactVersion): PanelAction[] => {
+    const copyId = `artifact-${artifact.id}`;
+    const copied = copiedId === copyId;
+    return [
+      {
+        kind: "button",
+        id: "copy",
+        label: copied ? "Copied" : "Copy",
+        icon: copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />,
+        onSelect: () => copyText(copyId, version.content),
+      },
+      {
+        kind: "button",
+        id: "download",
+        label: "Download",
+        icon: <DownloadSimple aria-hidden="true" />,
+        onSelect: () => {
+          const url = URL.createObjectURL(new Blob([version.content], { type: "text/plain" }));
+          const link = document.createElement("a");
+          link.href = url;
+          link.download =
+            artifact.kind === "code"
+              ? artifact.title
+              : `${artifact.title}.${artifact.kind === "sheet" ? "csv" : "md"}`;
+          link.click();
+          URL.revokeObjectURL(url);
+        },
+      },
+    ];
+  };
 
-  const working = turns.main !== "ready" || turns.thread !== "ready";
+  /** The open tabs as the panel draws them. Each kind supplies its own
+   * label, icon, header controls and content; a tab whose subject is gone
+   * is skipped. */
+  const panelTabFor = (ref: PanelTabRef): readonly PanelTab[] => {
+    const id = panelTabId(ref);
+    switch (ref.kind) {
+      case "thread": {
+        const parent = entries.find(
+          (entry): entry is ChatMessage => entry.type === "message" && entry.id === ref.messageId,
+        );
+        if (parent === undefined) return [];
+        const replies = entries.filter(
+          (entry): entry is ChatMessage => entry.type === "message" && entry.threadId === parent.id,
+        );
+        const scope = threadScope(parent.id);
+        return [
+          {
+            id,
+            label: threadTabLabel(parent),
+            icon: <ArrowBendUpLeft />,
+            ...(showThreadActions ? { actions: threadActionsFor(parent) } : {}),
+            content: (
+              <ThreadPane
+                parent={parent}
+                replies={replies}
+                participants={PARTICIPANTS}
+                artifacts={artifacts}
+                meId={ME.id}
+                copiedId={copiedId}
+                actions={actions}
+                handlers={handlers}
+                working={turnOf(scope) !== "ready"}
+                awaitingFirstContent={awaitingFirstContent(turnOf(scope), replies)}
+                onDropFiles={
+                  capabilities.thread.files ? (incoming) => addFiles(scope, incoming) : undefined
+                }
+                avatars={config.avatars}
+                names={config.names}
+                composer={composerFor(scope, {
+                  placeholder: "Reply…",
+                  onSubmit: () => send(parent.id),
+                })}
+              />
+            ),
+          },
+        ];
+      }
+      case "artifact": {
+        const artifact = artifacts.get(ref.artifactId);
+        const version = artifact === undefined ? undefined : artifactVersion(artifact, ref.version);
+        if (artifact === undefined || version === undefined) return [];
+        return [
+          {
+            id,
+            label: artifact.title,
+            icon: <KindIcon kind={artifact.kind} />,
+            actions: artifactActionsFor(artifact, version),
+            content: (
+              <ArtifactPane
+                artifact={artifact}
+                version={version}
+                participants={PARTICIPANTS}
+                onSelectVersion={(next) => openTab({ ...ref, version: next })}
+                onCompare={(from, to) =>
+                  openTab({ kind: "changes", artifactId: artifact.id, from, to })
+                }
+                onAskForChanges={() => {
+                  setContext({ label: artifact.title, detail: `v${version.version}` });
+                  setDraft("main", (current) => ({
+                    ...current,
+                    text: current.text === "" ? "@Ada " : current.text,
+                  }));
+                }}
+              />
+            ),
+          },
+        ];
+      }
+      case "changes": {
+        const artifact = artifacts.get(ref.artifactId);
+        const from = artifact === undefined ? undefined : artifactVersion(artifact, ref.from);
+        const to = artifact === undefined ? undefined : artifactVersion(artifact, ref.to);
+        if (artifact === undefined || from === undefined || to === undefined) return [];
+        return [
+          {
+            id,
+            label: `${artifact.title} v${ref.from}→v${ref.to}`,
+            icon: <GitDiff />,
+            content: <ChangesPane artifact={artifact} from={from} to={to} />,
+          },
+        ];
+      }
+    }
+  };
+  const panelTabs = panel === null ? [] : panel.tabs.flatMap(panelTabFor);
+  /** Everything in the conversation that can open as a tab. */
+  const mentioned = new Set(
+    entries.flatMap((entry) =>
+      entry.type === "message"
+        ? entry.parts.flatMap((part) => (part.type === "artifact" ? [part.artifactId] : []))
+        : [],
+    ),
+  );
+  const inConversation = [...artifacts.values()].filter((artifact) => mentioned.has(artifact.id));
+  const addMenu: readonly TabMenuSection[] = [
+    {
+      id: "threads",
+      label: "Threads",
+      items: entries.flatMap((entry) =>
+        entry.type === "message" && entry.thread !== undefined
+          ? [
+              {
+                id: entry.id,
+                label: threadTabLabel(entry),
+                icon: <ArrowBendUpLeft aria-hidden="true" />,
+                onSelect: () => openTab({ kind: "thread", messageId: entry.id }),
+              },
+            ]
+          : [],
+      ),
+    },
+    {
+      id: "artifacts",
+      label: "Artifacts",
+      items: inConversation.map((artifact) => ({
+        id: artifact.id,
+        label: artifact.title,
+        icon: <KindIcon kind={artifact.kind} />,
+        onSelect: () =>
+          openTab({
+            kind: "artifact",
+            artifactId: artifact.id,
+            version: latestVersion(artifact),
+          }),
+      })),
+    },
+    {
+      id: "changes",
+      label: "Changes",
+      items: inConversation.flatMap((artifact) => {
+        const to = latestVersion(artifact);
+        const from = artifact.versions.findLast((candidate) => candidate.version < to)?.version;
+        return from === undefined
+          ? []
+          : [
+              {
+                id: artifact.id,
+                label: `${artifact.title} v${from}→v${to}`,
+                icon: <GitDiff aria-hidden="true" />,
+                onSelect: () => openTab({ kind: "changes", artifactId: artifact.id, from, to }),
+              },
+            ];
+      }),
+    },
+  ];
+  const panelNode =
+    panel === null || panelTabs.length === 0 ? null : (
+      <TabbedPanel
+        label="Side panel"
+        tabs={panelTabs}
+        activeId={panel.activeId}
+        onSelect={(id) =>
+          setPanel((current) => (current === null ? null : { ...current, activeId: id }))
+        }
+        onCloseTab={closeTab}
+        onMoveTab={moveTab}
+        onClose={() => setPanel(null)}
+        addMenu={addMenu}
+        variant={config.tabsVariant}
+        width={panelWidth}
+        onWidthChange={setPanelWidth}
+      />
+    );
+
+  const working = [...turns.values()].some((status) => status !== "ready");
 
   return (
     <div className="cp-page">
@@ -7472,7 +8139,7 @@ export function ChatPrototypeRoute() {
         conversation={
           empty ? null : (
             <Conversation
-              working={turns.main !== "ready"}
+              working={turnOf("main") !== "ready"}
               {...(lastSentId === undefined ? {} : { sentId: lastSentId })}
               {...(showMap ? { map: turnMap } : {})}
               {...(firstShown === undefined ? {} : { firstId: firstShown })}
@@ -7488,19 +8155,19 @@ export function ChatPrototypeRoute() {
                 activeArtifactId={activeArtifactId}
                 openThreadId={openThreadId}
                 copiedId={copiedId}
-                planStartable={turns.main === "ready"}
+                planStartable={turnOf("main") === "ready"}
                 actions={actions}
                 avatars={config.avatars}
                 names={config.names}
                 handlers={handlers}
               />
-              {awaitingFirstContent(turns.main, topLevel) ? <Working /> : null}
+              {awaitingFirstContent(turnOf("main"), topLevel) ? <Working /> : null}
             </Conversation>
           )
         }
-        composer={composerFor("main", main, setMain, {
+        composer={composerFor("main", {
           placeholder: empty ? "Describe the job — your co-worker sets up the rest" : "Message Ada",
-          onSubmit: () => send(main),
+          onSubmit: () => send(),
         })}
         panel={panelNode}
         onDropFiles={capabilities.main.files ? (incoming) => addFiles("main", incoming) : undefined}

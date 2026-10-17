@@ -2851,13 +2851,8 @@ button.cp-stack-open {
   flex-direction: column;
   border-left: 1px solid var(--line);
   background: var(--surface);
-  animation: cp-panel-in 260ms var(--ease-drawer);
-}
-.cp-panel[data-size="narrow"] {
-  width: var(--cp-panel-w, 400px);
-}
-.cp-panel[data-size="wide"] {
   width: var(--cp-panel-w, clamp(480px, 46vw, 760px));
+  animation: cp-panel-in 260ms var(--ease-drawer);
 }
 
 /* A 12px hit strip over the panel's 1px border. Hover darkens the border,
@@ -2901,28 +2896,485 @@ button.cp-stack-open {
 }
 .cp-panel-head {
   display: flex;
-  min-height: 56px;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px 10px 16px;
+  min-height: 40px;
+  align-items: stretch;
+  gap: 6px;
+  padding: 4px 6px 0;
   border-bottom: 1px solid var(--line);
+  background: var(--surface-sunk);
 }
-.cp-panel-title {
+.cp-panel-head .cp-panel-actions {
+  /* On the tab row's centre line: the row sits 1px over the border. */
+  align-self: flex-end;
+  margin-left: auto;
+}
+.cp-panel-head .cp-icon-btn {
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+}
+
+/* The row of tabs: compact, sitting on the header's bottom edge. The active
+   tab takes the content's colour and covers that edge, so it reads as the
+   front of what's below; the rest are plain labels split by hairlines. A
+   long row scrolls. While a tab is dragged the others slide aside. */
+.cp-tabs {
+  position: relative;
   display: flex;
   min-width: 0;
-  flex: 1;
-  flex-direction: column;
+  flex: 0 1 auto;
+  align-items: flex-end;
+  /* Over the header's border, so the active tab can cover it. */
+  margin-bottom: -1px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
-.cp-panel-title b {
+.cp-tabs::-webkit-scrollbar {
+  display: none;
+}
+.cp-tab {
+  position: relative;
+  display: flex;
+  min-width: 72px;
+  max-width: 180px;
+  height: 30px;
+  flex: 0 1 auto;
+  align-items: center;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  color: var(--ink-3);
+  user-select: none;
+  transition:
+    background-color 80ms ease-out,
+    color 80ms ease-out;
+}
+/* Hairlines between resting tabs, gone beside the active or hovered one. */
+.cp-tab + .cp-tab::before {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: -1px;
+  width: 1px;
+  background: var(--line);
+  content: "";
+}
+.cp-tab[data-active]::before,
+.cp-tab[data-active] + .cp-tab::before,
+.cp-tab:hover::before,
+.cp-tab:hover + .cp-tab::before {
+  opacity: 0;
+}
+.cp-tab:hover {
+  background: var(--hover);
+  color: var(--ink-2);
+}
+.cp-tab[data-active] {
+  z-index: 1;
+  height: 31px;
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+.cp-tabs[data-dragging] .cp-tab {
+  transition: transform 160ms var(--ease-out);
+}
+.cp-tabs[data-dragging] .cp-tab[data-dragging] {
+  z-index: 2;
+  border-color: var(--line);
+  background: var(--surface);
+  box-shadow: var(--raised);
+  cursor: grabbing;
+  transition: none;
+}
+.cp-tab-select {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.cp-tab-select:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--action) 45%, transparent);
+  outline-offset: -2px;
+}
+.cp-tab-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  font-size: 13px;
+}
+.cp-tab-label {
   overflow: hidden;
-  font-size: 14px;
-  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cp-panel-title span {
+/* Close sits over the tab's right end and takes room from the label only
+   where it shows: on the active tab and the one under the pointer. */
+.cp-tab:hover .cp-tab-select,
+.cp-tab[data-active] .cp-tab-select {
+  padding-right: 24px;
+}
+.cp-tab-close {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 4px;
+  background: none;
   color: var(--ink-3);
+  font-size: 11px;
+  opacity: 0;
+  cursor: pointer;
+}
+.cp-tab:hover .cp-tab-close,
+.cp-tab[data-active] .cp-tab-close {
+  opacity: 1;
+}
+.cp-tab-close:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+@media (hover: none) {
+  .cp-tab-select {
+    padding-right: 24px;
+  }
+  .cp-tab-close {
+    opacity: 1;
+  }
+}
+
+.cp-tab-add {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  align-self: flex-end;
+  place-items: center;
+  /* Centred on the tab row, which hangs 1px over the border. */
+  margin: 0 0 1px 2px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--ink-3);
+  font-size: 14px;
+  cursor: pointer;
+}
+.cp-tab-add:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--ink);
+}
+.cp-tab-add:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.cp-tab-add:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--action) 45%, transparent);
+  outline-offset: 1px;
+}
+.cp-tab-menu {
+  max-width: 300px;
+}
+.cp-tab-menu-text {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Pressing a tab or the + gives way a touch. */
+.cp-tab-select:active,
+.cp-tab-add:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.cp-tab-select,
+.cp-tab-add {
+  transition: transform 120ms var(--ease-out);
+}
+.cp-tab-indicator {
+  display: none;
+}
+
+/* Index: the bench drawer's tabs. A flat header, bold labels, and an ink
+   underline that glides to the active tab (instantly for keyboard moves).
+   The resize edge shows a grip on hover. */
+.cp-panel[data-variant="index"] .cp-panel-head {
+  min-height: 40px;
+  align-items: center;
+  padding: 0 6px 0 8px;
+  background: var(--surface);
+}
+.cp-panel[data-variant="index"] .cp-tabs {
+  align-self: stretch;
+  align-items: stretch;
+  gap: 2px;
+}
+.cp-panel[data-variant="index"] .cp-tab,
+.cp-panel[data-variant="index"] .cp-tab[data-active] {
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.cp-panel[data-variant="index"] .cp-tab::before {
+  display: none;
+}
+.cp-panel[data-variant="index"] .cp-tab:hover {
+  background: none;
+  color: var(--ink);
+}
+.cp-panel[data-variant="index"] .cp-tab[data-active] {
+  color: var(--ink);
+}
+.cp-panel[data-variant="index"] .cp-tab-select {
+  font-size: 13px;
+  font-weight: 700;
+}
+.cp-panel[data-variant="index"] .cp-tab[data-active]:not(:hover) .cp-tab-select {
+  padding-right: 8px;
+}
+.cp-panel[data-variant="index"] .cp-tab[data-active]:not(:hover) .cp-tab-close {
+  opacity: 0;
+}
+.cp-panel[data-variant="index"] .cp-tab-indicator {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  display: block;
+  width: 1px;
+  height: 2px;
+  background: var(--ink);
+  pointer-events: none;
+  transform-origin: left;
+  transition: transform 160ms var(--ease-out);
+}
+.cp-panel[data-variant="index"] .cp-tabs[data-instant] .cp-tab-indicator {
+  transition: none;
+}
+.cp-panel[data-variant="index"] .cp-tabs[data-dragging] .cp-tab-indicator {
+  opacity: 0;
+}
+.cp-panel[data-variant="index"] .cp-tabs[data-dragging] .cp-tab[data-dragging] {
+  border-radius: var(--r-md);
+  box-shadow: var(--floating);
+}
+.cp-panel[data-variant="index"] .cp-tab-add,
+.cp-panel[data-variant="index"] .cp-panel-actions {
+  align-self: center;
+  margin-bottom: 0;
+}
+.cp-panel[data-variant="index"] .cp-resize::after {
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  width: 4px;
+  height: 32px;
+  border-radius: var(--r-full);
+  background: var(--line-strong);
+  content: "";
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 120ms ease;
+}
+.cp-panel[data-variant="index"] .cp-resize:hover::after,
+.cp-panel[data-variant="index"] .cp-resize[data-dragging="true"]::after,
+.cp-panel[data-variant="index"] .cp-resize:focus-visible::after {
+  opacity: 1;
+}
+.cp-panel[data-variant="index"] .cp-resize[data-dragging="true"]::after {
+  background: color-mix(in srgb, var(--action) 70%, var(--surface));
+}
+
+/* Sheet: the panel floats as a card in a gutter, its tabs pills in a sunk
+   track like the version switcher. The gutter is the resize handle. */
+.cp-panel[data-variant="sheet"] {
+  height: auto;
+  margin: 8px 8px 8px 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--raised);
+}
+.cp-panel[data-variant="sheet"] .cp-panel-head {
+  min-height: 0;
+  align-items: center;
+  padding: 8px;
+  border-radius: 14px 14px 0 0;
+  background: var(--surface);
+}
+.cp-panel[data-variant="sheet"] .cp-tab-panes {
+  overflow: hidden;
+  border-radius: 0 0 14px 14px;
+}
+.cp-panel[data-variant="sheet"] .cp-tabs {
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--surface-sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.cp-panel[data-variant="sheet"] .cp-tab,
+.cp-panel[data-variant="sheet"] .cp-tab[data-active] {
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+}
+.cp-panel[data-variant="sheet"] .cp-tab::before {
+  display: none;
+}
+.cp-panel[data-variant="sheet"] .cp-tab:hover {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.cp-panel[data-variant="sheet"] .cp-tab[data-active] {
+  background: var(--surface);
+  box-shadow: var(--raised);
+}
+.cp-panel[data-variant="sheet"] .cp-tabs[data-dragging] .cp-tab[data-dragging] {
+  box-shadow: var(--floating);
+}
+.cp-panel[data-variant="sheet"] .cp-tab-add,
+.cp-panel[data-variant="sheet"] .cp-panel-actions {
+  align-self: center;
+  margin-bottom: 0;
+}
+.cp-panel[data-variant="sheet"] .cp-resize {
+  left: -9px;
+  width: 10px;
+}
+.cp-panel[data-variant="sheet"] .cp-resize-line {
+  top: 50%;
+  bottom: auto;
+  left: 4px;
+  width: 2px;
+  height: 28px;
+  border-radius: var(--r-full);
+  transform: translateY(-50%);
+}
+
+/* Every open tab stays mounted in the same cell; only the active one shows,
+   so the others keep their scroll position and what was typed in them. */
+.cp-tab-panes {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+}
+.cp-tab-pane {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  grid-area: 1 / 1;
+}
+.cp-tab-pane:not([data-active]) {
+  visibility: hidden;
+}
+/* A tab's own controls, between the tab row and its content. */
+.cp-pane-bar {
+  display: flex;
+  min-height: 44px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.cp-pane-bar .cp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cp-pane-meta {
+  overflow: hidden;
+  min-width: 0;
+  flex: 1;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Changes between two versions: unified, removed over added, unchanged
+   stretches folded. */
+.cp-diff {
+  overflow: auto;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.cp-diff-line {
+  display: grid;
+  grid-template-columns: 40px 40px 20px minmax(0, 1fr);
+}
+.cp-diff-line[data-kind="add"] {
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+}
+.cp-diff-line[data-kind="del"] {
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
+}
+.cp-diff-no {
+  padding-right: 8px;
+  color: var(--ink-3);
+  text-align: right;
+  user-select: none;
+}
+.cp-diff-sign {
+  color: var(--ink-3);
+  text-align: center;
+  user-select: none;
+}
+.cp-diff-line code {
+  padding-right: 12px;
+  font: inherit;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.cp-diff-fold {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 0;
+  background: var(--surface-sunk);
+  color: var(--ink-3);
+  font: inherit;
+  font-family: var(--font-body);
   font-size: 12px;
+  cursor: pointer;
+}
+.cp-diff-fold:hover {
+  color: var(--ink);
+}
+.cp-diff-stat {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+.cp-diff-stat [data-kind="add"] {
+  color: var(--success);
+}
+.cp-diff-stat [data-kind="del"] {
+  color: var(--danger);
 }
 .cp-icon-btn {
   display: grid;
@@ -3185,7 +3637,9 @@ button.cp-stack-open {
   }
   .cp-fold-caret,
   .cp-meter span,
-  .cp-map-tick span {
+  .cp-map-tick span,
+  .cp-tabs[data-dragging] .cp-tab,
+  .cp-tab-indicator {
     transition: none;
   }
   .cp-map-preview {
@@ -3205,14 +3659,16 @@ button.cp-stack-open {
     grid-template-columns: minmax(0, 1fr);
   }
   .cp-panel,
-  .cp-panel[data-size="narrow"],
-  .cp-panel[data-size="wide"] {
+  .cp-panel[data-variant="sheet"] {
     position: absolute;
+    height: 100%;
+    margin: 0;
+    border-radius: 0;
     inset: 0;
     z-index: 30;
     width: auto;
     max-width: none;
-    border-left: 0;
+    border: 0;
   }
   .cp-resize {
     display: none;
