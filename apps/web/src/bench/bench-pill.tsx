@@ -23,6 +23,7 @@ export function BenchPill({
   readonly onToggle: () => void;
 }) {
   const working = status.tone === "working";
+  const needsYou = status.text === "Needs you";
   return (
     <button
       type="button"
@@ -39,7 +40,12 @@ export function BenchPill({
         <IdentityAvatar kind="agent" name={worker.name} principalId={worker.id} />
       )}
       <b>{benchName}</b>
-      {working ? (
+      {needsYou && worker !== undefined ? (
+        <>
+          <span className="pulse" aria-hidden="true" />
+          <span className="bench-pill-status">{worker.name} needs you</span>
+        </>
+      ) : working ? (
         <>
           <span className="pulse" aria-hidden="true" />
           <span className="bench-pill-status">

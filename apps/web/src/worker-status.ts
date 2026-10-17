@@ -18,6 +18,7 @@ import { workbenchKeys } from "./chat-path";
 import { TenantApprovalsSchema, apiQueryOptions } from "./api";
 import { createFetchStockHub } from "./needs-converge";
 import { pendingApprovalsPath } from "./pending-approvals";
+import { tenantKeys } from "./query-client";
 
 export type WorkerStatus = {
   readonly tone: AvatarStatus;
@@ -37,8 +38,47 @@ export function markTurnPending(queryClient: QueryClient, benchId: string): void
   });
 }
 
+/** Call once an approval is answered: the run resumes and may park again on
+ * its next call. The answered row leaves the cache first, or the stale list
+ * would settle the resumed turn before its refetch lands. */
+export function markApprovalAnswered(
+  queryClient: QueryClient,
+  benchId: string,
+  approvalId: string,
+): void {
+  queryClient.setQueryData<typeof TenantApprovalsSchema.infer>(
+    tenantKeys.pendingApprovals(benchId),
+    (list) =>
+      list === undefined
+        ? list
+        : { ...list, data: list.data.filter((row) => row.id !== approvalId) },
+  );
+  markTurnPending(queryClient, benchId);
+}
+
 function turnAnswered(timeline: readonly WorkbenchMessage[] | undefined, sentAt: number): boolean {
   return (timeline ?? []).some((m) => m.author === "other" && Date.parse(m.at) > sentAt);
+}
+
+type ApprovalRow = (typeof TenantApprovalsSchema.infer)["data"][number];
+
+// Only the live worker's own asks count: one left pending by a run that is
+// gone can't be answered and says nothing about the current turn.
+function parkedOnAsk(approvals: readonly ApprovalRow[], workerAddress: string): boolean {
+  return approvals.some(
+    (row) => row.status === "pending" && sameAddress(row.agentAddress, workerAddress),
+  );
+}
+
+/** A pending turn ends once the worker replies after it was sent, or parks
+ * on an ask. */
+export function turnSettled(
+  sentAt: number,
+  timeline: readonly WorkbenchMessage[] | undefined,
+  approvals: readonly ApprovalRow[],
+  workerAddress: string,
+): boolean {
+  return parkedOnAsk(approvals, workerAddress) || turnAnswered(timeline, sentAt);
 }
 
 const RANK: Record<string, number> = {
@@ -63,17 +103,20 @@ export function useBenchWorkerStatus(
       enabled: bench.domain !== "",
     })),
   });
-  const approvals = useQueries({
-    queries: benches.map((bench) => ({
-      ...apiQueryOptions(pendingApprovalsPath(bench.id), TenantApprovalsSchema),
-    })),
-  });
   const pending = useQueries({
     queries: benches.map((bench) => ({
       queryKey: workbenchKeys.pendingTurn(bench.id),
       queryFn: (): PendingTurn | null => null,
       enabled: false,
       gcTime: Infinity,
+    })),
+  });
+  // A parked ask sends no mail and ticks no stream, so a pending turn polls
+  // for it; every approvals surface shares this query and refreshes with it.
+  const approvals = useQueries({
+    queries: benches.map((bench, index) => ({
+      ...apiQueryOptions(pendingApprovalsPath(bench.id), TenantApprovalsSchema),
+      refetchInterval: pending[index]?.data != null ? PENDING_POLL_MS : false,
     })),
   });
   const timelines = useQueries({
@@ -98,10 +141,9 @@ export function useBenchWorkerStatus(
     if (agent.address === "") {
       return offer({ tone: "idle", text: agent.redeploy === "manual" ? "Stopped" : "Starting" });
     }
-    const needsYou = (approvals[index]?.data?.data ?? []).some(
-      (row) => row.status === "pending" && sameAddress(row.agentAddress, agent.address),
-    );
-    if (needsYou) return offer({ tone: "ready", text: "Needs you" });
+    if (parkedOnAsk(approvals[index]?.data?.data ?? [], agent.address)) {
+      return offer({ tone: "ready", text: "Needs you" });
+    }
     const sentAt = pending[index]?.data?.sentAt;
     if (sentAt !== undefined) {
       expiries.push({ id: bench.id, at: sentAt + PENDING_TURN_TIMEOUT_MS });
@@ -117,8 +159,14 @@ export function useBenchWorkerStatus(
   const settled = benches
     .map((bench, index) => {
       const sentAt = pending[index]?.data?.sentAt;
-      const approved = (approvals[index]?.data?.data ?? []).some((row) => row.status === "pending");
-      return sentAt !== undefined && (approved || turnAnswered(timelines[index]?.data, sentAt))
+      const agent = participants[index]?.data?.find((p) => p.kind === "agent" && isWorker(p));
+      return sentAt !== undefined &&
+        turnSettled(
+          sentAt,
+          timelines[index]?.data,
+          approvals[index]?.data?.data ?? [],
+          agent?.address ?? "",
+        )
         ? bench.id
         : null;
     })

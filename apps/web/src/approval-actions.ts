@@ -10,6 +10,7 @@ import { approveApproval, rejectApproval } from "./api";
 import type { Approval } from "./api";
 import { getApprovalDetail } from "./pending-approvals";
 import { tenantKeys } from "./query-client";
+import { markApprovalAnswered } from "./worker-status";
 
 export function createChatApprovalActions(
   tenantId: string,
@@ -35,6 +36,7 @@ export function createChatApprovalActions(
   // A 409 (already resolved, run no longer running) is kept distinct from
   // a generic error: never something a retry fixes.
   async function resolve(
+    approvalId: string,
     call: () => Promise<Approval>,
     status: "approved" | "rejected",
     forbiddenMessage: string,
@@ -44,6 +46,7 @@ export function createChatApprovalActions(
       // The native route only ever returns 200 with the exact terminal
       // status asked for, so `status` here is not a guess.
       await call();
+      markApprovalAnswered(queryClient, tenantId, approvalId);
       invalidate();
       return { kind: "resolved", status };
     } catch (cause) {
@@ -94,6 +97,7 @@ export function createChatApprovalActions(
     },
     approve(approvalId) {
       return resolve(
+        approvalId,
         () => approveApproval(tenantId, approvalId),
         "approved",
         CHAT_STRINGS.blockApproveActionForbidden,
@@ -102,6 +106,7 @@ export function createChatApprovalActions(
     },
     allowStanding(approvalId) {
       return resolve(
+        approvalId,
         () => approveApproval(tenantId, approvalId, "always"),
         "approved",
         CHAT_STRINGS.blockApproveActionForbidden,
@@ -110,6 +115,7 @@ export function createChatApprovalActions(
     },
     reject(approvalId) {
       return resolve(
+        approvalId,
         () => rejectApproval(tenantId, approvalId),
         "rejected",
         CHAT_STRINGS.blockDenyActionForbidden,

@@ -139,6 +139,7 @@ export const CHAT_STRINGS = {
   blockUnsupportedTitle: "Unsupported block",
   blockUnsupportedBody: (type: string) => `This "${type}" block can't be shown here yet.`,
   blockApproveAction: "Approve",
+  blockApproveNeedsYouTitle: "Needs your approval",
   blockDenyAction: "Deny",
   blockApproveAllowOnce: "Allow once",
   blockApproveAlways: "Always allow for this worker",

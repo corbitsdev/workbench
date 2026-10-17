@@ -114,25 +114,6 @@
   box-shadow: 0 0 0 2px var(--surface);
   border-radius: 8px;
 }
-.drawer-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-  color: var(--ink-2);
-  background: color-mix(in srgb, var(--action) 14%, transparent);
-}
-.drawer-pill::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--action);
-}
 .drawer-sec-head button {
   padding: 0;
   border: 0;
@@ -207,4 +188,22 @@
 }
 .drawer-list-text > b {
   font-weight: 800;
+}
+
+/* A pending approval: the asker's row, the call it gates, then its answer. */
+.drawer-approval {
+  display: grid;
+  gap: 6px;
+  padding-bottom: 6px;
+}
+.drawer-approval-call {
+  display: block;
+  padding: 6px 8px;
+  border-radius: var(--r-md);
+  background: var(--hover);
+  color: var(--ink-2);
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
