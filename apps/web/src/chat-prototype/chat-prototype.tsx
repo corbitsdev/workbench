@@ -107,6 +107,8 @@ import {
   X,
 } from "@/lib/icons";
 import "./chat-prototype.css";
+import { LIVE_ME_ID } from "./live-adapter";
+import { useLiveWorkbench } from "./live-source";
 import type {
   Participant,
   TextPart,
@@ -5311,9 +5313,12 @@ function capabilitiesFrom(entries: readonly string[] | null): ComposerCapabiliti
   };
 }
 
-function tokensFor(capabilities: ComposerCapabilities): readonly Suggestion[] {
+function tokensFor(
+  capabilities: ComposerCapabilities,
+  mentionable: readonly Suggestion[],
+): readonly Suggestion[] {
   return [
-    ...(capabilities.mentions ? MENTIONABLE : []),
+    ...(capabilities.mentions ? mentionable : []),
     ...(capabilities.commands ? COMMANDS : []),
   ];
 }
@@ -6683,6 +6688,8 @@ type PlaygroundConfig = {
   readonly actions: readonly MessageActionId[];
   readonly showMap: boolean;
   readonly showThreadActions: boolean;
+  /** `?bench=<workbench id>`: a real workbench instead of the fixtures. */
+  readonly bench?: string;
   /** `?tabs=ledger|index|sheet`: the side panel's design. */
   readonly tabsVariant: TabsVariant;
   readonly avatars: boolean;
@@ -6702,6 +6709,7 @@ function playgroundFromURL(): PlaygroundConfig {
     actions: actionsFrom(listParam(params, "actions")),
     showMap: params.get("map") !== "off",
     showThreadActions: params.has("threadactions"),
+    ...(params.get("bench") === null ? {} : { bench: params.get("bench") ?? "" }),
     tabsVariant: TABS_VARIANTS.find((variant) => variant === params.get("tabs")) ?? "ledger",
     avatars: !solo && params.get("avatars") !== "off",
     names: !solo && params.get("names") !== "off",
@@ -7089,13 +7097,17 @@ function awaitingFirstContent(status: ComposerStatus, entries: readonly Timeline
   );
 }
 
-function suggestionsFor(value: string, capabilities: ComposerCapabilities): readonly Suggestion[] {
+function suggestionsFor(
+  value: string,
+  capabilities: ComposerCapabilities,
+  mentionable: readonly Suggestion[],
+): readonly Suggestion[] {
   const typing = activeToken(value);
   if (typing === null) return [];
   const pool =
     typing.prefix === "@"
       ? capabilities.mentions
-        ? MENTIONABLE
+        ? mentionable
         : []
       : capabilities.commands
         ? COMMANDS
@@ -7104,13 +7116,55 @@ function suggestionsFor(value: string, capabilities: ComposerCapabilities): read
   return pool.filter((option) => option.token.toLowerCase().startsWith(query));
 }
 
+/** What a real workbench can do today. It has no commands, files, voice,
+ * model or mode to offer the composer yet, and messages can only be copied
+ * or replied to. */
+const LIVE_CAPABILITIES = {
+  files: false,
+  voice: false,
+  model: false,
+  mode: false,
+  commands: false,
+} as const;
+const LIVE_ACTIONS: ReadonlySet<MessageActionId> = new Set(["copy", "reply"]);
+const LIVE_ME: Participant = { id: LIVE_ME_ID, kind: "person", name: "You" };
+
 export function ChatPrototypeRoute() {
   const [config] = useState(playgroundFromURL);
-  const { scenario, actions, showMap, showThreadActions } = config;
+  const { scenario, showMap, showThreadActions } = config;
+  const live = useLiveWorkbench(config.bench);
+  const actions = live.enabled
+    ? config.actions.filter((action) => LIVE_ACTIONS.has(action))
+    : config.actions;
   // Simulated turns follow the workbench's own story.
   const story = scenario === "partnerships" ? PARTNERSHIPS_STORY : REPO_STORY;
-  const [entries, setEntries] = useState<readonly TimelineEntry[]>(() =>
+  const [mockEntries, setEntries] = useState<readonly TimelineEntry[]>(() =>
     scenarioEntries(config.scenario, config.count),
+  );
+  // A real workbench replaces the fixtures wholesale; the mock's own edits
+  // (reactions, pins, scripted turns) only ever touch the fixtures.
+  const liveNotice = live.error ?? (live.loading ? "Loading workbench…" : null);
+  const entries = useMemo<readonly TimelineEntry[]>(() => {
+    if (!live.enabled) return mockEntries;
+    if (liveNotice === null) return live.entries;
+    return [{ type: "system", id: "live-notice", at: new Date().toISOString(), text: liveNotice }];
+  }, [live.enabled, live.entries, liveNotice, mockEntries]);
+  const participants = useMemo<ReadonlyMap<string, Participant>>(
+    () =>
+      live.enabled
+        ? new Map(
+            [LIVE_ME, ...live.participants].map((participant) => [participant.id, participant]),
+          )
+        : PARTICIPANTS,
+    [live.enabled, live.participants],
+  );
+  const meId = live.enabled ? LIVE_ME_ID : ME.id;
+  const mentionable = useMemo<readonly Suggestion[]>(
+    () =>
+      live.enabled
+        ? live.agents.map((agent) => ({ id: agent.id, kind: "mention", token: `@${agent.name}` }))
+        : MENTIONABLE,
+    [live.enabled, live.agents],
   );
   const [artifacts, setArtifacts] = useState<ReadonlyMap<string, Artifact>>(baseArtifacts);
   const [panel, setPanel] = useState<PanelState | null>(null);
@@ -7124,15 +7178,20 @@ export function ChatPrototypeRoute() {
     setDrafts((current) => new Map(current).set(scope, update(current.get(scope) ?? EMPTY_DRAFT)));
   }, []);
   const [context, setContext] = useState<ComposerContext | null>(null);
-  const [capabilities] = useState<Readonly<Record<"main" | "thread", ComposerCapabilities>>>(
-    () => ({
-      main: config.capabilities,
-      thread: THREAD_CAPABILITIES,
-    }),
+  const [capabilities] = useState<Readonly<Record<"main" | "thread", ComposerCapabilities>>>(() =>
+    config.bench === undefined
+      ? { main: config.capabilities, thread: THREAD_CAPABILITIES }
+      : {
+          main: { ...config.capabilities, ...LIVE_CAPABILITIES },
+          thread: { ...THREAD_CAPABILITIES, ...LIVE_CAPABILITIES },
+        },
   );
   const tokens = useMemo(
-    () => ({ main: tokensFor(capabilities.main), thread: tokensFor(capabilities.thread) }),
-    [capabilities],
+    () => ({
+      main: tokensFor(capabilities.main, mentionable),
+      thread: tokensFor(capabilities.thread, mentionable),
+    }),
+    [capabilities, mentionable],
   );
   const [mutedThreads, setMutedThreads] = useState<ReadonlySet<string>>(() => new Set());
   const [viewer, setViewer] = useState<{
@@ -7252,10 +7311,10 @@ export function ChatPrototypeRoute() {
   // `?scenario=streaming` opens on a turn already running. Every frame is a
   // full snapshot, so starting it over after a cleanup is safe.
   useEffect(() => {
-    if (scenario !== "streaming") return;
+    if (scenario !== "streaming" || live.enabled) return;
     play("main", scriptWorkTurn([], nextId("plan"), story), { resume: STREAMING_REPLY_ID });
     return () => clearTurn("main");
-  }, [scenario, story, play, clearTurn]);
+  }, [scenario, story, play, clearTurn, live.enabled]);
 
   /** Bumps a parent's thread summary, the way a server would on a new reply. */
   const noteReply = (threadId: string, at: string) => {
@@ -7273,6 +7332,14 @@ export function ChatPrototypeRoute() {
     const trimmed = draft.text.trim();
     const busy = (turnsRef.current.get(scope) ?? "ready") !== "ready";
     if ((trimmed === "" && draft.attachments.length === 0) || busy) return;
+    if (live.enabled) {
+      // The mailbox carries text only for now; files are switched off.
+      if (trimmed === "") return;
+      live.send(trimmed, threadId);
+      setDraft(scope, () => EMPTY_DRAFT);
+      if (threadId === undefined) setContext(null);
+      return;
+    }
     const at = new Date().toISOString();
     // Files lead, as in Claude: what was shared, then what was said about it.
     const parts: ChatPart[] = [
@@ -7517,8 +7584,8 @@ export function ChatPrototypeRoute() {
     else setWindowStart((current) => current ?? firstShownRef.current ?? null);
   }, []);
 
-  const turnMap = useMemo(() => conversationMap(shown, PARTICIPANTS), [shown]);
-  const lastSentId = lastSentBy(topLevel, ME.id);
+  const turnMap = useMemo(() => conversationMap(shown, participants), [shown, participants]);
+  const lastSentId = lastSentBy(topLevel, meId);
   const activeTab = panel?.tabs.find((tab) => panelTabId(tab) === panel.activeId);
   const activeArtifactId = activeTab?.kind === "artifact" ? activeTab.artifactId : null;
   const openThreadId = activeTab?.kind === "thread" ? activeTab.messageId : null;
@@ -7654,7 +7721,7 @@ export function ChatPrototypeRoute() {
         notice={draft.notice}
         context={scope === "main" ? context : null}
         onClearContext={() => setContext(null)}
-        suggestions={suggestionsFor(draft.text, capabilities[kind])}
+        suggestions={suggestionsFor(draft.text, capabilities[kind], mentionable)}
         suggestionIndex={draft.suggestionIndex}
         onSuggestionIndexChange={(index) =>
           setDraft(scope, (current) => ({ ...current, suggestionIndex: index }))
@@ -7807,9 +7874,9 @@ export function ChatPrototypeRoute() {
               <ThreadPane
                 parent={parent}
                 replies={replies}
-                participants={PARTICIPANTS}
+                participants={participants}
                 artifacts={artifacts}
-                meId={ME.id}
+                meId={meId}
                 copiedId={copiedId}
                 actions={actions}
                 handlers={handlers}
@@ -7843,7 +7910,7 @@ export function ChatPrototypeRoute() {
               <ArtifactPane
                 artifact={artifact}
                 version={version}
-                participants={PARTICIPANTS}
+                participants={participants}
                 onSelectVersion={(next) => openTab({ ...ref, version: next })}
                 onCompare={(from, to) =>
                   openTab({ kind: "changes", artifactId: artifact.id, from, to })
@@ -7956,7 +8023,7 @@ export function ChatPrototypeRoute() {
       />
     );
 
-  const working = [...turns.values()].some((status) => status !== "ready");
+  const working = live.waiting || [...turns.values()].some((status) => status !== "ready");
 
   return (
     <div className="cp-page">
@@ -7965,8 +8032,12 @@ export function ChatPrototypeRoute() {
           // The live pill, unchanged. Its drawer is out of this prototype's
           // scope, so the toggle does nothing here.
           <BenchPill
-            benchName={SCENARIO_BENCH[scenario]}
-            worker={{ id: ADA.id, name: ADA.name }}
+            benchName={live.enabled ? (live.benchName ?? "Workbench") : SCENARIO_BENCH[scenario]}
+            worker={
+              live.enabled
+                ? (live.agents[0] ?? { id: "worker", name: "Worker" })
+                : { id: ADA.id, name: ADA.name }
+            }
             status={
               working ? { tone: "working", text: "Working…" } : { tone: "idle", text: "Live" }
             }
@@ -7988,9 +8059,9 @@ export function ChatPrototypeRoute() {
             >
               <Timeline
                 entries={shown}
-                participants={PARTICIPANTS}
+                participants={participants}
                 artifacts={artifacts}
-                meId={ME.id}
+                meId={meId}
                 activeArtifactId={activeArtifactId}
                 openThreadId={openThreadId}
                 copiedId={copiedId}
@@ -8000,12 +8071,14 @@ export function ChatPrototypeRoute() {
                 names={config.names}
                 handlers={handlers}
               />
-              {awaitingFirstContent(turnOf("main"), topLevel) ? <Working /> : null}
+              {live.waiting || awaitingFirstContent(turnOf("main"), topLevel) ? <Working /> : null}
             </Conversation>
           )
         }
         composer={composerFor("main", {
-          placeholder: empty ? "Describe the job — your co-worker sets up the rest" : "Message Ada",
+          placeholder: empty
+            ? "Describe the job — your co-worker sets up the rest"
+            : `Message ${live.enabled ? (live.agents[0]?.name ?? "your worker") : ADA.name}`,
           onSubmit: () => send(),
         })}
         panel={panelNode}
