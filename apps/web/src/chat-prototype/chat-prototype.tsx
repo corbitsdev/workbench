@@ -7468,10 +7468,15 @@ export function ChatPrototypeRoute() {
         );
         play(scope, replayFrames(target.parts), { resume: target.id });
       },
-      onDecide: (approvalId, decision) =>
+      onDecide: (approvalId, decision) => {
+        if (live.enabled) {
+          live.decide(approvalId, decision);
+          return;
+        }
         setEntries((current) =>
           replacePart(current, "approval", approvalId, (part) => ({ ...part, decision })),
-        ),
+        );
+      },
       onReact: (messageId, emoji) =>
         setEntries((current) =>
           replaceMessage(current, messageId, (existing) => ({
@@ -7548,7 +7553,7 @@ export function ChatPrototypeRoute() {
         retryTimers.current.add(timer);
       },
     }),
-    [copyText, play, openFiles, openTab, setDraft],
+    [copyText, play, openFiles, openTab, setDraft, live.enabled, live.decide],
   );
 
   const topLevel = useMemo(
@@ -8023,7 +8028,8 @@ export function ChatPrototypeRoute() {
       />
     );
 
-  const working = live.waiting || [...turns.values()].some((status) => status !== "ready");
+  const liveWorking = live.enabled && live.activity === "working";
+  const working = liveWorking || [...turns.values()].some((status) => status !== "ready");
 
   return (
     <div className="cp-page">
@@ -8039,7 +8045,11 @@ export function ChatPrototypeRoute() {
                 : { id: ADA.id, name: ADA.name }
             }
             status={
-              working ? { tone: "working", text: "Working…" } : { tone: "idle", text: "Live" }
+              live.enabled && live.activity === "needs-you"
+                ? { tone: "ready", text: "Needs you" }
+                : working
+                  ? { tone: "working", text: "Working…" }
+                  : { tone: "idle", text: "Live" }
             }
             rosterReady
             open={false}
@@ -8071,7 +8081,7 @@ export function ChatPrototypeRoute() {
                 names={config.names}
                 handlers={handlers}
               />
-              {live.waiting || awaitingFirstContent(turnOf("main"), topLevel) ? <Working /> : null}
+              {liveWorking || awaitingFirstContent(turnOf("main"), topLevel) ? <Working /> : null}
             </Conversation>
           )
         }

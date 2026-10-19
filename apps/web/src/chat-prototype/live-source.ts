@@ -4,24 +4,59 @@
 
 import { reportError } from "@corbits/error-sink";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { type } from "arktype";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { listTopLevelRuns } from "@/agents-api";
+import { TenantApprovalsSchema, apiQueryOptions, approveApproval, rejectApproval } from "@/api";
 import { nameWorkers, useWorkerNames } from "@/bench/worker-name";
 import {
   listWorkbenchParticipants,
   readWorkbench,
+  sameAddress,
   sendToWorkbench,
   subscribeToInbox,
 } from "@/chat/threads-api";
 import { workbenchKeys } from "@/chat-path";
 import { createFetchStockHub } from "@/needs-converge";
+import { pendingApprovalsPath } from "@/pending-approvals";
+import { tenantKeys } from "@/query-client";
 
-import { LIVE_ME_ID, liveConversation, unsettledSends, type PendingSend } from "./live-adapter";
-import type { ChatMessage, Participant, TimelineEntry } from "./model";
+import {
+  LIVE_ME_ID,
+  liveApprovals,
+  liveConversation,
+  unsettledSends,
+  workerActivity,
+  type PendingSend,
+  type RuntimeStatus,
+  type WorkerActivity,
+} from "./live-adapter";
+import type { ApprovalDecision, ChatMessage, Participant, TimelineEntry } from "./model";
 
 /** How long after your send the chat shows the agent working, at most, when
  * no reply arrives. */
 const WAITING_CAP_MS = 10 * 60_000;
+
+/** How often the worker's run is asked what it's doing: quickly while a
+ * turn is open, otherwise only to notice other people's turns. */
+const STATUS_ACTIVE_MS = 2_000;
+const STATUS_IDLE_MS = 10_000;
+
+const RunStatus = type({ "runtimeStatus?": "'idle' | 'busy' | 'waiting_approval'" });
+
+/** The run's own account of its turn, or null when the hub has none (its
+ * collector starts with the run's first activity). */
+async function readRuntimeStatus(benchId: string, runId: string): Promise<RuntimeStatus | null> {
+  const response = await fetch(
+    `/api/tenants/${encodeURIComponent(benchId)}/workflows/runs/${encodeURIComponent(runId)}`,
+    { headers: { accept: "application/json" } },
+  );
+  if (!response.ok) throw new Error(`The run answered ${String(response.status)}.`);
+  const parsed = RunStatus(await response.json());
+  if (parsed instanceof type.errors) throw new Error(`Unexpected run shape: ${parsed.summary}`);
+  return parsed.runtimeStatus ?? null;
+}
 
 export type LiveWorkbench = {
   /** False without `?bench=`: the playground stays on its fixtures. */
@@ -33,10 +68,15 @@ export type LiveWorkbench = {
   readonly participants: readonly Participant[];
   /** Agents that can be messaged now: those with a live run. */
   readonly agents: readonly Participant[];
-  /** You've sent, and no agent has answered since. */
-  readonly waiting: boolean;
+  /** The worker's state: from its run where the hub reports one, else
+   * from whether your last message has been answered. */
+  readonly activity: WorkerActivity;
   /** Sends `text`; with `replyTo`, as a reply to that message. */
   readonly send: (text: string, replyTo?: string) => void;
+  /** Answers a pending approval. The routes know two scopes: "always"
+   * holds for the rest of this run, and "ask every time" is the same as
+   * allowing once. */
+  readonly decide: (approvalId: string, decision: ApprovalDecision) => void;
 };
 
 type Pending = PendingSend & { readonly failed: boolean };
@@ -86,6 +126,8 @@ export function useLiveWorkbench(benchId: string | undefined): LiveWorkbench {
     if (!enabled) return undefined;
     return subscribeToInbox(id, () => {
       void queryClient.invalidateQueries({ queryKey: workbenchKeys.scope(id) });
+      // A parked ask sends no mail but still ticks the stream.
+      void queryClient.invalidateQueries({ queryKey: tenantKeys.pendingApprovals(id) });
     });
   }, [enabled, id, queryClient]);
 
@@ -94,6 +136,19 @@ export function useLiveWorkbench(benchId: string | undefined): LiveWorkbench {
     () => nameWorkers(roster.data ?? [], workerName),
     [roster.data, workerName],
   );
+  const worker = named.find(
+    (participant) => participant.kind === "agent" && participant.address.includes("@"),
+  );
+  const runs = useQuery({
+    queryKey: [...workbenchKeys.scope(id), "runs"],
+    queryFn: () => listTopLevelRuns(id),
+    enabled: enabled && worker !== undefined,
+  });
+  const runId =
+    worker === undefined
+      ? undefined
+      : runs.data?.find((run) => sameAddress(run.address, worker.address))?.id;
+
   const conversation = useMemo(
     () => liveConversation(timeline.data ?? [], named),
     [timeline.data, named],
@@ -139,7 +194,8 @@ export function useLiveWorkbench(benchId: string | undefined): LiveWorkbench {
     [id, named, queryClient, timeline.data],
   );
 
-  const entries = useMemo(
+  // Messages only: what "waiting on a reply" is worked out from.
+  const messageEntries = useMemo(
     () => [...conversation.entries, ...unsettled.map(pendingEntry)],
     [conversation.entries, unsettled],
   );
@@ -149,12 +205,87 @@ export function useLiveWorkbench(benchId: string | undefined): LiveWorkbench {
   const lastAt = (match: (entry: ChatMessage) => boolean) =>
     Math.max(
       0,
-      ...entries.flatMap((entry) =>
+      ...messageEntries.flatMap((entry) =>
         entry.type === "message" && match(entry) ? [Date.parse(entry.at)] : [],
       ),
     );
   const lastOwn = lastAt((entry) => entry.authorId === LIVE_ME_ID && entry.threadId === undefined);
   const lastAgent = lastAt((entry) => agentIds.has(entry.authorId));
+  const waitingOnReply = lastOwn > lastAgent && Date.now() - lastOwn < WAITING_CAP_MS;
+
+  const status = useQuery({
+    queryKey: [...workbenchKeys.scope(id), "run-status", runId ?? ""],
+    queryFn: () => readRuntimeStatus(id, runId ?? ""),
+    enabled: enabled && runId !== undefined,
+    refetchInterval: (query) =>
+      waitingOnReply || (query.state.data !== null && query.state.data !== "idle")
+        ? STATUS_ACTIVE_MS
+        : STATUS_IDLE_MS,
+  });
+  const approvals = useQuery({
+    ...apiQueryOptions(pendingApprovalsPath(id), TenantApprovalsSchema),
+    enabled,
+    // The run says when it's parked on one; until it lands, keep asking.
+    refetchInterval: status.data === "waiting_approval" ? STATUS_ACTIVE_MS : false,
+  });
+  // Decided here: kept on screen with the choice made, since the decided
+  // approval drops out of the pending list.
+  const [decided, setDecided] = useState<ReadonlyMap<string, ChatMessage>>(() => new Map());
+  const pendingCards = useMemo(
+    () => liveApprovals(approvals.data?.data ?? [], named),
+    [approvals.data, named],
+  );
+  const decide = useCallback(
+    (approvalId: string, decision: ApprovalDecision) => {
+      const card = pendingCards.find((entry) =>
+        entry.parts.some((part) => part.type === "approval" && part.id === approvalId),
+      );
+      if (card === undefined) return;
+      const answered: ChatMessage = {
+        ...card,
+        parts: card.parts.map((part) =>
+          part.type === "approval" && part.id === approvalId ? { ...part, decision } : part,
+        ),
+      };
+      setDecided((current) => new Map(current).set(approvalId, answered));
+      const request =
+        decision === "deny"
+          ? rejectApproval(id, approvalId)
+          : approveApproval(id, approvalId, decision === "always" ? "always" : "once");
+      request
+        .then(() => queryClient.invalidateQueries({ queryKey: tenantKeys.pendingApprovals(id) }))
+        .catch((cause: unknown) => {
+          reportError(cause, { operation: "chat_prototype_live_decide" });
+          // Back to undecided, so the person can try again.
+          setDecided((current) => {
+            const next = new Map(current);
+            next.delete(approvalId);
+            return next;
+          });
+        });
+    },
+    [id, pendingCards, queryClient],
+  );
+
+  const entries = useMemo(() => {
+    const cards = [
+      ...pendingCards.filter((card) => !decided.has(card.id.replace(/^approval:/, ""))),
+      ...decided.values(),
+    ];
+    // Cards go where they were raised; the timeline is otherwise in order.
+    const timed = [...conversation.entries, ...cards].sort(
+      (a, b) => Date.parse(a.at) - Date.parse(b.at),
+    );
+    return [...timed, ...unsettled.map(pendingEntry)];
+  }, [conversation.entries, pendingCards, decided, unsettled]);
+
+  // When the run was last seen taking a turn, so an idle reading after a
+  // send can tell "not started yet" from "finished".
+  const [activeAt, setActiveAt] = useState<number | null>(null);
+  const runtimeStatus = status.data ?? undefined;
+  useEffect(() => {
+    if (runtimeStatus === "busy" || runtimeStatus === "waiting_approval") setActiveAt(Date.now());
+  }, [runtimeStatus, status.dataUpdatedAt]);
 
   const failure = tenant.error ?? roster.error ?? timeline.error;
   const missing = tenant.data === null;
@@ -176,7 +307,12 @@ export function useLiveWorkbench(benchId: string | undefined): LiveWorkbench {
         participant.kind === "agent" &&
         named.some((member) => member.id === participant.id && member.address.includes("@")),
     ),
-    waiting: lastOwn > lastAgent && Date.now() - lastOwn < WAITING_CAP_MS,
+    activity: workerActivity({
+      runtimeStatus,
+      waitingOnReply,
+      busySinceSend: activeAt !== null && activeAt >= lastOwn,
+    }),
     send,
+    decide,
   };
 }

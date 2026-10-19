@@ -2,6 +2,7 @@
 // stateless components render live data exactly as they render fixtures.
 // Pure functions only: reading, sending and refreshing live in the hook.
 
+import type { Approval } from "@/api";
 import { stripNameLine } from "@/bench/worker-name";
 import {
   sameAddress,
@@ -64,17 +65,24 @@ function outsiderId(address: string): string {
   return `address:${address.toLowerCase()}`;
 }
 
-/** Who wrote a message: you, a roster member by address, the bench's only
- * agent when a restarted run's address no longer matches, or an outsider. */
+/** A roster member by address, or the bench's only agent when a restarted
+ * run's address no longer matches. */
+function participantAt(
+  address: string,
+  roster: readonly WorkbenchParticipant[],
+): WorkbenchParticipant | undefined {
+  const matched = roster.find((participant) => sameAddress(participant.address, address));
+  if (matched !== undefined) return matched;
+  const agents = roster.filter((participant) => participant.kind === "agent");
+  return agents.length === 1 ? agents[0] : undefined;
+}
+
+/** Who wrote a message: you, someone on the roster, or an outsider. */
 function authorOf(
   message: WorkbenchMessage,
   roster: readonly WorkbenchParticipant[],
 ): WorkbenchParticipant | "me" | undefined {
-  if (message.author === "me") return "me";
-  const matched = roster.find((participant) => sameAddress(participant.address, message.address));
-  if (matched !== undefined) return matched;
-  const agents = roster.filter((participant) => participant.kind === "agent");
-  return agents.length === 1 ? agents[0] : undefined;
+  return message.author === "me" ? "me" : participantAt(message.address, roster);
 }
 
 /** What a person reads: no roster block on your own sends, no `Name:`
@@ -178,4 +186,81 @@ export function unsettledSends(
           Date.parse(message.at) >= Date.parse(send.at) - ECHO_TOLERANCE_MS,
       ),
   );
+}
+
+/** What a run reports about its current turn. */
+export type RuntimeStatus = "idle" | "busy" | "waiting_approval";
+
+/** What the chat shows for the worker. */
+export type WorkerActivity = "idle" | "working" | "needs-you";
+
+/** The worker's state from the run's own status where the hub has one, and
+ * from "you sent and nobody answered yet" where it doesn't. Just after a
+ * send the run can still read idle until it picks the message up, so idle
+ * only ends the wait once the run has been busy since the send. */
+export function workerActivity(input: {
+  readonly runtimeStatus: RuntimeStatus | undefined;
+  readonly waitingOnReply: boolean;
+  readonly busySinceSend: boolean;
+}): WorkerActivity {
+  if (input.runtimeStatus === "waiting_approval") return "needs-you";
+  if (input.runtimeStatus === "busy") return "working";
+  if (!input.waitingOnReply) return "idle";
+  return input.runtimeStatus === "idle" && input.busySinceSend ? "idle" : "working";
+}
+
+/** The longest a card's summary or argument line runs before it's cut. */
+const CARD_LINE_CHARS = 160;
+
+function clip(text: string): string {
+  return text.length <= CARD_LINE_CHARS ? text : `${text.slice(0, CARD_LINE_CHARS - 1)}…`;
+}
+
+/** What the tool says it does, first sentence only. */
+function toolSummary(definition: Approval["toolDefinition"], name: string): string {
+  const description =
+    typeof definition["description"] === "string" ? definition["description"] : "";
+  const first = /^.*?[.!?](?=\s|$)/.exec(description.trim())?.[0] ?? description.trim();
+  return first === "" ? `${name} wants to run.` : clip(first);
+}
+
+/** The call's arguments as one readable line. */
+function argumentLine(args: Approval["toolArguments"]): string {
+  return clip(
+    Object.entries(args)
+      .map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
+      .join(", "),
+  );
+}
+
+/** Pending approvals as cards from the agent that asked, placed when it
+ * asked. Decided ones are already reflected in what the agent did next. */
+export function liveApprovals(
+  approvals: readonly Approval[],
+  roster: readonly WorkbenchParticipant[],
+): readonly ChatMessage[] {
+  return approvals
+    .filter((approval) => approval.status === "pending")
+    .map((approval): ChatMessage => {
+      const definition = approval.toolDefinition;
+      const name = typeof definition["name"] === "string" ? definition["name"] : "a tool";
+      return {
+        type: "message",
+        id: `approval:${approval.id}`,
+        authorId:
+          participantAt(approval.agentAddress, roster)?.id ?? outsiderId(approval.agentAddress),
+        at: approval.createdAt,
+        status: "sent",
+        parts: [
+          {
+            type: "approval",
+            id: approval.id,
+            tool: name,
+            summary: toolSummary(definition, name),
+            scope: argumentLine(approval.toolArguments),
+            decision: null,
+          },
+        ],
+      };
+    });
 }
