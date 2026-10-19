@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import type { WorkbenchMessage, WorkbenchParticipant } from "@/chat/threads-api";
+import type { WorkbenchMessage, WorkbenchParticipant, WorkbenchTurn } from "@/chat/threads-api";
 import { appendRoster } from "@/chat/workbench-roster";
 
 import type { Approval } from "@/api";
@@ -9,6 +9,7 @@ import {
   LIVE_ME_ID,
   liveApprovals,
   liveConversation,
+  mergeFolders,
   unsettledSends,
   workerActivity,
 } from "./live-adapter";
@@ -259,5 +260,59 @@ describe("liveApprovals", () => {
 
   test("approvals already decided don't show", () => {
     expect(liveApprovals([approval({ id: "apr_1", status: "approved" })], [ADA])).toEqual([]);
+  });
+});
+
+describe("mergeFolders", () => {
+  function turn(id: string, at: string, author: "me" | "other"): WorkbenchTurn {
+    return {
+      id,
+      messageId: `<${id}@bench.test>`,
+      parentId: undefined,
+      author,
+      authorName: author === "me" ? "You" : "run_ada",
+      address: author === "me" ? "me@bench.test" : ADA.address,
+      body: id,
+      at,
+      attachments: [],
+    };
+  }
+  const ids = (turns: readonly WorkbenchTurn[]) => turns.map((t) => t.id);
+
+  test("with both folders read to the start, everything shows and there's nothing earlier", () => {
+    const merged = mergeFolders(
+      { turns: [turn("in-1", "2026-10-19T10:00:00Z", "other")], complete: true },
+      { turns: [turn("sent-1", "2026-10-19T09:00:00Z", "me")], complete: true },
+    );
+    expect(ids(merged.turns)).toEqual(["in-1", "sent-1"]);
+    expect(merged.hasEarlier).toBe(false);
+    expect(merged.behind).toBeNull();
+  });
+
+  test("your older messages wait until the inbox has been read back as far", () => {
+    const merged = mergeFolders(
+      { turns: [turn("in-2", "2026-10-19T10:00:00Z", "other")], complete: false },
+      {
+        turns: [
+          turn("sent-2", "2026-10-19T10:30:00Z", "me"),
+          turn("sent-1", "2026-10-19T08:00:00Z", "me"),
+        ],
+        complete: true,
+      },
+    );
+    // sent-1 is older than anything read from the inbox, and the inbox
+    // has more: showing it now could put it out of order.
+    expect(ids(merged.turns)).toEqual(["in-2", "sent-2"]);
+    expect(merged.hasEarlier).toBe(true);
+    expect(merged.behind).toBe("INBOX");
+  });
+
+  test("with both folders unfinished, the one read back less far is fetched next", () => {
+    const merged = mergeFolders(
+      { turns: [turn("in-1", "2026-10-19T07:00:00Z", "other")], complete: false },
+      { turns: [turn("sent-1", "2026-10-19T09:00:00Z", "me")], complete: false },
+    );
+    expect(ids(merged.turns)).toEqual(["sent-1"]);
+    expect(merged.behind).toBe("Sent");
   });
 });
