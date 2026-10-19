@@ -7,8 +7,10 @@ import { stripNameLine } from "@/bench/worker-name";
 import {
   sameAddress,
   type MailAttachment,
+  type WorkbenchFolder,
   type WorkbenchMessage,
   type WorkbenchParticipant,
+  type WorkbenchTurn,
 } from "@/chat/threads-api";
 import { stripRoster } from "@/chat/workbench-roster";
 
@@ -263,4 +265,52 @@ export function liveApprovals(
         ],
       };
     });
+}
+
+/** What has been read of one mailbox folder so far. */
+export type FolderHistory = {
+  readonly turns: readonly WorkbenchTurn[];
+  /** Read back to its first message. */
+  readonly complete: boolean;
+};
+
+export type MergedHistory = {
+  /** Everything safe to show: in order, with nothing missing in between. */
+  readonly turns: readonly WorkbenchTurn[];
+  readonly hasEarlier: boolean;
+  /** The folder to read further back next, or null when both are done. */
+  readonly behind: WorkbenchFolder | null;
+};
+
+function oldest(turns: readonly WorkbenchTurn[]): number {
+  return Math.min(...turns.map((turn) => Date.parse(turn.at)));
+}
+
+/** A conversation spans two folders, each paged back on its own. A message
+ * older than where an unfinished folder has been read to could have
+ * neighbours in that folder still unread, so it waits until that folder
+ * catches up. The folder holding the line is the one to read next. */
+export function mergeFolders(inbox: FolderHistory, sent: FolderHistory): MergedHistory {
+  const unfinished = (
+    [
+      ["INBOX", inbox],
+      ["Sent", sent],
+    ] as const
+  ).filter(([, folder]) => !folder.complete && folder.turns.length > 0);
+  let behind: WorkbenchFolder | null = null;
+  let line = -Infinity;
+  for (const [name, folder] of unfinished) {
+    const reached = oldest(folder.turns);
+    if (reached > line) {
+      line = reached;
+      behind = name;
+    }
+  }
+  const shown = (turns: readonly WorkbenchTurn[]) =>
+    turns.filter((turn) => Date.parse(turn.at) >= line);
+  return {
+    turns: [...shown(inbox.turns), ...shown(sent.turns)],
+    hasEarlier: behind !== null,
+    behind,
+  };
 }

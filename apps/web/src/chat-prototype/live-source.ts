@@ -3,7 +3,7 @@
 // uses. The components never see where data came from.
 
 import { reportError } from "@corbits/error-sink";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type } from "arktype";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -12,10 +12,12 @@ import { TenantApprovalsSchema, apiQueryOptions, approveApproval, rejectApproval
 import { nameWorkers, useWorkerNames } from "@/bench/worker-name";
 import {
   listWorkbenchParticipants,
-  readWorkbench,
+  readWorkbenchPage,
   sameAddress,
   sendToWorkbench,
   subscribeToInbox,
+  workbenchMessages,
+  type WorkbenchFolder,
 } from "@/chat/threads-api";
 import { workbenchKeys } from "@/chat-path";
 import { createFetchStockHub } from "@/needs-converge";
@@ -26,6 +28,7 @@ import {
   LIVE_ME_ID,
   liveApprovals,
   liveConversation,
+  mergeFolders,
   unsettledSends,
   workerActivity,
   type PendingSend,
@@ -73,6 +76,10 @@ export type LiveWorkbench = {
   readonly activity: WorkerActivity;
   /** Sends `text`; with `replyTo`, as a reply to that message. */
   readonly send: (text: string, replyTo?: string) => void;
+  /** Older messages exist beyond what has been read so far. */
+  readonly hasEarlier: boolean;
+  /** Reads the next page back; a no-op while one is already on its way. */
+  readonly loadEarlier: () => void;
   /** Answers a pending approval. The routes know two scopes: "always"
    * holds for the rest of this run, and "ask every time" is the same as
    * allowing once. */
@@ -97,7 +104,11 @@ function pendingEntry(send: Pending): ChatMessage {
   };
 }
 
-export function useLiveWorkbench(benchId: string | undefined): LiveWorkbench {
+export function useLiveWorkbench(
+  benchId: string | undefined,
+  /** Messages read per folder per page; the mailbox allows up to 200. */
+  pageSize: number,
+): LiveWorkbench {
   const enabled = benchId !== undefined;
   const id = benchId ?? "";
   const queryClient = useQueryClient();
@@ -113,11 +124,43 @@ export function useLiveWorkbench(benchId: string | undefined): LiveWorkbench {
     // A person's mailbox address depends on the bench's domain.
     enabled: enabled && tenant.data !== undefined && tenant.data !== null,
   });
-  const timeline = useQuery({
-    queryKey: workbenchKeys.timeline(id),
-    queryFn: () => readWorkbench(id),
+  // Each folder pages back on its own; `mergeFolders` keeps the two in step.
+  const folderQuery = (folder: WorkbenchFolder) => ({
+    queryKey: [...workbenchKeys.scope(id), "folder", folder, pageSize],
+    queryFn: ({ pageParam }: { readonly pageParam: string }) =>
+      readWorkbenchPage(id, folder, {
+        limit: pageSize,
+        ...(pageParam === "" ? {} : { cursor: pageParam }),
+      }),
+    // The newest page has no cursor.
+    initialPageParam: "",
+    getNextPageParam: (page: { readonly nextCursor: string | undefined }) => page.nextCursor,
     enabled,
   });
+  const inbox = useInfiniteQuery(folderQuery("INBOX"));
+  const sent = useInfiniteQuery(folderQuery("Sent"));
+  const history = useMemo(
+    () =>
+      mergeFolders(
+        {
+          turns: inbox.data?.pages.flatMap((page) => page.turns) ?? [],
+          complete: !inbox.hasNextPage,
+        },
+        {
+          turns: sent.data?.pages.flatMap((page) => page.turns) ?? [],
+          complete: !sent.hasNextPage,
+        },
+      ),
+    [inbox.data, inbox.hasNextPage, sent.data, sent.hasNextPage],
+  );
+  const messages = useMemo(() => workbenchMessages(history.turns), [history.turns]);
+  const { fetchNextPage: fetchInbox, isFetchingNextPage: fetchingInbox } = inbox;
+  const { fetchNextPage: fetchSent, isFetchingNextPage: fetchingSent } = sent;
+  const loadEarlier = useCallback(() => {
+    if (fetchingInbox || fetchingSent) return;
+    if (history.behind === "INBOX") void fetchInbox();
+    if (history.behind === "Sent") void fetchSent();
+  }, [history.behind, fetchInbox, fetchSent, fetchingInbox, fetchingSent]);
   // A list hook, so a playground without a bench asks for nothing.
   const workerNames = useWorkerNames(enabled ? [id] : []);
 
@@ -149,10 +192,7 @@ export function useLiveWorkbench(benchId: string | undefined): LiveWorkbench {
       ? undefined
       : runs.data?.find((run) => sameAddress(run.address, worker.address))?.id;
 
-  const conversation = useMemo(
-    () => liveConversation(timeline.data ?? [], named),
-    [timeline.data, named],
-  );
+  const conversation = useMemo(() => liveConversation(messages, named), [messages, named]);
 
   const [pending, setPending] = useState<readonly Pending[]>([]);
   // Sends drop out once the mailbox echoes them back.
@@ -174,9 +214,7 @@ export function useLiveWorkbench(benchId: string | undefined): LiveWorkbench {
         },
       ]);
       const parent =
-        replyTo === undefined
-          ? undefined
-          : (timeline.data ?? []).find((message) => message.id === replyTo);
+        replyTo === undefined ? undefined : messages.find((message) => message.id === replyTo);
       sendToWorkbench({
         workbenchTenantId: id,
         participants: named,
@@ -191,7 +229,7 @@ export function useLiveWorkbench(benchId: string | undefined): LiveWorkbench {
           );
         });
     },
-    [id, named, queryClient, timeline.data],
+    [id, named, queryClient, messages],
   );
 
   // Messages only: what "waiting on a reply" is worked out from.
@@ -287,12 +325,15 @@ export function useLiveWorkbench(benchId: string | undefined): LiveWorkbench {
     if (runtimeStatus === "busy" || runtimeStatus === "waiting_approval") setActiveAt(Date.now());
   }, [runtimeStatus, status.dataUpdatedAt]);
 
-  const failure = tenant.error ?? roster.error ?? timeline.error;
+  const failure = tenant.error ?? roster.error ?? inbox.error ?? sent.error;
   const missing = tenant.data === null;
   return {
     enabled,
     // Until the roster is in, senders would show as raw run addresses.
-    loading: enabled && !missing && (tenant.isPending || roster.isPending || timeline.isPending),
+    loading:
+      enabled &&
+      !missing &&
+      (tenant.isPending || roster.isPending || inbox.isPending || sent.isPending),
     error:
       failure !== null
         ? errorText(failure)
@@ -314,5 +355,7 @@ export function useLiveWorkbench(benchId: string | undefined): LiveWorkbench {
     }),
     send,
     decide,
+    hasEarlier: history.hasEarlier,
+    loadEarlier,
   };
 }

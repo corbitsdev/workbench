@@ -6690,6 +6690,8 @@ type PlaygroundConfig = {
   readonly showThreadActions: boolean;
   /** `?bench=<workbench id>`: a real workbench instead of the fixtures. */
   readonly bench?: string;
+  /** `?page=`: messages read per mailbox folder per page in live mode. */
+  readonly pageSize: number;
   /** `?tabs=ledger|index|sheet`: the side panel's design. */
   readonly tabsVariant: TabsVariant;
   readonly avatars: boolean;
@@ -6700,6 +6702,7 @@ function playgroundFromURL(): PlaygroundConfig {
   const params = new URLSearchParams(location.search);
   const requested = params.get("scenario");
   const count = Number(params.get("count") ?? 500);
+  const pageSize = Number(params.get("page") ?? 100);
   // `?solo` is one person with one agent: no avatars, no name lines.
   const solo = params.has("solo");
   return {
@@ -6710,6 +6713,7 @@ function playgroundFromURL(): PlaygroundConfig {
     showMap: params.get("map") !== "off",
     showThreadActions: params.has("threadactions"),
     ...(params.get("bench") === null ? {} : { bench: params.get("bench") ?? "" }),
+    pageSize: Number.isFinite(pageSize) ? Math.min(Math.max(Math.round(pageSize), 1), 200) : 100,
     tabsVariant: TABS_VARIANTS.find((variant) => variant === params.get("tabs")) ?? "ledger",
     avatars: !solo && params.get("avatars") !== "off",
     names: !solo && params.get("names") !== "off",
@@ -7132,7 +7136,7 @@ const LIVE_ME: Participant = { id: LIVE_ME_ID, kind: "person", name: "You" };
 export function ChatPrototypeRoute() {
   const [config] = useState(playgroundFromURL);
   const { scenario, showMap, showThreadActions } = config;
-  const live = useLiveWorkbench(config.bench);
+  const live = useLiveWorkbench(config.bench, config.pageSize);
   const actions = live.enabled
     ? config.actions.filter((action) => LIVE_ACTIONS.has(action))
     : config.actions;
@@ -7579,6 +7583,12 @@ export function ChatPrototypeRoute() {
   const loadEarlier = useCallback(() => {
     setWindowStart(topLevel[Math.max(0, startIndex - HISTORY_PAGE)]?.id ?? null);
   }, [topLevel, startIndex]);
+  // The window first; at its start, the next page from the mailbox.
+  const { loadEarlier: loadEarlierLive } = live;
+  const reachStart = useCallback(() => {
+    if (startIndex > 0) loadEarlier();
+    else loadEarlierLive();
+  }, [startIndex, loadEarlier, loadEarlierLive]);
   const firstShown = shown[0]?.id;
   const firstShownRef = useRef(firstShown);
   useLayoutEffect(() => {
@@ -8063,8 +8073,8 @@ export function ChatPrototypeRoute() {
               {...(lastSentId === undefined ? {} : { sentId: lastSentId })}
               {...(showMap ? { map: turnMap } : {})}
               {...(firstShown === undefined ? {} : { firstId: firstShown })}
-              hasEarlier={startIndex > 0}
-              onReachStart={loadEarlier}
+              hasEarlier={startIndex > 0 || live.hasEarlier}
+              onReachStart={reachStart}
               onAtBottomChange={followHistory}
             >
               <Timeline
