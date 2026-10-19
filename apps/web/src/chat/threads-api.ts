@@ -184,6 +184,7 @@ const Envelope = type({
 
 const InboxPage = type({
   messages: type({ uid: "number", envelope: Envelope, raw: "string" }).array(),
+  "nextCursor?": "string",
 });
 
 async function getJson<T>(path: string, schema: (value: unknown) => T | type.errors): Promise<T> {
@@ -396,7 +397,8 @@ export function resolveAvatarName(
   return matched?.name ?? resolveParticipantName(message, participants);
 }
 
-type WorkbenchTurn = {
+/** One mailbox message as read, before its parent is matched. */
+export type WorkbenchTurn = {
   readonly id: string;
   readonly messageId: string;
   readonly parentId: string | undefined;
@@ -408,15 +410,31 @@ type WorkbenchTurn = {
   readonly attachments: readonly MailAttachment[];
 };
 
-/** One folder of the workbench mailbox: the person's own turns live in `Sent`,
- * everyone else's in `INBOX`. Unlike a chat, a workbench keeps every message —
- * a person-to-person turn is as much part of the workbench as an agent's. */
-async function readWorkbenchFolder(
+/** The person's own turns live in `Sent`, everyone else's in `INBOX`.
+ * Unlike a chat, a workbench keeps every message — a person-to-person turn
+ * is as much part of the workbench as an agent's. */
+export type WorkbenchFolder = "INBOX" | "Sent";
+
+export type WorkbenchPage = {
+  /** Newest first, as the mailbox pages them. */
+  readonly turns: readonly WorkbenchTurn[];
+  /** Where the next, older page starts; undefined at the oldest message. */
+  readonly nextCursor: string | undefined;
+};
+
+/** One page of a workbench mailbox folder, newest first. */
+export async function readWorkbenchPage(
   tenantId: string,
-  folder: "INBOX" | "Sent",
-): Promise<WorkbenchTurn[]> {
-  const page = await getJson(`${mailboxPath(tenantId)}?folder=${folder}&limit=100`, InboxPage);
-  return page.messages.map((message) => ({
+  folder: WorkbenchFolder,
+  options: { readonly limit: number; readonly cursor?: string },
+): Promise<WorkbenchPage> {
+  const cursor =
+    options.cursor === undefined ? "" : `&cursor=${encodeURIComponent(options.cursor)}`;
+  const page = await getJson(
+    `${mailboxPath(tenantId)}?folder=${folder}&limit=${String(options.limit)}${cursor}`,
+    InboxPage,
+  );
+  const turns = page.messages.map((message) => ({
     id: `${folder}:${String(message.uid)}`,
     messageId: message.envelope.messageId,
     parentId: message.envelope.inReplyTo ?? message.envelope.references.at(-1),
@@ -427,18 +445,16 @@ async function readWorkbenchFolder(
     at: message.envelope.date,
     attachments: frameAttachments(message.raw),
   }));
+  return { turns, nextCursor: page.nextCursor };
 }
 
 // Flat, oldest first — no turn is ever dropped from the main list.
-// `parentMessageId` is metadata for the sub-thread panel only.
-export async function readWorkbench(tenantId: string): Promise<readonly WorkbenchMessage[]> {
-  const [inbox, sent] = await Promise.all([
-    readWorkbenchFolder(tenantId, "INBOX"),
-    readWorkbenchFolder(tenantId, "Sent"),
-  ]);
-  const turns = [...inbox, ...sent].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
-  const known = new Set(turns.map((turn) => turn.messageId));
-  return turns.map((turn) => ({
+// `parentMessageId` is metadata for the sub-thread panel only, and names a
+// parent only when it is among `turns`.
+export function workbenchMessages(turns: readonly WorkbenchTurn[]): readonly WorkbenchMessage[] {
+  const sorted = [...turns].sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  const known = new Set(sorted.map((turn) => turn.messageId));
+  return sorted.map((turn) => ({
     id: turn.id,
     messageId: turn.messageId,
     author: turn.author,
@@ -450,6 +466,14 @@ export async function readWorkbench(tenantId: string): Promise<readonly Workbenc
     parentMessageId:
       turn.parentId !== undefined && known.has(turn.parentId) ? turn.parentId : undefined,
   }));
+}
+
+export async function readWorkbench(tenantId: string): Promise<readonly WorkbenchMessage[]> {
+  const [inbox, sent] = await Promise.all([
+    readWorkbenchPage(tenantId, "INBOX", { limit: 100 }),
+    readWorkbenchPage(tenantId, "Sent", { limit: 100 }),
+  ]);
+  return workbenchMessages([...inbox.turns, ...sent.turns]);
 }
 
 /** The ancestor chain of a turn, oldest first, ending with the turn itself
