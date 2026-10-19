@@ -9,6 +9,11 @@ export const workbenchKeys = {
   participants: (tenantId: string) => ["workbench", tenantId, "participants"] as const,
   /** Client-only: {sentAt} from a send until the worker replies. */
   pendingTurn: (tenantId: string) => ["workbench", tenantId, "pendingTurn"] as const,
+  /** Client-only: live streaming turn state keyed by agent address. */
+  liveTurns: (tenantId: string) => ["workbench", tenantId, "liveTurns"] as const,
+  /** Saved inference steps for a run, read from `/workflows/runs/:runId/inference-turns`. */
+  savedTurns: (tenantId: string, runId: string) =>
+    ["workbench", tenantId, "savedTurns", runId] as const,
   timeline: (tenantId: string) => ["workbench", tenantId, "timeline"] as const,
   /** The bench's own child tenants (its workbenches), read over the stock
    * tenant routes — previously `chatKeys.childTenants`, re-homed here when

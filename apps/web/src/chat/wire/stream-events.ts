@@ -1,56 +1,108 @@
-// Browser-side wire contract (see docs/chat-wire-contract.md, which
-// also covers this file's organizing rule).
+// Browser-side wire contract for the run live-progress stream and saved
+// inference steps (see docs/chat-wire-contract.md).
 import { type } from "arktype";
-import { Part } from "./parts";
 
-const WorkbenchMessageSender = type({
-  name: "string | null",
-  address: "string",
+export const RunStreamStatusSchema = type("'idle' | 'busy' | 'waiting_approval'");
+export type RunStreamStatus = typeof RunStreamStatusSchema.infer;
+
+const SnapshotFrame = type({
+  type: "'snapshot'",
+  status: RunStreamStatusSchema,
+  text: "string",
 });
 
-// Mail headers ride along only when the row was actually mailed; absent,
-// never invented, otherwise.
-export const ChatMessageEventData = type({
+const StatusFrame = type({
+  type: "'status'",
+  status: RunStreamStatusSchema,
+});
+
+const StepStartedFrame = type({
+  type: "'step.started'",
+});
+
+const ReasoningDeltaFrame = type({
+  type: "'reasoning.delta'",
+  token: "string",
+});
+
+const TextDeltaFrame = type({
+  type: "'text.delta'",
+  token: "string",
+});
+
+const StepDoneFrame = type({
+  type: "'step.done'",
+  "reasoning?": "string",
+});
+
+const ToolCallFrame = type({
+  type: "'tool.call'",
+  callId: "string",
+  name: "string",
+  arguments: "Record<string, unknown>",
+});
+
+const ToolResultFrame = type({
+  type: "'tool.result'",
+  callId: "string",
+  content: "string",
+  isError: "boolean",
+});
+
+const TurnCommittedFrame = type({
+  type: "'turn.committed'",
+});
+
+export const RunStreamFrameSchema = SnapshotFrame.or(StatusFrame)
+  .or(StepStartedFrame)
+  .or(ReasoningDeltaFrame)
+  .or(TextDeltaFrame)
+  .or(StepDoneFrame)
+  .or(ToolCallFrame)
+  .or(ToolResultFrame)
+  .or(TurnCommittedFrame);
+export type RunStreamFrame = typeof RunStreamFrameSchema.infer;
+
+const SavedReasoningPart = type({
+  kind: "'reasoning'",
+  text: "string",
+});
+
+const SavedToolCallPart = type({
+  kind: "'tool-call'",
+  callId: "string",
+  name: "string",
+  arguments: "Record<string, unknown>",
+});
+
+const SavedToolResultPart = type({
+  kind: "'tool-result'",
+  callId: "string",
+  content: "string",
+  isError: "boolean",
+});
+
+const SavedErrorPart = type({
+  kind: "'error'",
+  message: "string",
+});
+
+export const SavedTurnPartSchema = SavedReasoningPart.or(SavedToolCallPart)
+  .or(SavedToolResultPart)
+  .or(SavedErrorPart);
+export type SavedTurnPart = typeof SavedTurnPartSchema.infer;
+
+export const SavedInferenceTurnSchema = type({
   id: "string",
-  workbenchId: "string",
-  ref: type({ kind: "'workbench'", id: "string" }),
-  createdAt: "string",
-  threadId: "string | null",
-  sender: WorkbenchMessageSender,
-  parts: Part.array(),
-  "messageId?": "string",
-  "inReplyTo?": "string",
-  "references?": "string[]",
+  startedAt: "string",
+  endedAt: "string | null",
+  status: "'running' | 'completed' | 'failed'",
+  parts: SavedTurnPartSchema.array(),
 });
-export type ChatMessageEventData = typeof ChatMessageEventData.infer;
+export type SavedInferenceTurn = typeof SavedInferenceTurnSchema.infer;
 
-/** The full post-change settings object — never a diff a subscriber
- * would have to fold against state it might not hold yet. */
-export const ChatSettingsEventData = type({
-  updatedBy: "string",
-  settings: "Record<string, unknown>",
+export const RunInferenceTurnsSchema = type({
+  runId: "string",
+  turns: SavedInferenceTurnSchema.array(),
 });
-export type ChatSettingsEventData = typeof ChatSettingsEventData.infer;
-
-export const ChatTypingEventData = type({
-  principalId: "string",
-});
-export type ChatTypingEventData = typeof ChatTypingEventData.infer;
-
-// "offline" fires only once a principal's *last* open connection closes —
-// a second open tab never fires it.
-export const ChatPresenceEventData = type({
-  principalId: "string",
-  state: "'online' | 'offline'",
-  lastActiveAt: "string",
-});
-export type ChatPresenceEventData = typeof ChatPresenceEventData.infer;
-
-// Sent only to the connecting stream itself, never broadcast.
-export const ChatPresenceSnapshotEventData = type({
-  members: type({
-    principalId: "string",
-    lastActiveAt: "string",
-  }).array(),
-});
-export type ChatPresenceSnapshotEventData = typeof ChatPresenceSnapshotEventData.infer;
+export type RunInferenceTurns = typeof RunInferenceTurnsSchema.infer;

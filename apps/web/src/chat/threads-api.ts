@@ -39,8 +39,12 @@ export type ChatAgent = {
   /** The workflow asset's raw name — what its source is pushed at, e.g.
    * for re-reading a deploy source; `name` above may be a display alias. */
   readonly assetName: string;
+  /** Every anchor run id this agent has ever run under, releases included. */
+  readonly runIds: readonly string[];
   /** Every address this agent has ever run under, releases included. */
   readonly addresses: readonly string[];
+  /** The run id of the agent's currently live run, or null when none is live. */
+  readonly liveRunId: string | null;
   /** The address of the agent's currently live run, or null when none is
    * live (mid-redeploy). */
   readonly liveAddress: string | null;
@@ -108,7 +112,9 @@ export async function listChatAgents(tenantId: string): Promise<readonly ChatAge
   const byAsset = new Map<
     string,
     {
+      runIds: Set<string>;
       addresses: Set<string>;
+      liveRunId: string | null;
       liveAddress: string | null;
       latest: DeploymentLiveness | undefined;
       capped: boolean;
@@ -118,11 +124,14 @@ export async function listChatAgents(tenantId: string): Promise<readonly ChatAge
     const run = runById.get(deployment.id);
     const address = run?.address ?? "";
     const entry = byAsset.get(deployment.definitionAssetId) ?? {
+      runIds: new Set<string>(),
       addresses: new Set<string>(),
+      liveRunId: null,
       liveAddress: null,
       latest: undefined,
       capped: hasRedeployFailed(deployment.definitionAssetId),
     };
+    entry.runIds.add(deployment.id);
     if (address.length > 0) entry.addresses.add(address);
     // Deployments come back newest-first, so the first one seen per asset
     // is the latest, and the first live one seen is the current one. A run
@@ -134,6 +143,7 @@ export async function listChatAgents(tenantId: string): Promise<readonly ChatAge
       if (run === undefined ? liveness === "stopped" : diedQuickly(run)) entry.capped = true;
     }
     if (entry.liveAddress === null && liveness !== "stopped" && address.length > 0) {
+      entry.liveRunId = deployment.id;
       entry.liveAddress = address;
     }
     byAsset.set(deployment.definitionAssetId, entry);
@@ -145,7 +155,9 @@ export async function listChatAgents(tenantId: string): Promise<readonly ChatAge
       id: assetId,
       name: displayAgentName(assetName),
       assetName,
+      runIds: [...entry.runIds],
       addresses: [...entry.addresses],
+      liveRunId: entry.liveRunId,
       liveAddress: entry.liveAddress,
       latest: entry.latest ?? "stopped",
       capped: entry.capped,
@@ -291,6 +303,8 @@ export type WorkbenchParticipant = {
   /** For an agent, its current live run's address — empty when none is
    * live, which `sendToWorkbench` filters out. */
   readonly address: string;
+  /** For an agent, its current live run's id when one is live. */
+  readonly liveRunId?: string;
   /** The workflow asset's raw name — only present for a `kind: "agent"`
    * row; what a released agent's redeploy re-reads/re-pushes source by. */
   readonly assetName?: string;
@@ -336,6 +350,7 @@ export async function listWorkbenchParticipants(
       name: agent.name,
       address: agent.liveAddress ?? "",
       assetName: agent.assetName,
+      ...(agent.liveRunId === null ? {} : { liveRunId: agent.liveRunId }),
       ...(redeploy === undefined ? {} : { redeploy }),
     };
   });

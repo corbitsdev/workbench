@@ -47,3 +47,12 @@ export {
   type WorkflowRunAuthenticator,
   type WorkflowRunDeployScope,
 } from "./middleware/workflow-run-deploy-auth";
+export {
+  createRunStreamRoutes,
+  projectRunStreamFrame,
+  type CreateRunStreamRoutesDeps,
+  type RunStreamFrame,
+  type RunStreamStatus,
+  type SavedInferenceTurn,
+  type SavedTurnPart,
+} from "./routes/run-stream";
