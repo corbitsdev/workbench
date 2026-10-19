@@ -3,7 +3,15 @@ import { describe, expect, test } from "bun:test";
 import type { WorkbenchMessage, WorkbenchParticipant } from "@/chat/threads-api";
 import { appendRoster } from "@/chat/workbench-roster";
 
-import { LIVE_ME_ID, liveConversation, unsettledSends } from "./live-adapter";
+import type { Approval } from "@/api";
+
+import {
+  LIVE_ME_ID,
+  liveApprovals,
+  liveConversation,
+  unsettledSends,
+  workerActivity,
+} from "./live-adapter";
 import type { ChatMessage, TimelineEntry } from "./model";
 
 const ADA: WorkbenchParticipant = {
@@ -168,5 +176,88 @@ describe("unsettledSends", () => {
       [ADA],
     );
     expect(unsettledSends(entries, [sent])).toEqual([sent]);
+  });
+});
+
+describe("workerActivity", () => {
+  test("a run that reports busy is working", () => {
+    expect(
+      workerActivity({ runtimeStatus: "busy", waitingOnReply: false, busySinceSend: true }),
+    ).toBe("working");
+  });
+
+  test("a run parked on an approval needs you, whatever else is true", () => {
+    expect(
+      workerActivity({
+        runtimeStatus: "waiting_approval",
+        waitingOnReply: true,
+        busySinceSend: true,
+      }),
+    ).toBe("needs-you");
+  });
+
+  test("just after a send the run may still read idle: keep waiting on the reply", () => {
+    expect(
+      workerActivity({ runtimeStatus: "idle", waitingOnReply: true, busySinceSend: false }),
+    ).toBe("working");
+  });
+
+  test("once the run has gone busy and back to idle, the turn is over even without a reply", () => {
+    expect(
+      workerActivity({ runtimeStatus: "idle", waitingOnReply: true, busySinceSend: true }),
+    ).toBe("idle");
+  });
+
+  test("with no status from the hub, waiting on a reply is the only signal", () => {
+    expect(
+      workerActivity({ runtimeStatus: undefined, waitingOnReply: true, busySinceSend: false }),
+    ).toBe("working");
+    expect(
+      workerActivity({ runtimeStatus: undefined, waitingOnReply: false, busySinceSend: false }),
+    ).toBe("idle");
+  });
+});
+
+describe("liveApprovals", () => {
+  function approval(overrides: Partial<Approval> & Pick<Approval, "id">): Approval {
+    return {
+      tenantId: "bench",
+      anchorRunId: "run_ada",
+      runId: "run_ada",
+      agentAddress: ADA.address,
+      correlationId: "corr-1",
+      toolDefinition: {
+        name: "read_file",
+        description: "Read a file and return its content with line numbers. The path may be a URL.",
+      },
+      toolArguments: { path: "notes/q4.md", limit: 80 },
+      scope: null,
+      status: "pending",
+      timeoutAt: null,
+      resolvedAt: null,
+      createdAt: "2026-10-19T12:00:06.000Z",
+      updatedAt: "2026-10-19T12:00:06.000Z",
+      ...overrides,
+    };
+  }
+
+  test("a pending approval is a card from the agent that asked, when it asked", () => {
+    const [card] = liveApprovals([approval({ id: "apr_1" })], [ADA, SAM]);
+    expect(card?.authorId).toBe(ADA.id);
+    expect(card?.at).toBe("2026-10-19T12:00:06.000Z");
+    expect(card?.parts).toEqual([
+      {
+        type: "approval",
+        id: "apr_1",
+        tool: "read_file",
+        summary: "Read a file and return its content with line numbers.",
+        scope: "path: notes/q4.md, limit: 80",
+        decision: null,
+      },
+    ]);
+  });
+
+  test("approvals already decided don't show", () => {
+    expect(liveApprovals([approval({ id: "apr_1", status: "approved" })], [ADA])).toEqual([]);
   });
 });
