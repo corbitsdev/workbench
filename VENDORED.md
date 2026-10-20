@@ -32,13 +32,13 @@ Pinned to [faremeter/interchange](https://github.com/faremeter/interchange)
 | `vendor/intx/db`                | `@intx/db`, with local fork migrations (wire_projection, launch origin, tolerate rewrite, tenant slug check), a serving-time credential-refresh seam, and an openai-responses catalog id | maintainers | 2026-11-03 |
 | `vendor/intx/harness`           | `@intx/harness` at a newer commit than npm has published                  | maintainers | 2026-11-03 |
 | `vendor/intx/hub-agent`         | `@intx/hub-agent`, with local childRunId event threading and an OAuth-login-over-websocket delta | maintainers | 2026-11-03 |
-| `vendor/intx/hub-api`           | `@intx/hub-api`, with the local workflow-deploy-bearer route and a serving-time credential-refresh hook | maintainers | 2026-11-03 |
+| `vendor/intx/hub-api`           | `@intx/hub-api`, with the local workflow-deploy-bearer route, a serving-time credential-refresh hook, and the run live-progress stream / saved inference-turns routes | maintainers | 2026-11-03 |
 | `vendor/intx/hub-sessions`      | `@intx/hub-sessions`, with local childRunId event threading, serving-time credential refresh, loopback OAuth login, and prepared-deploy step staging | maintainers | 2026-11-03 |
 | `vendor/intx/inference`         | `@intx/inference`, with one local Google file-upload compile fix          | maintainers | 2026-11-03 |
 | `vendor/intx/mail-memory`       | `@intx/mail-memory` at a newer commit than npm has published              | maintainers | 2026-11-03 |
 | `vendor/intx/mailbox`           | `@intx/mailbox`, never yet published to npm                               | maintainers | 2026-11-03 |
 | `vendor/intx/mime`              | `@intx/mime` at a newer commit than npm has published                     | maintainers | 2026-11-03 |
-| `vendor/intx/types`             | `@intx/types`, with local childRunId, openai-responses plugin id, and OAuth-login token shapes | maintainers | 2026-11-03 |
+| `vendor/intx/types`             | `@intx/types`, with local childRunId, openai-responses plugin id, OAuth-login token shapes, and `runtimeStatus` on `WorkflowRunResponse` | maintainers | 2026-11-03 |
 | `vendor/intx/hub-common`        | `@intx/hub-common` at a newer commit than npm has published               | maintainers | 2026-11-03 |
 | `vendor/intx/workflow`          | `@intx/workflow`, with one local step-timeout-budget delta                | maintainers | 2026-11-03 |
 | `vendor/intx/workflow-deploy`   | `@intx/workflow-deploy` at a newer commit than npm has published          | maintainers | 2026-11-03 |

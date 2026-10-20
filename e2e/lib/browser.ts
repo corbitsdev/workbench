@@ -79,7 +79,13 @@ export function bootBrowserApp(): () => BrowserApp {
     await ensureWebBuild();
 
     // Bind first so BASE_URL (Better Auth's trusted origin) names the real port.
-    server = Bun.serve({ port: 0, fetch: () => new Response("booting", { status: 503 }) });
+    // idleTimeout: 0 matches apps/hub — Bun's 10s default aborts mailbox and
+    // run-stream SSE mid-body (`net::ERR_INCOMPLETE_CHUNKED_ENCODING`).
+    server = Bun.serve({
+      port: 0,
+      idleTimeout: 0,
+      fetch: () => new Response("booting", { status: 503 }),
+    });
   }, 300_000);
 
   // The in-process sidecar dials the hub's own port back over WebSocket.
@@ -94,6 +100,7 @@ export function bootBrowserApp(): () => BrowserApp {
     const origin = `http://localhost:${String(server.port)}`;
     const booted: BootedHub = hub();
     server.reload({
+      idleTimeout: 0,
       websocket: booted.websocket as Bun.WebSocketHandler<unknown>,
       fetch: async (req, srv) => {
         const { pathname } = new URL(req.url);

@@ -203,3 +203,10 @@
   transform: translateX(-50%);
   z-index: 20;
 }
+
+.chat-thread-traces {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}

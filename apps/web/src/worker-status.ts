@@ -7,6 +7,7 @@ import { useEffect } from "react";
 import { useQueries, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 
 import type { AvatarStatus } from "@/chat/avatar";
+import type { LiveTurnsByAddress } from "@/chat/run-traces";
 import {
   listWorkbenchParticipants,
   readWorkbench,
@@ -111,12 +112,21 @@ export function useBenchWorkerStatus(
       gcTime: Infinity,
     })),
   });
-  // A parked ask sends no mail and ticks no stream, so a pending turn polls
-  // for it; every approvals surface shares this query and refreshes with it.
+  // A parked ask sends no mail and ticks no inbox event, so a pending turn
+  // polls for it when no run stream is open; every approvals surface shares
+  // this query and refreshes with it.
   const approvals = useQueries({
     queries: benches.map((bench, index) => ({
       ...apiQueryOptions(pendingApprovalsPath(bench.id), TenantApprovalsSchema),
       refetchInterval: pending[index]?.data != null ? PENDING_POLL_MS : false,
+    })),
+  });
+  const liveTurns = useQueries({
+    queries: benches.map((bench) => ({
+      queryKey: workbenchKeys.liveTurns(bench.id),
+      queryFn: (): LiveTurnsByAddress => ({}),
+      enabled: false,
+      gcTime: Infinity,
     })),
   });
   const timelines = useQueries({
@@ -141,8 +151,15 @@ export function useBenchWorkerStatus(
     if (agent.address === "") {
       return offer({ tone: "idle", text: agent.redeploy === "manual" ? "Stopped" : "Starting" });
     }
-    if (parkedOnAsk(approvals[index]?.data?.data ?? [], agent.address)) {
+    const liveTurn = liveTurns[index]?.data?.[agent.address.toLowerCase()];
+    if (
+      liveTurn?.status === "waiting_approval" ||
+      parkedOnAsk(approvals[index]?.data?.data ?? [], agent.address)
+    ) {
       return offer({ tone: "ready", text: "Needs you" });
+    }
+    if (liveTurn?.status === "busy") {
+      return offer({ tone: "working", text: "Working…" });
     }
     const sentAt = pending[index]?.data?.sentAt;
     if (sentAt !== undefined) {

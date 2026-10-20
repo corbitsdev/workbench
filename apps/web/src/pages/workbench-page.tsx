@@ -15,6 +15,14 @@ import { Markdown } from "@/chat/markdown";
 import { MessageAttachments } from "@/chat/message-attachments";
 import { resolveMessagePackage } from "@/chat/deployable-package";
 import { agentsToAutoDeploy, stoppedAgents } from "@/chat/agent-redeploy";
+import {
+  liveTurnVisible,
+  useWorkbenchRunStreams,
+  useWorkbenchSavedTraces,
+  type LiveTurn,
+  type TracePart,
+} from "@/chat/run-traces";
+import { TracePartsList } from "@/chat/trace-parts";
 import { stripRoster } from "@/chat/workbench-roster";
 import {
   ancestorChain,
@@ -83,6 +91,7 @@ function WorkbenchMessageRow({
   workbenchTenantId,
   rosterReady,
   chatAgents,
+  traces,
   onReply,
 }: {
   readonly message: WorkbenchMessage;
@@ -91,6 +100,7 @@ function WorkbenchMessageRow({
   /** False until the roster resolves, so a raw run id never shows as sender. */
   readonly rosterReady: boolean;
   readonly chatAgents: readonly ChatAgent[];
+  readonly traces?: readonly TracePart[];
   /** Undefined in the sub-thread panel, where a row is read-only context. */
   readonly onReply?: (message: WorkbenchMessage) => void;
 }) {
@@ -128,6 +138,7 @@ function WorkbenchMessageRow({
   const providerFailure = !own && isClassifiedInferenceFailureText(renderedBody);
   const content = (
     <>
+      {traces === undefined ? null : <TracePartsList parts={traces} />}
       <Markdown text={renderedBody} />
       {providerFailure ? (
         <Button variant="link" size="sm" onClick={() => navigate(PROVIDER_SETTINGS_PATH)}>
@@ -184,6 +195,41 @@ function WorkbenchMessageRow({
         </div>
         {content}
         {reply}
+      </div>
+    </div>
+  );
+}
+
+function LiveAgentTurnRow({
+  agent,
+  workbenchTenantId,
+  chatAgent,
+  turn,
+  fallbackParts,
+}: {
+  readonly agent: WorkbenchParticipant;
+  readonly workbenchTenantId: string;
+  readonly chatAgent: ChatAgent | undefined;
+  readonly turn: LiveTurn | undefined;
+  readonly fallbackParts: readonly TracePart[] | undefined;
+}) {
+  const parts = turn !== undefined && turn.parts.length > 0 ? turn.parts : (fallbackParts ?? []);
+  const text = stripNameLine(turn?.text ?? "");
+  return (
+    <div className="chat-thread-message" data-author="other" data-live="true">
+      <span className="chat-thread-avatar">
+        <IdentityAvatar kind="agent" name={agent.name} principalId={agent.id} />
+      </span>
+      <div className="chat-thread-body">
+        <div className="chat-thread-head">
+          <b>{agent.name}</b>
+          {chatAgent === undefined ? null : (
+            <WorkerRoleText tenantId={workbenchTenantId} agent={chatAgent} />
+          )}
+        </div>
+        <TracePartsList parts={parts} streamingReasoningIndex={turn?.stepReasoningIndex ?? null} />
+        {text.length > 0 ? <Markdown text={text} /> : null}
+        {turn?.status === "busy" && text.length === 0 ? <WorkingLabel /> : null}
       </div>
     </div>
   );
@@ -252,6 +298,8 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
   const workerName = useWorkerName(workbenchTenantId);
   const roster = nameWorkers(participants.data ?? [], workerName.name);
   const messages = timeline.data ?? [];
+  const liveTurns = useWorkbenchRunStreams(workbenchTenantId, chatAgents);
+  const savedTraces = useWorkbenchSavedTraces(workbenchTenantId, chatAgents, messages);
   // The worker's first reply names it; the stored name wins from then on, and
   // a bench that already has one is never overwritten.
   const statedName =
@@ -266,6 +314,13 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
   }, [statedName, saveName]);
 
   const agents = roster.filter((participant) => participant.kind === "agent");
+  const visibleLiveAgents = agents.filter((agent) => {
+    if (agent.address === "") return false;
+    const key = agent.address.toLowerCase();
+    return (
+      liveTurnVisible(liveTurns[key], agent.address, messages) || savedTraces.inFlight.has(key)
+    );
+  });
   const releasedAgents = agentsToAutoDeploy(agents);
   const stoppedAgent = stoppedAgents(agents)[0];
   const startingAgent = releasedAgents[0];
@@ -377,6 +432,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                       (previousAt === undefined ||
                         Number.isNaN(previousAt.getTime()) ||
                         !isSameDay(at, previousAt));
+                    const rowTraces = savedTraces.byMessageId.get(message.id);
                     return (
                       <Fragment key={message.id}>
                         {newDay ? <DayDivider date={at} /> : null}
@@ -387,6 +443,7 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                           workbenchTenantId={workbenchTenantId}
                           rosterReady={participants.data !== undefined}
                           chatAgents={chatAgents}
+                          {...(rowTraces === undefined ? {} : { traces: rowTraces })}
                           onReply={(target) => setOpenThread(target.messageId)}
                         />
                       </Fragment>
@@ -396,11 +453,26 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                     workbenchTenantId={workbenchTenantId}
                     participants={roster}
                   />
+                  {visibleLiveAgents.map((agent) => {
+                    const key = agent.address.toLowerCase();
+                    return (
+                      <LiveAgentTurnRow
+                        key={agent.id}
+                        agent={agent}
+                        workbenchTenantId={workbenchTenantId}
+                        chatAgent={chatAgents.find((candidate) => candidate.id === agent.id)}
+                        turn={liveTurns[key]}
+                        fallbackParts={savedTraces.inFlight.get(key)}
+                      />
+                    );
+                  })}
                   <ThreadApprovals
                     workbenchTenantId={workbenchTenantId}
                     agentAddresses={liveAgentAddresses}
                   />
-                  {workerStatus.tone === "working" ? <WorkingLabel /> : null}
+                  {workerStatus.tone === "working" && visibleLiveAgents.length === 0 ? (
+                    <WorkingLabel />
+                  ) : null}
                 </div>
                 {send.error === null ? null : (
                   <p className="chat-thread-error">{errorText(send.error)}</p>
@@ -437,16 +509,20 @@ function Workbench({ workbenchTenantId }: { readonly workbenchTenantId: string }
                 </Button>
               </div>
               <div className="chat-thread-messages">
-                {openedChain.map((message) => (
-                  <WorkbenchMessageRow
-                    key={message.id}
-                    message={message}
-                    participants={roster}
-                    workbenchTenantId={workbenchTenantId}
-                    rosterReady={participants.data !== undefined}
-                    chatAgents={chatAgents}
-                  />
-                ))}
+                {openedChain.map((message) => {
+                  const rowTraces = savedTraces.byMessageId.get(message.id);
+                  return (
+                    <WorkbenchMessageRow
+                      key={message.id}
+                      message={message}
+                      participants={roster}
+                      workbenchTenantId={workbenchTenantId}
+                      rosterReady={participants.data !== undefined}
+                      chatAgents={chatAgents}
+                      {...(rowTraces === undefined ? {} : { traces: rowTraces })}
+                    />
+                  );
+                })}
               </div>
               <Composer
                 placeholder={

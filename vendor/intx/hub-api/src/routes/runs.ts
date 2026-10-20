@@ -45,6 +45,7 @@ import {
   mapRunStatusToViewStatus,
 } from "./run-view";
 import { WorkflowRunEventsResponse, formatRunEvent } from "./run-events-view";
+import { createRunStreamRoutes } from "./run-stream";
 
 import type { TenantEnv } from "../context";
 import { errorResponse } from "../error-response";
@@ -788,6 +789,16 @@ export function createRunRoutes({
       },
     }),
     async (c) => serveRunEvents(c, c.req.param("runId")),
+  );
+
+  app.route(
+    "/",
+    createRunStreamRoutes({
+      db,
+      sidecarRouter,
+      eventCollectors,
+      requireGrant,
+    }),
   );
 
   return app;

@@ -37,11 +37,12 @@ unverified agent text as the platform's account of the request.
 
 ## Stream events (`chat/wire/stream-events.ts`)
 
-Organizing rule: a subscriber must be able to render, or update its own
-state, from the event alone — never a follow-up GET. `chat.message` carries
-the full rendered row (mail headers included, when the row was actually
-mailed); `chat.presence` deltas fold into the roster `chat.presence.snapshot`
-already gave the connecting stream.
+`GET /api/tenants/:tenantId/workflows/runs/:runId/stream` projects a run's
+live `InferenceEvent`s into browser-safe SSE frames (`event: run`): never raw
+inference events, which repeat the partial message on every delta and carry
+provider signatures and redacted thinking. `GET .../inference-turns` serves
+the reasoning and tool-call parts the event collector saved at the end of
+each inference step so a reloaded workbench keeps its traces.
 
 ## Classified inference failures (`chat/inference-failure.ts`)
 

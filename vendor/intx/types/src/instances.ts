@@ -48,6 +48,7 @@ export const WorkflowRunResponse = type({
   createdAt: "string",
   updatedAt: "string",
   "endedAt?": "string | null",
+  "runtimeStatus?": "'idle' | 'busy' | 'waiting_approval'",
 });
 
 export const WorkflowRunHealth = type({
