@@ -96,9 +96,6 @@ export const tenantKeys = {
   // Delegates to `@/chat`'s own key builder so every workbench-listing
   // surface keys against one shape, not a copy that could drift apart.
   workbenches: (tenantId: string) => workbenchesQueryKey(tenantId),
-  // The `feed=fires` route is gone; the key is kept so a future native
-  // fires equivalent has somewhere to rewire.
-  routineActivity: (tenantId: string) => ["tenant", tenantId, "routine-activity"] as const,
   /** A workbench's own timeline reads: `tenantId` is the owning
    * bench chat's workbench-tenancy addresses these routes at (see
    * docs/workbench-tenancy.md), `workbenchId` the workbench's own id. */
