@@ -56,9 +56,8 @@ Local deltas are restated in each package's own `VENDORED-FROM` file.
 
 - [ ] Delete `vendor/intx/` and remove it from the root `package.json`
       workspaces.
-- [ ] Restore the `@intx/*` dependencies in `apps/*`, `packages/*`, and
-      `workflows/*` to the published npm version, and drop the root
-      `overrides` pins.
+- [ ] Restore the `@intx/*` dependencies in `apps/*` and `packages/*` to
+      the published npm version, and drop the root `overrides` pins.
 - [ ] Delete the `vendor/intx/*` ledger rows above.
 - [ ] `bun install`
 - [ ] `bun run check`

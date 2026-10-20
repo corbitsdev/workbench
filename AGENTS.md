@@ -13,7 +13,7 @@ Repository-wide rules. `apps/*` have their own AGENTS.md with the rules for that
 
 ## Boundaries
 
-- Interchange is stock. Code lives in `apps/*`, `packages/*`, and `workflows/*`.
+- Interchange is stock. Code lives in `apps/*` and `packages/*`.
 - `vendor/intx` holds hand-copied fallbacks for capabilities not yet published to npm, tracked with kill dates in [VENDORED.md](VENDORED.md); the upstream repository is never modified.
 
 ## Architecture
@@ -21,7 +21,7 @@ Repository-wide rules. `apps/*` have their own AGENTS.md with the rules for that
 - **Stock first.** Before writing logic, look for an Interchange route or primitive that already does it (see the reference below). Never reimplement credential resolution, agent launch, session orchestration, inference, ID generation, or the workflow runtime — consume `@intx/*` as published packages.
 - **Hub mounts only stock + Corbits libraries.** The hub mounts stock `@intx/hub-api` routes plus one Corbits mount block (`@corbits/mailbox`, `@corbits/memory`, `@corbits/artifacts`, `@corbits/webhooks`, `@corbits/cron`, `@corbits/mcp`, `@corbits/agent-token`, and OAuth login/refresh on `@corbits/oauth-core`); any other hub mount is cutover debt with a Linear issue, never a pattern to extend.
 - **A workbench is a plain Interchange tenant, nothing more.** The web client converges its own tenant, workflow deployments, credentials, and grants over stock routes on start; the hub never seeds data on a client's behalf.
-- **Apps stay generic; packages own the domain.** A product rule inside `apps/*` belongs in a package. `workflows/*` are plain npm-shaped packages, deployable to any stock Interchange hub through the stock deploy route — this repo does not publish them to npm.
+- **Apps stay generic; packages own the domain.** A product rule inside `apps/*` belongs in a package.
 - **`packages/worker` is the default harness** — the one definition package a bench's worker, and any agent Workbench creates, deploys on; it is trim (`index.ts` + `system-prompt.ts`) with no hub-calling code.
 - **Ancestor-walkable except grants.** Credentials, tools, and definitions inherit down the tenant tree; grants never do.
 - **Custom DB tables live on their own Postgres schema**, with foreign keys back to Interchange's tenant/principal tables. Each package ships one idempotent migration, which the hub applies itself at boot. A custom table that gets deleted is hard-removed: delete the schema code, no drop migration. Cutovers are breaking; reset the database.

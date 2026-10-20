@@ -20,6 +20,6 @@ paths keep the platform's own names.
 
 ## Package naming
 
-`@corbits/*` is the default scope for every package under `packages/`,
-`tools/`, `agents/`, `skills/`, and `workflows/` — with a kebab-case kind
-suffix where a package is one of a family (`-agent`, `-tools`).
+`@corbits/*` is the default scope for every package under `packages/` —
+with a kebab-case kind suffix where a package is one of a family
+(`-agent`, `-tools`).
