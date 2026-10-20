@@ -1,6 +1,3 @@
-// The human-readable line an approval is described by. Pure string work, no
-// database dependency, so the browser can compose the same headline the
-// hub-side tools do.
 import { redactExtra, redactText } from "@corbits/error-sink";
 
 function stringField(source: object, field: string): string | undefined {
@@ -25,9 +22,6 @@ function toolPackagePinsField(
   );
 }
 
-/** Renders the packageName/toolPackagePins a prior `wf_deploy_preview` call
- * reported, so the card names the real package instead of a bare asset id.
- * Does not show grants/capabilities: those have no preview yet. */
 function workflowDeployHeadline(toolArguments: object): string | undefined {
   const commitSha = stringField(toolArguments, "commitSha");
   if (commitSha === undefined) return undefined;
@@ -38,24 +32,15 @@ function workflowDeployHeadline(toolArguments: object): string | undefined {
   const pins = toolPackagePinsField(toolArguments, "toolPackagePins");
   const toolsText =
     pins.length > 0 ? pins.map((pin) => `${pin.name}@${pin.version}`).join(", ") : "none declared";
-  // The package name, commit/sha, and any pin name/version are free-form caller
-  // input a secret could be smuggled into; redact the assembled line the same
-  // way write_file's content preview is, so a secret-shaped package or pin
-  // never reaches the headline.
   return redactText(`Deploy workflow ${packageName} @ ${sha7} — tools: ${toolsText}`);
 }
 
-/** Per-tool headline renderers, keyed by tool name — registering here avoids
- * another `if (toolName === ...)` branch in `headlineFor`. */
 const TOOL_HEADLINE_RENDERERS: Readonly<
   Record<string, (toolArguments: object) => string | undefined>
 > = {
   workflow_deploy: workflowDeployHeadline,
 };
 
-/** Builds the headline for an approval: a registered per-tool renderer wins
- * when it can, else the tool's `description` (falling back to its bare
- * `name`), with any call-supplied `title` appended. */
 export function headlineFor(toolDefinition: unknown, toolArguments: unknown): string {
   const toolName =
     typeof toolDefinition === "object" && toolDefinition !== null
@@ -76,15 +61,9 @@ export function headlineFor(toolDefinition: unknown, toolArguments: unknown): st
     typeof toolArguments === "object" && toolArguments !== null
       ? stringField(toolArguments, "title")
       : undefined;
-  // The title is a generic free-form field a caller can stuff a secret into;
-  // redact it the same way generic arguments are, so a JSON string smuggled in
-  // the title goes through the same structural (key-named) redaction as
-  // `formatArgumentValue`, not just the flat assignment/keyword pass.
   return title === undefined ? headline : `${headline}: "${formatArgumentValue(title)}"`;
 }
 
-/** The bare tool name off a toolDefinition snapshot, for a row that wants to
- * name the call apart from its (possibly generic) description. */
 export function toolNameFor(toolDefinition: unknown): string | undefined {
   return typeof toolDefinition === "object" && toolDefinition !== null
     ? stringField(toolDefinition, "name")
@@ -100,9 +79,6 @@ function truncate(text: string, limit = ARGUMENT_PREVIEW_LIMIT): string {
 function formatArgumentValue(value: unknown): string {
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   if (value === null || value === undefined) return "";
-  // Default: redact a string (or a stringified object/array) structurally when
-  // it parses as JSON, so key-named secrets (`password`, `token`, ...) and
-  // nested JSON are caught; fall back to plain redactText for non-JSON strings.
   if (typeof value === "string") {
     try {
       const parsed: unknown = JSON.parse(value);
@@ -110,18 +86,13 @@ function formatArgumentValue(value: unknown): string {
         return JSON.stringify(redactExtra(parsed as Record<string, unknown>));
       }
     } catch {
-      // not JSON; redact as a plain string below
+      // Non-JSON string falls through to plain-text redaction.
     }
     return redactText(value);
   }
-  // A live object/array argument: redact it structurally, then serialize.
-  const redacted = redactExtra(value as Record<string, unknown>);
-  return JSON.stringify(redacted);
+  return JSON.stringify(redactExtra(value as Record<string, unknown>));
 }
 
-// `write_file`'s call is read as its target path plus a preview of what it
-// writes there -- the two facts a person approving it actually needs, not
-// the raw argument bag.
 function writeFileArgumentsSummary(toolArguments: object): string | undefined {
   const path = stringField(toolArguments, "path");
   if (path === undefined) return undefined;
@@ -137,10 +108,6 @@ const ARGUMENT_SUMMARY_RENDERERS: Readonly<
 };
 
 function genericArgumentsSummary(toolArguments: object): string | undefined {
-  // Redact the whole bag structurally first: this collapses key-named secrets
-  // (`password`, `token`, `apiKey`, ...) regardless of their value's shape and
-  // recurses into nested objects/strings, which the per-value format path
-  // below then renders (already-safe values pass through unchanged).
   const redacted = redactExtra(toolArguments as Record<string, unknown>);
   if (redacted === undefined) return undefined;
   const entries = Object.entries(redacted);
@@ -150,10 +117,6 @@ function genericArgumentsSummary(toolArguments: object): string | undefined {
   );
 }
 
-/** A compact, human-scannable rendering of a call's arguments -- a
- * registered per-tool renderer wins when it can (e.g. `write_file`'s path +
- * content preview), else a truncated `key: value` list. `undefined` when
- * there is nothing to show, so a caller can render "tool name only". */
 export function argumentsSummaryFor(
   toolDefinition: unknown,
   toolArguments: unknown,
