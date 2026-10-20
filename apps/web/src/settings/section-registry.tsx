@@ -30,7 +30,7 @@ const SETTINGS_SECTION_GROUPS: readonly SettingsSectionGroupDef[] = [
     id: "account",
     label: SETTINGS_STRINGS.groupAccountLabel,
     // No "Your agent"/Notifications sections: no preference store backs
-    // them yet — see notifications-section.tsx for the re-add condition.
+    // them yet.
     sections: [
       {
         id: "account",

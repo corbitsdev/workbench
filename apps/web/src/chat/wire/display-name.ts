@@ -1,5 +1,3 @@
-// Browser-side wire contract (see docs/chat-wire-contract.md).
-
 // One derivation for "what does this agent look like to a person", never a
 // scattered `description ?? name` reimplemented per call site.
 import { type } from "arktype";
