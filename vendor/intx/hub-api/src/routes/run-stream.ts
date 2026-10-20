@@ -38,11 +38,6 @@ import { jsonResponse } from "../openapi";
 
 const MAX_TRACE_TEXT_CHARS = 4000;
 const HEARTBEAT_MS = 25_000;
-// In `e2e/lib/browser.ts`, `Bun.serve` runs with its default 10s `idleTimeout`.
-// Closing a stream that has already flushed chunks after 8s of silence sends
-// the terminating `0\r\n\r\n` chunk cleanly before `Bun.serve` can abort the
-// socket mid-stream (`net::ERR_INCOMPLETE_CHUNKED_ENCODING`).
-const FLUSHED_IDLE_CLOSE_MS = 8_000;
 
 export type RunStreamStatus = "idle" | "busy" | "waiting_approval";
 
@@ -370,15 +365,10 @@ export function createRunStreamRoutes({
       }
 
       return streamSSE(c, async (stream) => {
-        let hasWritten = false;
-        let lastWriteAt = Date.now();
-        const send = (frame: RunStreamFrame): Promise<void> => {
-          hasWritten = true;
-          lastWriteAt = Date.now();
-          return stream
+        const send = (frame: RunStreamFrame): Promise<void> =>
+          stream
             .writeSSE({ event: "run", data: JSON.stringify(frame) })
             .catch(() => undefined);
-        };
 
         const unsubscribe = sidecarRouter.subscribeAgent(
           record.address,
@@ -402,14 +392,8 @@ export function createRunStreamRoutes({
 
         try {
           while (!stream.aborted) {
-            await stream.sleep(
-              hasWritten ? FLUSHED_IDLE_CLOSE_MS : HEARTBEAT_MS,
-            );
+            await stream.sleep(HEARTBEAT_MS);
             if (stream.aborted) break;
-            if (hasWritten && Date.now() - lastWriteAt >= FLUSHED_IDLE_CLOSE_MS) {
-              await stream.close();
-              break;
-            }
             await stream.write(": heartbeat\n\n");
           }
         } catch {
