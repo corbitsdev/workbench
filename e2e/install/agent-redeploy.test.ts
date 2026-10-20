@@ -28,7 +28,7 @@ import { slugify } from "../../apps/web/src/lib/slug/slug";
 import {
   parseWorkflowSourceDefinition,
   WORKFLOW_SOURCE_DEFINITION_PATH,
-} from "../../packages/workflows/src/client";
+} from "../../apps/web/src/workflow-source";
 import { dbGate } from "../lib/db-gate";
 import { bootHub } from "../lib/hub";
 import { cleanupTenants } from "../lib/tenant-cleanup";

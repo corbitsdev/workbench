@@ -3,7 +3,7 @@
 // only a deleted agent stops the row for good.
 
 import { Button, Input, Select, Skeleton, formatRelativeTime } from "@corbits/react-ui";
-import { cronSentence } from "@corbits/workflows/client";
+import { cronSentence } from "../cron-sentence";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 

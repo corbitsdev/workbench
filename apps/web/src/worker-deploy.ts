@@ -8,7 +8,7 @@ import type {
   WorkerWorkflowInput,
 } from "@corbits/worker/definition-json";
 import { WORKER_WORKFLOW_ID } from "@corbits/worker/workflow-ids";
-import { renderBundledWorkflowSourceTree } from "@corbits/workflows/client";
+import { renderBundledWorkflowSourceTree } from "./workflow-source";
 import { type } from "arktype";
 
 import { ensureAgentHubCredential } from "./agent-hub-credential";

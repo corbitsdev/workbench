@@ -17,7 +17,7 @@ import { resolveRunSessionId } from "@intx/hub-sessions";
 import { e2eDatabaseUrl } from "../lib/database-url";
 import { dbGate } from "../lib/db-gate";
 
-import { ensureRunSession } from "../../packages/workflows/src/launch/agent-session";
+import { ensureRunSession } from "../../apps/hub/src/lazy-run-collector";
 
 function dbConfigFromUrl(databaseUrl: string) {
   const url = new URL(databaseUrl);

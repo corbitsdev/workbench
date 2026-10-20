@@ -1,7 +1,7 @@
 // The native runs listing has no routine-fires equivalent, so this
 // resolves no items rather than deriving activity from rows that aren't
 // routine fires — an honest "none" until that equivalent exists.
-import type { ListingTurn } from "@corbits/workflows/client";
+import type { ListingTurn } from "../run-outcome";
 
 export type RoutineActivityItem = {
   readonly id: string;

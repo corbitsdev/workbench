@@ -11,10 +11,7 @@ import { e2eDatabaseUrl } from "../lib/database-url";
 import { dbGate } from "../lib/db-gate";
 
 import { createHubPersistMailWithSessionEnsure } from "../../apps/hub/src/mailbox-persist";
-import {
-  ensureRunSession,
-  withLazyRunCollector,
-} from "../../packages/workflows/src/launch/agent-session";
+import { ensureRunSession, withLazyRunCollector } from "../../apps/hub/src/lazy-run-collector";
 
 function dbConfigFromUrl(databaseUrl: string) {
   const url = new URL(databaseUrl);
