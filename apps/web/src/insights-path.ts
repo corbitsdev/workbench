@@ -2,7 +2,7 @@
 // insights-page.tsx) so it can be exercised directly without dragging in
 // that page's bench/query-client wiring.
 
-import { decodedOrNull } from "@corbits/url-path";
+import { decodedOrNull } from "@/lib/url-path";
 
 import { INSIGHTS_PATH_PREFIX, INSIGHTS_RUNS_PATH } from "./path-ids";
 

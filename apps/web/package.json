@@ -17,12 +17,10 @@
     "test": "bun run build && bun test ./src"
   },
   "dependencies": {
-    "@corbits/approvals": "workspace:*",
     "@corbits/credential-mcp": "^0.1.0",
     "@corbits/error-sink": "workspace:*",
     "@corbits/mcp": "^0.3.0",
     "@corbits/react-ui": "0.3.0",
-    "@corbits/url-path": "workspace:*",
     "@corbits/worker": "workspace:*",
     "@corbits/workflows": "workspace:*",
     "@intx/mime": "workspace:*",

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { argumentsSummaryFor, headlineFor } from "./headline";
+import { argumentsSummaryFor, headlineFor } from "./approval-headline";
 
 // Like redact.test.ts, the provider-key fixtures here are stamped at runtime
 // from benign parts so no full credential-shaped string exists contiguously at

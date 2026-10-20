@@ -2,7 +2,7 @@
 // bookmarks land on the same surface instead of a dead route. Settings is
 // a full stage surface, never a dialog, since a workbench is a tenant.
 
-import { decodedOrNull } from "@corbits/url-path";
+import { decodedOrNull } from "@/lib/url-path";
 
 /** The settings sub-paths a workbench deep link still resolves. */
 export const WORKBENCH_SETTINGS_SECTION_IDS = ["general", "members", "agents", "danger"] as const;
