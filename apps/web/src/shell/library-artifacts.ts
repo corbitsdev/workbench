@@ -37,11 +37,6 @@ export function mapArtifactListToSummaries(rows: readonly ArtifactListRow[]): Ar
   return rows.map(artifactListRowToSummary);
 }
 
-/** `GET /api/tenants/:id/artifacts/counts` — the Library kind nav's counts. */
-export function artifactCountsPath(tenantId: string): string {
-  return `/api/tenants/${tenantId}/artifacts/counts`;
-}
-
 // Throws with status on non-2xx so the page can surface an honest failure.
 export async function uploadArtifactFiles(
   tenantId: string,

@@ -132,7 +132,6 @@ import {
   mountWorkflowArtifacts,
   type WorkflowArtifactEnv,
 } from "@corbits/artifacts";
-import { artifactMatchesLibraryKindSegment, LIBRARY_KIND_SEGMENTS } from "./library-kind-segments";
 import { workflowRun } from "@intx/db/schema";
 import path from "node:path";
 import { migrateHub } from "./migrate";
@@ -652,12 +651,6 @@ export async function createHubServer({
       db,
       contentStore: artifactContentStore,
       requireGrant: createRequireGrant({ grantStore, conditionRegistry: grantConditionRegistry }),
-      countSegments: Object.fromEntries(
-        LIBRARY_KIND_SEGMENTS.map((segment) => [
-          segment,
-          (row: { kind: string; title: string }) => artifactMatchesLibraryKindSegment(row, segment),
-        ]),
-      ),
     });
     app.route(TENANT_PREFIX, artifactsApi);
   }
