@@ -16,6 +16,11 @@ rules:
     reason: Set in the portal before the policy file.
     evidence:
       - maintainer-stated
+  - check: conventional-commits
+    text: Pull request titles and commits follow conventional commits.
+    reason: This repository uses conventional commits.
+    evidence:
+      - maintainer-stated
   - check: ci-green
     text: CI must pass before merge.
     reason: Set in the portal before the policy file.
