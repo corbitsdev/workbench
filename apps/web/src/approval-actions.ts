@@ -20,17 +20,6 @@ export function createChatApprovalActions(
     void queryClient.invalidateQueries({
       queryKey: tenantKeys.pendingApprovals(tenantId),
     });
-    // The tasks backend still owns these inbox routes even though the
-    // Inbox page that used to read them is gone.
-    void queryClient.invalidateQueries({
-      predicate: (query) => {
-        const key = query.queryKey;
-        if (!Array.isArray(key)) return false;
-        return key.some(
-          (part) => typeof part === "string" && part.includes(`/api/tenants/${tenantId}/inbox`),
-        );
-      },
-    });
   }
 
   // A 409 (already resolved, run no longer running) is kept distinct from

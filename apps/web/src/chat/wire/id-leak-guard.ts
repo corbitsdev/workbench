@@ -1,5 +1,4 @@
-// Mirrors PREFIXES in vendor/intx/hub-common/src/ids.ts (see
-// docs/chat-wire-contract.md, which also covers this file's rationale).
+// Mirrors PREFIXES in vendor/intx/hub-common/src/ids.ts.
 
 // Matches `_`, space, or `-` as separator so both the raw id and
 // `humanizeSlug`'s Title-Cased reading of one ("Run 737a058d…") trip it.

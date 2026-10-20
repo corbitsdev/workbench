@@ -1,60 +1,9 @@
 export { SettingsShell, resolveActiveSection, flattenSettingsSections } from "./shell";
-export type { SettingsContext, SettingsSection, SettingsSectionGroup } from "./shell";
+export type { SettingsSectionGroup } from "./shell";
 
 export { resolveSettingsSectionGroups, insertEveryoneSections } from "./section-registry";
 
-export { AccountSection, AccountSectionView } from "./account-section";
-// NotificationsSection is not exported: it is draft-only and not in the
-// registry. Re-export when a preference store backs it.
-export { AuditSection } from "./audit-section";
-export { PeopleSection, PeopleTable } from "./people-section";
-export { RolesSection, RolesTable, RoleAssignments, CreateRoleDialog } from "./roles-section";
-export { GrantsSection, GrantsTable, CreateGrantDialog } from "./grants-section";
-export { CredentialsSection } from "./credentials-section";
-
-export { grantPreviewSentence, expiryIsoFromPreset, expiryLabelFromPreset } from "./grant-preview";
-export type { GrantPreviewInput } from "./grant-preview";
-export { KindCards } from "./kind-cards";
-export type { KindCardOption } from "./kind-cards";
-
-export { principalLabel } from "./identity";
-export type { PrincipalLabel } from "./identity";
-
-export { GRANT_RESOURCES, GRANT_ACTIONS } from "./resource-vocabulary";
-export type { GrantResource, GrantAction } from "./resource-vocabulary";
-
 export { probeSectionAccess, coalesceSectionAccess } from "./access";
-export type { SectionAccess, TenancyAccess } from "./access";
-
-export {
-  TenancyApiError,
-  listPrincipals,
-  updatePrincipalStatus,
-  removePrincipal,
-  listRoles,
-  createRole,
-  renameRole,
-  deleteRole,
-  assignRole,
-  unassignRole,
-  listGrants,
-  createGrant,
-  revokeGrant,
-  evaluate,
-} from "./tenancy-api";
-export type { Principal, Role, Grant, GrantFilters, CreateGrantInput } from "./tenancy-api";
-
-export {
-  CredentialsApiError,
-  listCredentials,
-  listProviders,
-  createProvider,
-  createCredential,
-  deleteCredential,
-} from "./credentials-api";
-export type { Credential, Provider, CreateCredentialInput } from "./credentials-api";
+export type { TenancyAccess } from "./access";
 
 export { SETTINGS_STRINGS } from "./strings";
-
-export { SettingsApiError, getAccount, renameBench } from "./api";
-export type { Account, Bench } from "./api";

@@ -1,5 +1,3 @@
-// See docs/chat-wire-contract.md for why this is a host-supplied port.
-
 // Never invented here — mirrors `ApprovalResponse.status`.
 export type ApprovalLiveStatus = "pending" | "approved" | "rejected" | "timeout" | "expired";
 
@@ -22,8 +20,9 @@ export type PlatformApprovalDetail = {
   readonly argumentsSummary?: string;
 };
 
-// See docs/chat-wire-contract.md for why `forbidden` is distinct from
-// `canAct: false`.
+// `forbidden` is distinct from `canAct: false`: the host's own status read
+// was refused, so the card shows Approve/Deny anyway and lets the decision
+// call's own authorization decide.
 export type ApprovalStatusQuery =
   | { readonly kind: "loading" }
   | {

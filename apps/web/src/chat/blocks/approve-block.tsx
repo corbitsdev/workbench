@@ -1,6 +1,5 @@
-// See docs/chat-wire-contract.md for why the platform's own detail is
-// authoritative. No `ApprovalActions` port: falls back to pre-round-trip
-// framing, fixed disabled buttons, no fetch.
+// The platform's own detail is authoritative. No `ApprovalActions` port:
+// falls back to pre-round-trip framing, fixed disabled buttons, no fetch.
 
 import { Button } from "@corbits/react-ui";
 import type { ApproveBlockData } from "../wire/blocks";
