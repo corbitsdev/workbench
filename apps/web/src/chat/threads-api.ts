@@ -125,15 +125,16 @@ export async function listChatAgents(tenantId: string): Promise<readonly ChatAge
     };
     if (address.length > 0) entry.addresses.add(address);
     // Deployments come back newest-first, so the first one seen per asset
-    // is the latest, and the first live one seen is the current one. A run
-    // the list does not carry yet is still coming up, unless the deployment
-    // itself is terminal, in which case it never lived.
+    // is the latest, and the first live one seen is the current one. A
+    // pending or recovering deployment has not finished initializing on its
+    // sidecar yet (`POST /workflows/:runId/mail` rejects with 409
+    // `deployment_not_ready`), so only a `"live"` deployment is addressable.
     const liveness = deploymentLiveness(deployment.status, run?.status);
     if (entry.latest === undefined) {
       entry.latest = liveness;
       if (run === undefined ? liveness === "stopped" : diedQuickly(run)) entry.capped = true;
     }
-    if (entry.liveAddress === null && liveness !== "stopped" && address.length > 0) {
+    if (entry.liveAddress === null && liveness === "live" && address.length > 0) {
       entry.liveAddress = address;
     }
     byAsset.set(deployment.definitionAssetId, entry);

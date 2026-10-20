@@ -16,7 +16,7 @@ import { cleanupTenants } from "../lib/tenant-cleanup";
 const describeIfDb = dbGate(process.env["DATABASE_URL"] ?? "", import.meta.path);
 
 const Id = type({ id: "string" });
-const Deployments = type({ id: "string" }).array();
+const Deployments = type({ id: "string", status: "string" }).array();
 const RunList = type({ runIds: "string[]" });
 
 async function bundle(entry: string): Promise<string> {
@@ -155,10 +155,19 @@ describeIfDb("installPackage", () => {
       });
 
     const first = await install();
-    const listed = Deployments.assert(
-      await (await call(`${origin}${t}/workflows/deployments`)).json(),
-    );
-    expect(listed.map((d) => d.id)).toEqual([first.deploymentId]);
+    // Provisioning completes asynchronously after `POST /workflows/deployments`
+    // returns 201 (`status: "pending"`); wait for the deployment to reach
+    // `"deployed"` before mailing it or checking idempotent reinstall.
+    let firstStatus = "";
+    for (let attempt = 0; attempt < 60 && firstStatus !== "deployed"; attempt++) {
+      const listed = Deployments.assert(
+        await (await call(`${origin}${t}/workflows/deployments`)).json(),
+      );
+      expect(listed.map((d) => d.id)).toEqual([first.deploymentId]);
+      firstStatus = listed[0]?.status ?? "";
+      if (firstStatus !== "deployed") await Bun.sleep(500);
+    }
+    expect(firstStatus).toBe("deployed");
 
     const mailed = await post(`${t}/workflows/${first.deploymentId}/mail`, { content: "hello" });
     expect(mailed.status).toBe(202);

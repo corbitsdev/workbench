@@ -41,6 +41,8 @@ describeIfDb("workflow run SSE stream", () => {
   const sidecarRouter = createSidecarRouter({
     authenticateSidecar: async () => null,
     validateSidecarIdentity: async () => false,
+    withExecutableWorkflowRun: async () => false,
+    resolveSidecarBindings: async () => [],
   });
 
   const now = new Date();
