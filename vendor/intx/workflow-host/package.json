@@ -1,30 +1,59 @@
 {
   "name": "@intx/workflow-host",
   "description": "Production-host implementations of the abstract WorkflowRuntimeEnv from @intx/workflow",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "license": "LGPL-2.1-only",
   "type": "module",
   "exports": {
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./testing": {
+      "types": "./src/testing/index.ts",
+      "default": "./src/testing/index.ts"
+    },
+    "./deploy": {
+      "types": "./src/deploy/index.ts",
+      "default": "./src/deploy/index.ts"
+    },
+    "./child": {
+      "types": "./src/child/program.ts",
+      "default": "./src/child/program.ts"
+    },
+    "./local": {
+      "types": "./src/local.ts",
+      "default": "./src/local.ts"
+    },
+    "./probe": {
+      "types": "./src/probe/index.ts",
+      "default": "./src/probe/index.ts"
+    },
+    "./probe/child": {
+      "types": "./src/probe/child.ts",
+      "default": "./src/probe/child.ts"
     }
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@corbits/credential-header": "^0.1.0",
+    "@corbits/credential-mcp": "^0.1.0",
     "@intx/agent": "workspace:*",
-    "@intx/crypto": "0.4.0",
+    "@intx/authz": "workspace:*",
+    "@intx/crypto": "0.5.0",
+    "@intx/harness": "workspace:*",
     "@intx/hub-sessions": "workspace:*",
     "@intx/inference": "workspace:*",
-    "@intx/log": "0.4.0",
+    "@intx/log": "0.5.0",
     "@intx/mail-memory": "workspace:*",
     "@intx/mailbox": "workspace:*",
     "@intx/mime": "workspace:*",
-    "@intx/storage-isogit": "0.4.0",
+    "@intx/storage-isogit": "0.5.0",
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
+    "@intx/workflow-deploy": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {

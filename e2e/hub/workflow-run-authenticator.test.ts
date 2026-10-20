@@ -83,14 +83,20 @@ describeIfDb("workflow run authenticator", () => {
     await db.insert(sidecar).values({
       id: sidecarId,
       tokenHashSha256: Buffer.from(await sha256(token)),
+      provisionerId: "test",
+      provisionerApiVersion: 2,
+      provisionerBindingFingerprint: "test",
+      adapterManifestDigest: "none",
     });
     await db.insert(sidecarAllocation).values({
       id: `a-${name}-${suffix}`,
       anchorRunId: anchorId,
       tenantId,
       provisionerId: "test",
-      provisionerApiVersion: 1,
+      provisionerApiVersion: 2,
       provisionerBindingFingerprint: "test",
+      adapterManifestDigest: "none",
+      maxDisconnectedMs: 60_000,
       sidecarId,
       status: status as "allocated",
     });

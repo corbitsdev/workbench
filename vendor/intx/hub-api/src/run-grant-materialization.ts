@@ -4,10 +4,14 @@
 // cannot drift.
 //
 // A run's grant set is the definition-pure runtime grants (the capability
-// walk's `tool:`/`effect:` rows) plus the resolved declared grant
-// requirements (creator- and invoker-sourced). This module stages those
-// rows and commits them idempotently on the run id, minting the run
-// principal and anchoring the run row in one transaction.
+// walk's `tool:`/`effect:` rows), the resolved declared grant requirements
+// (creator- and invoker-sourced), and one system-origin `credential:{id}` /
+// `use` row per distinct credential and consumer on the anchor's resolved
+// bindings. Those binding rows are ownership, not delegation: deploy already
+// resolved the id and the consumer. A first commit waits until that
+// resolution is recorded. This
+// module stages those rows and commits them idempotently on the run id,
+// minting the run principal and anchoring the run row in one transaction.
 //
 // Delivery (`run.grants` frame, trigger mail / inbound mail forwarding) is
 // NOT owned here: the two call sites order those differently for their
@@ -25,62 +29,42 @@ import {
   sidecarAllocation,
   workflowDefinition,
   workflowRun,
+  type WorkflowRunCredentialRefs,
 } from "@intx/db/schema";
 import type { DB, DBExecutor, PrincipalKeyStore } from "@intx/db";
 import {
   createPrincipalStore,
   createWorkflowRunStore,
+  workflowRunExecutability,
   loadFrozenGrantSnapshot,
 } from "@intx/db";
 import type { GrantStore, GrantRule } from "@intx/types/authz";
 import {
   isSidecarAllocationDispatchable,
-  type GrantEffect,
   type GrantRequirement,
   type GrantWalkSnapshot,
 } from "@intx/types";
 import { RunGrantsFrame } from "@intx/types/sidecar";
 import { ToolDefinition } from "@intx/types/runtime";
 import { type MailTriggeredRunGrantsResult } from "@intx/hub-sessions";
-import { deriveRunPrincipalId, generateId } from "@intx/hub-common";
+import {
+  credentialUseGrantRules,
+  runtimeGrantRules,
+} from "@intx/workflow-deploy/capabilities";
+import { deriveRunPrincipalId } from "@intx/hub-common";
 
 import {
+  makeGrantRow,
   resolveGrantMaterialization,
   type MaterializedGrantRow,
 } from "./grant-materialization";
 
-// The `tool:<name>` rows carry BARE tool names: the walk reads inline
-// `agent.toolFactories`, which have no bundle context. A workflow child gates
-// each tool call on `tool:<call.name>`, and every runnable step tool is a
-// pinned package the loader namespaces to `<bundleId>:<name>`, so the child
-// queries `tool:<bundleId>:<name>`. These bare rows therefore never address a
-// pinned tool's runtime gate; they are inert against a pinned call. A pinned
-// tool's authority (including its `ask` mark) is supplied instead by the
-// sidecar tool-mark floor (`deriveToolMarkFloorGrants`), derived from the
-// loaded factory's already-namespaced definitions. The `effect:<cap>` rows are
-// different: an action's EffectContext authorizes the bare `effect:<cap>` on
-// both sides, so those rows ARE name-matched and operative at run time.
 const TOOL_GRANT_PREFIX = "tool:";
-const EFFECT_GRANT_PREFIX = "effect:";
 
 /**
- * Project the frozen grant-walk snapshot into the run's runtime grant rows --
- * the `tool:<name>` and `effect:<cap>` grants the runtime enforces fail-closed.
- * Every distinct grant string across all steps becomes one creator-origin
- * `grant` row with `action: invoke`. The run's runtime authority is
- * definition-pure for the deployment's stable top-level run, so the snapshot
- * alone determines it.
- *
- * Tool grants carry the effect the tool's static declaration requested (`ask`
- * for approval-gated tools, `allow` otherwise) via each step's `grantEffects`
- * record. A tool in more than one step is emitted once; when two steps disagree
- * on its effect, `ask` wins over `allow` so an approval-gated declaration is
- * never silently downgraded.
- *
- * Effect grants are always `allow` -- the `effect.requires` set names the
- * capability floor an action needs, with no per-effect ask/allow distinction,
- * so they are NOT routed through the `grantEffects` record (which covers tool
- * grants only). An `effect:<cap>` in more than one step is emitted once.
+ * Project the frozen grant-walk snapshot into the run's runtime grant rows:
+ * the rules `runtimeGrantRules` derives, stored as the run principal's
+ * creator-origin grants.
  */
 export function deriveRunRuntimeGrantRows(
   snapshot: GrantWalkSnapshot,
@@ -88,60 +72,135 @@ export function deriveRunRuntimeGrantRows(
   runPrincipalId: string,
   now: Date,
 ): MaterializedGrantRow[] {
-  const effectByResource = new Map<string, GrantEffect>();
-  for (const step of snapshot.perStep) {
-    // The snapshot serializes each step's tool-grant-to-effect map as a plain
-    // object; rehydrate it to a `Map` so the lookup below matches the walk's
-    // original access pattern.
-    const grantEffects = new Map<string, GrantEffect>(
-      Object.entries(step.grantEffects),
-    );
-    for (const grant of step.grants) {
-      if (grant.startsWith(TOOL_GRANT_PREFIX)) {
-        // Every `tool:` grant the snapshot emits carries a `grantEffects`
-        // entry (the tool-mark floor: `ask` for an approval-gated tool,
-        // `allow` otherwise). A missing entry means the snapshot's `grants`
-        // and `grantEffects` maps have diverged -- a defaulted `allow`
-        // here would silently DOWNGRADE an `ask` tool below its floor,
-        // defeating the approval gate. Fail loudly instead.
-        const effect = grantEffects.get(grant);
-        if (effect === undefined) {
-          throw new Error(
-            `deriveRunRuntimeGrantRows: tool grant ${JSON.stringify(grant)} has no grantEffects entry; the grant-walk snapshot must carry an effect for every tool grant`,
-          );
-        }
-        const existing = effectByResource.get(grant);
-        if (existing === "ask" || effect === "ask") {
-          effectByResource.set(grant, "ask");
-        } else if (existing === undefined) {
-          effectByResource.set(grant, effect);
-        }
-      } else if (grant.startsWith(EFFECT_GRANT_PREFIX)) {
-        // Effect grants are always allow; a repeat across steps is idempotent.
-        if (!effectByResource.has(grant)) {
-          effectByResource.set(grant, "allow");
-        }
-      }
-    }
-  }
+  return runtimeGrantRules(snapshot).map((rule) =>
+    makeGrantRow({ tenantId, principalId: runPrincipalId, ...rule, now }),
+  );
+}
 
-  const rows: MaterializedGrantRow[] = [];
-  for (const [resource, effect] of effectByResource) {
-    rows.push({
-      id: generateId("grant"),
-      tenantId,
-      principalId: runPrincipalId,
-      resource,
-      action: "invoke",
-      effect,
-      conditions: null,
-      origin: "creator",
-      expiresAt: null,
-      createdAt: now,
-      updatedAt: now,
-    });
+/**
+ * One system-origin `credential:{id}` / `use` row per distinct `(credentialId,
+ * consumer)` on the anchor's resolved credential bindings. The consumer string
+ * is copied onto `{ tool }` as deploy stored it. Inference credentials are not
+ * in this list: they have no binding and no consumer.
+ */
+export function deriveCredentialUseGrantRows(args: {
+  bindings: readonly { credentialId: string; consumer: string }[];
+  tenantId: string;
+  runPrincipalId: string;
+  now: Date;
+}): MaterializedGrantRow[] {
+  return credentialUseGrantRules(args.bindings).map((rule) =>
+    makeGrantRow({
+      tenantId: args.tenantId,
+      principalId: args.runPrincipalId,
+      ...rule,
+      now: args.now,
+    }),
+  );
+}
+
+/**
+ * Credential resolution is unrecorded while initialization has not published
+ * it. That is an anchor with neither a public key nor credential refs, or an
+ * anchor whose allocation holds an initialization lease. The lease means a
+ * deploy has cleared the key and the refs still on the row are the previous
+ * attempt's. A key with null refs and no lease means initialization finished
+ * and there was no delivery.
+ */
+export function credentialResolutionUnrecorded(resolution: {
+  credentialRefs: WorkflowRunCredentialRefs | null;
+  publicKey: string | null;
+  initializationLeaseId: string | null;
+}): boolean {
+  if (resolution.initializationLeaseId !== null) return true;
+  return resolution.credentialRefs === null && resolution.publicKey === null;
+}
+
+/**
+ * Lock the anchor and read the credential resolution a first grant commit
+ * must stamp from. The pre-transaction read races initialization, so the
+ * commit stages from this row.
+ */
+export async function lockAnchorCredentialResolution(
+  tx: DBExecutor,
+  anchorRunId: string,
+): Promise<{
+  credentialRefs: WorkflowRunCredentialRefs | null;
+  publicKey: string | null;
+  initializationLeaseId: string | null;
+} | null> {
+  // Lock the anchor only. The allocation lease is read afterwards and is not
+  // locked: beginInitialization takes the allocation lock before the anchor,
+  // so locking it here would deadlock. The lease and the key are written in
+  // that same transaction, which cannot commit while this one holds the anchor.
+  const [run] = await tx
+    .select({
+      credentialRefs: workflowRun.credentialRefs,
+      publicKey: workflowRun.publicKey,
+    })
+    .from(workflowRun)
+    .where(
+      and(
+        eq(workflowRun.id, anchorRunId),
+        eq(workflowRun.anchorRunId, anchorRunId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  if (run === undefined) return null;
+  const [allocation] = await tx
+    .select({
+      initializationLeaseId: sidecarAllocation.initializationLeaseId,
+    })
+    .from(sidecarAllocation)
+    .where(eq(sidecarAllocation.anchorRunId, anchorRunId))
+    .limit(1);
+  return {
+    credentialRefs: run.credentialRefs,
+    publicKey: run.publicKey,
+    initializationLeaseId:
+      allocation === undefined ? null : allocation.initializationLeaseId,
+  };
+}
+
+/**
+ * Replace any pre-staged credential-use rows with the rows implied by the
+ * locked anchor. Returns `not-ready` when resolution is still unrecorded,
+ * so the caller inserts no grant rows.
+ */
+export function grantRowsWithLockedCredentialResolution(
+  rows: readonly MaterializedGrantRow[],
+  resolution: {
+    credentialRefs: WorkflowRunCredentialRefs | null;
+    publicKey: string | null;
+    initializationLeaseId: string | null;
+  },
+  args: {
+    tenantId: string;
+    runPrincipalId: string;
+    now: Date;
+  },
+): MaterializedGrantRow[] | "not-ready" {
+  if (credentialResolutionUnrecorded(resolution)) {
+    return "not-ready";
   }
-  return rows;
+  const base = rows.filter(
+    (row) =>
+      !(
+        row.origin === "system" &&
+        row.action === "use" &&
+        row.resource.startsWith("credential:")
+      ),
+  );
+  return [
+    ...base,
+    ...deriveCredentialUseGrantRows({
+      bindings: resolution.credentialRefs?.bindings ?? [],
+      tenantId: args.tenantId,
+      runPrincipalId: args.runPrincipalId,
+      now: args.now,
+    }),
+  ];
 }
 
 /**
@@ -183,7 +242,7 @@ export type StageRunGrantsFromSnapshotArgs = {
    * wire); the external trigger route passes the caller's grants.
    */
   invokerGrants: GrantRule[];
-  /** Declared creator grants resolved against the workflow asset's creator. */
+  /** Declared creator grants resolved against the definition asset's creator. */
   creatorGrants: GrantRule[];
   /**
    * Grant requirements to resolve. The mail path pre-filters the snapshot's
@@ -191,6 +250,12 @@ export type StageRunGrantsFromSnapshotArgs = {
    * passes the snapshot's requirements unfiltered.
    */
   grantRequirements: readonly GrantRequirement[];
+  /**
+   * Resolved credential-binding descriptors from the anchor run. Each distinct
+   * `(credentialId, consumer)` becomes one system-origin credential-use grant.
+   * The caller passes an empty array when the anchor has no refs.
+   */
+  credentialBindings: readonly { credentialId: string; consumer: string }[];
 };
 
 export type StageRunGrantsResult =
@@ -205,13 +270,15 @@ export type StageRunGrantsResult =
     };
 
 /**
- * Stage a run's grant rows from the deploy-approved grant-walk snapshot plus
- * the resolved declared requirements. The snapshot's per-step grants project
- * the run's runtime `tool:`/`effect:` rows; the mail-triggered materializer and
- * the external trigger route both drive this one tail. Returns the staged rows
- * and their wire projection, or a rejection when a declared requirement's
- * authority is insufficient. No database write happens here --
- * `commitRunGrants` performs it once the caller has accepted delivery.
+ * Stage a run's grant rows from the deploy-approved grant-walk snapshot, the
+ * resolved declared requirements, and the anchor's resolved credential
+ * bindings. The snapshot's per-step grants project the run's runtime
+ * `tool:`/`effect:` rows. Each distinct credential and consumer becomes one
+ * system-origin `credential:{id}` / `use` row. The mail-triggered
+ * materializer and the external trigger route both drive this one tail.
+ * Returns the staged rows and their wire projection, or a rejection when a
+ * declared requirement's authority is insufficient. No database write happens
+ * here -- `commitRunGrants` performs it once the caller has accepted delivery.
  */
 export async function stageRunGrantsFromSnapshot(
   args: StageRunGrantsFromSnapshotArgs,
@@ -236,13 +303,24 @@ export async function stageRunGrantsFromSnapshot(
     return { ok: false, rejection: materialization.rejection };
   }
 
-  const grantRows = [...runtimeGrantRows, ...materialization.grantRows];
+  const credentialGrantRows = deriveCredentialUseGrantRows({
+    bindings: args.credentialBindings,
+    tenantId: args.tenantId,
+    runPrincipalId: args.runPrincipalId,
+    now: args.now,
+  });
+
+  const grantRows = [
+    ...runtimeGrantRows,
+    ...materialization.grantRows,
+    ...credentialGrantRows,
+  ];
   const stepGrants = grantRows.map((g) => runGrantToWire(g));
   return { ok: true, grantRows, stepGrants };
 }
 
 /**
- * Load a workflow asset's `creatorPrincipalId` -- the creator whose
+ * Load a definition asset's `creatorPrincipalId` -- the creator whose
  * authority creator-sourced grant requirements resolve against. Returns
  * `null` when the asset records no creator (the FK is `set null` on
  * principal deletion) or the asset row is absent.
@@ -253,11 +331,7 @@ export async function loadAssetCreatorPrincipalId(
   definitionAssetId: string,
 ): Promise<string | null> {
   const assetRow = await db.query.asset.findFirst({
-    where: and(
-      eq(asset.id, definitionAssetId),
-      eq(asset.tenantId, tenantId),
-      eq(asset.kind, "workflow"),
-    ),
+    where: and(eq(asset.id, definitionAssetId), eq(asset.tenantId, tenantId)),
   });
   return assetRow?.creatorPrincipalId ?? null;
 }
@@ -304,16 +378,21 @@ export type CommittedRunGrants = {
 /**
  * Lock and classify one run row owned by a deployment. A live run -- a
  * "deployed" anchor in its pre-trigger window or a "running" run -- classifies
- * as "running"; the started-vs-not distinction is owned by the durable
- * lifecycle, not this status axis.
+ * as "running" while it accepts work and "stopping" once cancellation is
+ * requested or its deadline passes; the started-vs-not distinction is owned by
+ * the durable lifecycle, not this status axis.
  */
 export async function lockWorkflowRunState(
   tx: DBExecutor,
   anchorRunId: string,
   runId: string,
-): Promise<"absent" | "running" | "terminal"> {
+): Promise<"absent" | "running" | "stopping" | "terminal"> {
   const [run] = await tx
-    .select({ status: workflowRun.status })
+    .select({
+      status: workflowRun.status,
+      expiresAt: workflowRun.expiresAt,
+      cancellationRequestedAt: workflowRun.cancellationRequestedAt,
+    })
     .from(workflowRun)
     .where(
       and(eq(workflowRun.id, runId), eq(workflowRun.anchorRunId, anchorRunId)),
@@ -321,7 +400,21 @@ export async function lockWorkflowRunState(
     .limit(1)
     .for("update");
   if (run === undefined) return "absent";
-  return isLiveWorkflowRunStatus(run.status) ? "running" : "terminal";
+  const state = workflowRunExecutability(run);
+  return state === "executable" ? "running" : state;
+}
+
+function unavailableRunResult(
+  runId: string,
+  state: "stopping" | "terminal",
+): MailTriggeredRunGrantsResult {
+  return {
+    outcome: "rejected",
+    status: 409,
+    code:
+      state === "stopping" ? "workflow_run_stopping" : "workflow_run_terminal",
+    message: `Workflow run ${runId} is ${state} and cannot receive more mail`,
+  };
 }
 
 /**
@@ -569,8 +662,15 @@ type FrozenRunGrantBasis = {
  * `mail.outbound` handler invokes for each workflow-deployment recipient.
  *
  * A mail-triggered run derives its grants from the RECEIVING deployment's
- * frozen snapshot: the snapshot's `tool:`/`effect:` runtime grants plus the
- * CREATOR-resolved declared requirements. Invoker-sourced requirements are
+ * frozen snapshot and from that deployment's anchor: the snapshot's
+ * `tool:`/`effect:` runtime grants, the CREATOR-resolved declared
+ * requirements, and the anchor's resolved credential-binding grants.
+ * A first commit returns `notReady` and writes nothing while initialization
+ * has not published credential resolution. That is an anchor with neither a
+ * public key nor credential refs, or one whose allocation holds an
+ * initialization lease. Committing during the lease would freeze the
+ * previous bindings.
+ * Invoker-sourced requirements are
  * NOT materialized -- no invoker is on the wire -- and the run still
  * launches: a step that needs an invoker grant fails closed at its own
  * authz check. The snapshot's requirements are pre-filtered to
@@ -610,7 +710,10 @@ export function createMailTriggeredRunGrantsMaterializer(
         definitionId: workflowRun.definitionId,
         definitionAssetId: workflowDefinition.assetId,
         anchorStatus: workflowRun.status,
+        anchorExpiresAt: workflowRun.expiresAt,
+        anchorCancellationRequestedAt: workflowRun.cancellationRequestedAt,
         topLevelRunStatus: topLevelRun.status,
+        credentialRefs: workflowRun.credentialRefs,
       })
       .from(workflowRun)
       .innerJoin(
@@ -630,26 +733,26 @@ export function createMailTriggeredRunGrantsMaterializer(
     // A "deployed" anchor is live: mail-triggering it IS its first trigger, so
     // it must not be rejected as terminal here.
     //
-    // This preflight inspects only the workflow_run.status column and omits the
-    // durable-lifecycle terminal check that the HTTP trigger route in
-    // workflow-run-trigger.ts applies. The supervisor's durable run-ref guard
+    // This preflight inspects the anchor row's status, cancellation, and
+    // deadline, and omits the durable-lifecycle terminal check that the HTTP
+    // trigger route in workflow-run-trigger.ts applies. The supervisor's durable run-ref guard
     // (rejectTerminalRun / readWorkflowRunLifecycle in supervisor.ts) is the
     // fired/not-fired authority and never re-fires a durably-settled run, so
     // this status check is a lagging fast-fail only. The two preflights diverge
     // inside the status-flip lag window; that asymmetry is tolerable and is
     // tracked for unification in INTR-456.
+    const anchorState = workflowRunExecutability({
+      status: anchor.anchorStatus,
+      expiresAt: anchor.anchorExpiresAt,
+      cancellationRequestedAt: anchor.anchorCancellationRequestedAt,
+    });
+    if (anchorState !== "executable")
+      return unavailableRunResult(runId, anchorState);
     if (
-      !isLiveWorkflowRunStatus(anchor.anchorStatus) ||
-      (anchor.topLevelRunStatus !== null &&
-        !isLiveWorkflowRunStatus(anchor.topLevelRunStatus))
-    ) {
-      return {
-        outcome: "rejected",
-        status: 409,
-        code: "workflow_run_terminal",
-        message: `Workflow run ${runId} is terminal and cannot receive more mail`,
-      };
-    }
+      anchor.topLevelRunStatus !== null &&
+      !isLiveWorkflowRunStatus(anchor.topLevelRunStatus)
+    )
+      return unavailableRunResult(runId, "terminal");
     if (anchor.definitionAssetId === null) {
       throw new Error(
         `mail-triggered run ${runId} for ${agentAddress}: anchor run's definition has no asset`,
@@ -724,6 +827,7 @@ export function createMailTriggeredRunGrantsMaterializer(
       invokerGrants: [],
       creatorGrants,
       grantRequirements: creatorRequirements,
+      credentialBindings: anchor.credentialRefs?.bindings ?? [],
     });
     if (!staged.ok) {
       return {
@@ -734,14 +838,28 @@ export function createMailTriggeredRunGrantsMaterializer(
       };
     }
 
-    const stepGrants = await deps.db.transaction(async (tx) => {
-      if (
-        (await lockWorkflowRunState(tx, anchorRunId, anchorRunId)) !==
-          "running" ||
-        (await lockWorkflowRunState(tx, anchorRunId, runId)) === "terminal"
-      ) {
-        return null;
+    const reserved = await deps.db.transaction(async (tx) => {
+      const anchorState = await lockWorkflowRunState(
+        tx,
+        anchorRunId,
+        anchorRunId,
+      );
+      if (anchorState !== "running")
+        return anchorState === "stopping" ? anchorState : "terminal";
+      const runState = await lockWorkflowRunState(tx, anchorRunId, runId);
+      if (runState === "stopping" || runState === "terminal") return runState;
+      const resolution = await lockAnchorCredentialResolution(tx, anchorRunId);
+      if (resolution === null) {
+        throw new Error(
+          `mail-triggered run ${runId} for ${agentAddress}: anchor run ${anchorRunId} disappeared while locking credential resolution`,
+        );
       }
+      const grantRows = grantRowsWithLockedCredentialResolution(
+        staged.grantRows,
+        resolution,
+        { tenantId, runPrincipalId, now },
+      );
+      if (grantRows === "not-ready") return grantRows;
       return commitRunGrants(
         {
           db: deps.db,
@@ -752,22 +870,17 @@ export function createMailTriggeredRunGrantsMaterializer(
           runId,
           runPrincipalId,
           now,
-          grantRows: staged.grantRows,
+          grantRows,
         },
         tx,
       );
     });
-    if (stepGrants === null) {
-      return {
-        outcome: "rejected",
-        status: 409,
-        code: "workflow_run_terminal",
-        message: `Workflow run ${runId} is terminal and cannot receive more mail`,
-      };
-    }
+    if (reserved === "not-ready") return { outcome: "notReady" };
+    if (reserved === "stopping" || reserved === "terminal")
+      return unavailableRunResult(runId, reserved);
     return {
       outcome: "materialized",
-      stepGrants,
+      stepGrants: reserved,
     };
   };
 }

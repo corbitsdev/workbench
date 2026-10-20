@@ -21,7 +21,11 @@ import type { ConditionRegistry, GrantStore } from "@intx/types/authz";
 
 import type { AppEnv } from "./context";
 import { createSessionMiddleware } from "./middleware/session";
-import { createRequireGrant, type RequireGrant } from "./middleware/grant";
+import {
+  createAuthorizeGrant,
+  createRequireGrant,
+  type RequireGrant,
+} from "./middleware/grant";
 import { createResolveTenant, requireAuth } from "./middleware/tenant";
 import type { GetSession } from "./session";
 import type {
@@ -32,6 +36,7 @@ import type {
   SidecarRouter,
   WorkflowAllocationService,
   WorkflowDispatchService,
+  WorkflowLifecycleService,
 } from "@intx/hub-sessions";
 
 import { createMeRoutes } from "./routes/me";
@@ -140,6 +145,7 @@ export type MountHubRoutesDeps = {
   sessionService: SessionService;
   workflowAllocationService?: WorkflowAllocationService;
   workflowDispatchService?: WorkflowDispatchService;
+  workflowLifecycleService?: WorkflowLifecycleService;
   eventCollectors: EventCollectorRegistry;
   /**
    * Encrypts credential secrets at rest on the credential/oauth write paths.
@@ -212,6 +218,7 @@ export function mountHubRoutes(
     sessionService,
     workflowAllocationService,
     workflowDispatchService,
+    workflowLifecycleService,
     eventCollectors,
     sidecarWsHandler,
     assetService,
@@ -229,6 +236,10 @@ export function mountHubRoutes(
   const conditionRegistry: ConditionRegistry = opts.conditionRegistry ?? {
     time_window: timeWindowEvaluator,
   };
+  const authorizeGrant = createAuthorizeGrant({
+    grantStore,
+    conditionRegistry,
+  });
   const requireGrant: RequireGrant = createRequireGrant({
     grantStore,
     conditionRegistry,
@@ -310,8 +321,19 @@ export function mountHubRoutes(
   // so Hono includes it in the middleware chain.
   app.use("/api/tenants/:tenantId/*", resolveTenant);
 
-  // Global tenant routes (create needs auth, detail/update handle auth inline)
-  app.route("/api/tenants", createTenantRoutes({ db, principalKeyStore }));
+  // Tenant create, detail and update. Detail and update mount resolveTenant
+  // and requireGrant on their own handlers, so their gate does not depend on
+  // the wildcard above also matching the bare tenant path.
+  app.route(
+    "/api/tenants",
+    createTenantRoutes({
+      db,
+      principalKeyStore,
+      authorizeGrant,
+      resolveTenant,
+      requireGrant,
+    }),
+  );
 
   // Tenant-scoped routes
   app.route(
@@ -355,6 +377,9 @@ export function mountHubRoutes(
       ...(workflowDispatchService !== undefined
         ? { workflowDispatchService }
         : {}),
+      ...(workflowLifecycleService !== undefined
+        ? { workflowLifecycleService }
+        : {}),
       grantStore,
       conditionRegistry,
       requireGrant,
@@ -370,7 +395,12 @@ export function mountHubRoutes(
   // `/:runId` patterns, so this ordering is belt-and-suspenders.
   app.route(
     "/api/tenants/:tenantId/workflows/definitions",
-    createWorkflowDefinitionRoutes({ db, requireGrant }),
+    createWorkflowDefinitionRoutes({
+      db,
+      requireGrant,
+      grantStore,
+      conditionRegistry,
+    }),
   );
 
   // The workflow deploy + signal + listing surface reads the workflow-run
@@ -391,6 +421,7 @@ export function mountHubRoutes(
         sidecarRouter,
         repoStore,
         grantStore,
+        authorizeGrant,
         requireGrant,
       }),
     );
@@ -562,6 +593,7 @@ export type CreateAppOpts = {
   sessionService: SessionService;
   workflowAllocationService?: WorkflowAllocationService;
   workflowDispatchService?: WorkflowDispatchService;
+  workflowLifecycleService?: WorkflowLifecycleService;
   eventCollectors: EventCollectorRegistry;
   /**
    * Encrypts credential secrets at rest on the credential/oauth write paths.
@@ -577,7 +609,14 @@ export type CreateAppOpts = {
    * `PRINCIPAL_KEY_ENCRYPTION_KEY`.
    */
   principalKeyStore?: PrincipalKeyStore;
-  /** See `MountHubRoutesDeps.workflowRunAuthenticator`. */
+  /**
+   * Resolves a sidecar bearer token + run address to the tenant/principal
+   * it acts as. When supplied, `POST/GET .../workflows/deployments`
+   * additionally accepts a bearer-authenticated workflow-run caller (see
+   * `./middleware/workflow-run-deploy-auth.ts`), mirroring every other
+   * workflow-run write surface. Omitted in tests that have no reason to
+   * exercise that path -- the session-cookie path is unaffected either way.
+   */
   workflowRunAuthenticator?: WorkflowRunAuthenticator;
   grantStore?: GrantStore;
   approvalStore?: ApprovalStore;
@@ -602,6 +641,7 @@ export function createApp({
   sessionService,
   workflowAllocationService,
   workflowDispatchService,
+  workflowLifecycleService,
   eventCollectors,
   credentialCipher,
   principalKeyStore,
@@ -638,12 +678,13 @@ export function createApp({
     ...(workflowDispatchService !== undefined
       ? { workflowDispatchService }
       : {}),
+    ...(workflowLifecycleService !== undefined
+      ? { workflowLifecycleService }
+      : {}),
     eventCollectors,
     ...(credentialCipher ? { credentialCipher } : {}),
     ...(principalKeyStore ? { principalKeyStore } : {}),
-    ...(workflowRunAuthenticator !== undefined
-      ? { workflowRunAuthenticator }
-      : {}),
+    ...(workflowRunAuthenticator ? { workflowRunAuthenticator } : {}),
     assetService,
     repoStore,
     maxTarballBytes,

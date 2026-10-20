@@ -17,34 +17,25 @@
 // silent drop, and a blocking writer would deadlock against the
 // reactor's emit path.
 //
-// Mixing failure mode: the payload union here covers InferenceEvent
-// shapes only. A "control message" structurally shaped as `drain` or
-// `recycle` will not satisfy this union and the receiver will crash.
-// The discriminated arktype validators in `control-channel.ts` and
-// here are disjoint by construction.
+// The receiver validates every payload with `parseInferenceEvent`, which
+// applies the shared `InferenceEvent` schema. A control-shaped payload such
+// as `drain` or `recycle` fails validation; the receiver reports a crash
+// and stops.
+// The per-kind control validators in `control-payloads.ts` reject these
+// inference-event shapes, keeping the channels' payload schemas disjoint.
 
 import { type } from "arktype";
 
-import { hexDecode, hexEncode } from "@intx/types";
-import { InferenceEvent } from "@intx/types/runtime";
-
+import { hexDecode } from "@intx/types/hex";
 import {
-  decodeEnvelope,
-  encodeEnvelope,
-  FrameEnvelope,
-  MacedEnvelope,
-} from "./envelope";
-import { signHmac, verifyHmac } from "./crypto";
+  parseInferenceEvent,
+  type InferenceEvent,
+} from "@intx/types/inference-events";
 
-/**
- * The event channel additionally carries the two bracket events the
- * reactor emits per message run. They are part of the InferenceEvent
- * union upstream; re-exporting the union directly keeps this channel
- * structurally identical to what the hub's `agent.event` frame
- * carries today.
- */
-export const EventPayload = InferenceEvent;
-export type EventPayload = typeof EventPayload.infer;
+import { decodeEnvelope, encodeEnvelope, MacedEnvelope } from "./envelope";
+import { verifyHmac } from "./crypto";
+
+export type EventPayload = InferenceEvent;
 
 /**
  * One verified event-channel frame. `childRunId` is the occurrence the
@@ -56,87 +47,8 @@ export type ReceivedEvent = {
   readonly childRunId?: string;
 };
 
-export interface FrameWriter {
-  write(bytes: Uint8Array): Promise<void> | void;
-}
-
 export interface FrameReader {
   read(): AsyncIterableIterator<Uint8Array>;
-}
-
-export interface EventChannelSenderOpts {
-  hmacKey: Uint8Array;
-  channelId: string;
-  writer: FrameWriter;
-}
-
-export interface EventChannelSender {
-  send(payload: EventPayload, childRunId?: string): Promise<void>;
-  readonly seq: number;
-}
-
-/**
- * Construct the child-side event-channel sender. The shared HMAC
- * key lives in closure. The child mints monotonic seq values per
- * channelId; the receiver enforces strict monotonicity.
- */
-export function createEventChannelSender(
-  opts: EventChannelSenderOpts,
-): EventChannelSender {
-  let seq = 0;
-  // Serialize sends. `signHmac` is async, so without a lock two
-  // concurrent callers could each assign seq, suspend on the signer, and
-  // resume in HMAC-resolution order — writing frames out of seq order,
-  // which the receiver rejects as a gap and crashes the channel. The
-  // production caller fires events without awaiting (`void send(event)`),
-  // so this is the live case. The promise chain makes each send await the
-  // previous send's completion before it assigns seq, signs, and writes,
-  // keeping that critical section atomic. Mirrors the control channel's
-  // sender, whose Ed25519 signing has the same shape.
-  let tail: Promise<void> = Promise.resolve();
-  return {
-    get seq() {
-      return seq;
-    },
-    send(payload: EventPayload, childRunId?: string): Promise<void> {
-      const previous = tail;
-      let release: () => void = () => undefined;
-      tail = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      return (async () => {
-        await previous;
-        try {
-          seq += 1;
-          const envelope: FrameEnvelope = {
-            seq,
-            channelId: opts.channelId,
-            payload,
-            ...(childRunId !== undefined ? { childRunId } : {}),
-          };
-          const envelopeBytes = encodeEnvelope(envelope);
-          const tag = await signHmac(envelopeBytes, opts.hmacKey);
-          const maced: MacedEnvelope = {
-            envelope,
-            mac: hexEncode(tag),
-          };
-          // Newline-delimit each frame. The channel rides a byte-stream
-          // pipe (fd3) where the kernel may coalesce successive writes into
-          // one read or split one write across reads -- the one-write-equals-
-          // one-frame assumption does not hold under the burst of events a
-          // real step emits. `JSON.stringify` never emits a literal newline
-          // (newlines inside strings are escaped as `\n`), so `\n` is an
-          // unambiguous frame terminator the receiver splits on, mirroring
-          // the control channel's NDJSON discipline.
-          await opts.writer.write(
-            new TextEncoder().encode(`${JSON.stringify(maced)}\n`),
-          );
-        } finally {
-          release();
-        }
-      })();
-    },
-  };
 }
 
 export interface EventChannelReceiverOpts {
@@ -155,7 +67,7 @@ export interface EventChannelReceiverOpts {
 
 /**
  * Construct the supervisor-side event-channel receiver. Yields one
- * verified, in-order event per call, carrying the occurrence
+ * verified, in-order `ReceivedEvent` per call — the `EventPayload` plus
  * `childRunId` when the sender stamped it. Any frame that fails
  * HMAC verification, carries a non-current channelId, arrives out
  * of order, or arrives faster than the consumer drains -- triggers
@@ -305,7 +217,7 @@ export async function* receiveEventChannel(
       }
       highestSeq = maced.envelope.seq;
 
-      const payload = EventPayload(maced.envelope.payload);
+      const payload = parseInferenceEvent(maced.envelope.payload);
       if (payload instanceof type.errors) {
         crashed = true;
         opts.onCrash(

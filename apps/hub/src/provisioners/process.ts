@@ -426,7 +426,7 @@ function isErrnoCode(error: unknown, code: string): boolean {
   return error instanceof Error && "code" in error && error.code === code;
 }
 
-const PROVISIONER_API_VERSION = 1 as const;
+const PROVISIONER_API_VERSION = 2 as const;
 
 export const PROCESS_PROVISIONER_ID = "process";
 

@@ -19,7 +19,8 @@ import { hexEncode } from "@intx/types";
 import type {
   CredentialDelivery,
   CredentialMaterialEntry,
-} from "@intx/types/sidecar";
+} from "@intx/types/credential-delivery";
+import { DeploymentRejectedError } from "@intx/types/sidecar";
 import type { CredentialCipher } from "@intx/types";
 import { sessionAsset as sessionAssetTable } from "@intx/db/schema";
 import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
@@ -78,11 +79,13 @@ import {
 import { restoreWorkflowRunToAllocation } from "./workflow-run-restore";
 import { committedReadsToSourceTree } from "./committed-source-tree";
 import {
+  describeProbeGateRefusal,
   installAndApproveWorkflowDefinition,
   type InstallAndApproveArgs,
   type InstallAndApproveResult,
 } from "./workflow-probe-gate";
 import { buildReferencedWorkflowSourcePins } from "./workflow-source-pins";
+import { workflowSourceRepoKind } from "./workflow-source-repo-kind";
 import type { SidecarReconciliationContext } from "./sidecar-allocation/operation";
 
 const logger = getLogger(["interchange", "hub", "session-service"]);
@@ -154,7 +157,7 @@ export type InstallAndApproveWorkflowSourceParams = {
    * and asset-`tarball` variants; omitted for the asset-`source` variant.
    */
   pin?: string;
-  /** The `workflow`-kind asset the frozen definition projects a definition over. */
+  /** The definition asset: a workflow source tree or package-registry tarball. */
   definitionAssetId: string;
   /** The exact provisioned generation that executes the probe. */
   allocationTarget: AllocatedSidecarTarget;
@@ -543,15 +546,15 @@ function isAssetDeployArgs(
  * freeze.
  *
  * Credential MATERIAL rides ONE `CredentialDelivery` delivered to the child on
- * the frame, unioned from three rails and deduped by credentialId: tool bindings
- * (grant-scoped, resolved here via `buildCredentialDelivery`); every top-level
- * inference source; and every inline body step's inference source. Both inference
- * rails are resolved HERE from the DB under the tenant-ownership authority
- * (`resolveInferenceMaterials`), so the deploy is self-contained -- no caller
- * pre-supplies material, and a spawned body child finds its secret in the cell.
- * The merge is a post-authz union of already-cleared material (tool material is
- * grant-scoped, inference material is tenant-ownership-scoped), never a shared
- * authz check.
+ * the frame, unioned from three rails and deduped by credentialId: credential
+ * bindings (grant-scoped, resolved here via `buildCredentialDelivery`); every
+ * top-level inference source; and every inline body step's inference source.
+ * Both inference rails are resolved HERE from the DB under the tenant-ownership
+ * authority (`resolveInferenceMaterials`), so the deploy is self-contained --
+ * no caller pre-supplies material, and a spawned body child finds its secret in
+ * the cell. The merge is a post-authz union of already-cleared material
+ * (binding material is grant-scoped, inference material is
+ * tenant-ownership-scoped), never a shared authz check.
  * Credential GRANT enforcement is a SEPARATE layer: the `credential:{id}` /
  * `use` grant the runtime gate checks is minted per-run by run-grant
  * materialization into `runs/<runId>/grants.json`, not carried on this frame --
@@ -577,7 +580,7 @@ async function prepareSourceRefDeploy(
   const { approval, projection, closure } = args.approved;
   if (!approval.ok) {
     throw new Error(
-      `deployCodeSourcedWorkflow: refusing to deploy an unapproved workflow (gate reason: ${approval.reason})`,
+      `deployCodeSourcedWorkflow: refusing to deploy an unapproved workflow (${describeProbeGateRefusal(approval)})`,
     );
   }
 
@@ -677,7 +680,8 @@ async function prepareSourceRefDeploy(
 
   // Assemble the ONE credential delivery. Its `materials` cover three rails, each
   // authorized upstream on its own terms, deduped by credentialId into one cell:
-  //   - tool bindings, grant-scoped through `buildCredentialDelivery` above;
+  //   - credential bindings, grant-scoped through `buildCredentialDelivery`
+  //     above;
   //   - the inference source pinned to each top-level step that can actually
   //     invoke inference, tenant-owned;
   //   - the same for each inline body step (onTrigger/childWorkflow bodies
@@ -692,10 +696,11 @@ async function prepareSourceRefDeploy(
   // authority, so this deploy is self-contained: a direct deploy (a test) that
   // seeds the credentials in the DB -- rather than pre-supplying material -- still
   // fills the cell, and a spawned body finds its secret rather than failing closed
-  // at resolve time. Precedence on a shared credentialId is tool material first
-  // (grant-scoped), then the inference material (tenant-ownership-scoped): the
-  // first material for an id wins. Inference sources carry NO binding descriptor
-  // -- they reference their credential by id directly.
+  // at resolve time. Precedence on a shared credentialId is binding material
+  // first (grant-scoped), then the inference material
+  // (tenant-ownership-scoped): the first material for an id wins. Inference
+  // sources carry NO binding descriptor -- they reference their credential by
+  // id directly.
   const materials = new Map<string, CredentialMaterialEntry>();
   for (const material of credentials?.materials ?? []) {
     materials.set(material.credentialId, material);
@@ -749,10 +754,10 @@ async function prepareSourceRefDeploy(
       }
     }
   }
-  // A delivery with tool bindings always carries their material, so an empty map
-  // means no rail contributed anything -- send no delivery. (Tool bindings never
-  // produce a descriptor without a material, so bindings-without-materials cannot
-  // occur.)
+  // A delivery with credential bindings always carries their material, so an
+  // empty map means no rail contributed anything -- send no delivery.
+  // (Credential bindings never produce a descriptor without a material, so
+  // bindings-without-materials cannot occur.)
   const credentialDelivery: CredentialDelivery | undefined =
     materials.size > 0
       ? {
@@ -815,7 +820,7 @@ async function emitSourceRefDeployFrame(
   args: DeployCodeSourcedWorkflowArgs & {
     allocationTarget?: AllocatedSidecarTarget;
     sidecarAllocationRouter?: SidecarAllocationRouter;
-    onUnsentInitializationCleared(publicKey: string | null): void;
+    onInitializationCleared(): void;
   },
   reconciliation: SidecarReconciliationContext,
 ): Promise<{
@@ -836,20 +841,18 @@ async function emitSourceRefDeployFrame(
     leaseId,
     signal,
   };
-  let previousPublicKey: string | null | undefined;
+  let reserved = false;
   try {
     const result = await sendMultiStepDeployFrame(
       sendArgs,
       signal,
       async () => {
-        const reserved =
-          await allocationStore.beginInitialization(initialization);
-        if (reserved === null) {
+        if (!(await allocationStore.beginInitialization(initialization))) {
           throw new Error(
             "Allocation no longer permits this initialization attempt",
           );
         }
-        previousPublicKey = reserved.previousPublicKey;
+        reserved = true;
       },
     );
     return {
@@ -860,17 +863,37 @@ async function emitSourceRefDeployFrame(
         : {}),
     };
   } catch (cause) {
+    if (cause instanceof DeploymentRejectedError && reserved) {
+      logger.error`Deployment ${args.anchorRunId} was rejected before starting: ${cause.code}: ${cause.message}`;
+      try {
+        const releasing = await allocationStore.rejectInitialization({
+          ...initialization,
+          message: cause.message,
+        });
+        if (releasing !== null) {
+          sendArgs.sidecarAllocationRouter.fenceAllocation(
+            releasing.id,
+            releasing.generation,
+            releasing.sidecarId === undefined
+              ? {}
+              : { cleanup: { sidecarId: releasing.sidecarId } },
+          );
+          args.onInitializationCleared();
+        }
+      } catch (error) {
+        logger.error`Could not record deployment rejection for ${initialization.allocationId}: ${error instanceof Error ? error.message : String(error)}`;
+      }
+      throw cause;
+    }
     if (!isDeployFrameFailure(cause)) throw cause;
-    // Only a confirmed reservation gives us the key to restore. An ambiguous
+    // Only a confirmed reservation can be rolled back. An ambiguous
     // reservation response leaves its durable marker for conservative cleanup.
     // A confirmed unsent attempt can roll back even after lease cancellation.
-    if (!cause.frameSent && previousPublicKey !== undefined) {
+    if (!cause.frameSent && reserved) {
       try {
-        const cleared = await allocationStore.clearUnsentInitialization({
-          ...initialization,
-          previousPublicKey,
-        });
-        if (cleared) args.onUnsentInitializationCleared(previousPublicKey);
+        const cleared =
+          await allocationStore.clearUnsentInitialization(initialization);
+        if (cleared) args.onInitializationCleared();
       } catch (error) {
         logger.warn`Could not clear unsent initialization for ${initialization.allocationId}: ${error instanceof Error ? error.message : String(error)}`;
       }
@@ -909,7 +932,8 @@ async function emitSourceRefDeployFrame(
  * the wire (`isDeployFrameFailure && frameSent === false`); every other failure
  * -- a sent-but-unacked frame OR any untagged error -- is treated as
  * possibly-live: the anchor is fenced `deployed` -> `failed` and the error is
- * `leakedAgent: true`.
+ * `leakedAgent: true`. An explicit pre-start rejection also fails the anchor,
+ * but preserves the rejection instead of claiming the worker may be live.
  *
  * The prepared provisioned path does NOT use this composition: its anchor row
  * already exists from prepare time, so it drives `emitSourceRefDeployFrame` and
@@ -971,8 +995,8 @@ export async function deployCodeSourcedWorkflow(
       }
       throw new SessionLaunchError("start", cause, false);
     }
-    // A sent-but-unacked frame, OR any untagged/unexpected error: no positive
-    // proof of a clean send, so treat the agent as possibly-live. Fence the
+    // Preserve a rejected deployment's anchor as a recorded failure. Otherwise
+    // a sent-but-unacked frame or unexpected error leaves it possibly live. Fence the
     // anchor `deployed` -> `failed` (guarded so a self-flip to "running" by a
     // trigger that already landed is left alone). Do NOT delete: a live child
     // needs the anchor to bootstrap.
@@ -995,6 +1019,9 @@ export async function deployCodeSourcedWorkflow(
       // despite the ack failure. Leave it; the leaked-agent disposition still
       // holds because the frame was (or may have been) sent.
       logger.warn`anchor-before-frame: anchor ${args.anchorRunId} already advanced past deployed on an unacked/failed emit; the agent is live and the run is progressing despite the ack failure`;
+    } else if (cause instanceof DeploymentRejectedError) {
+      logger.error`Deployment ${args.anchorRunId} was rejected before starting: ${cause.code}: ${cause.message}`;
+      throw cause;
     } else {
       logger.warn`anchor-before-frame: fenced anchor ${args.anchorRunId} deployed->failed on an unacked/failed emit; the agent may be leaked but the run is dead`;
     }
@@ -1079,10 +1106,10 @@ export async function recoverSenderDeploy(args: {
 }): Promise<void> {
   const { allocation, reconciliation } = args;
   reconciliation.signal.throwIfAborted();
-  // A proven-unsent clear may still restore the previous key after this claim.
-  // Do not fail its mail using the claim's stale marker. Cleanup rechecks under
-  // the allocation lock; an advanced fence settles failure, while a rolled-back
-  // attempt is resolved by its caller or the next claim's completed key.
+  // A proven-unsent clear may still roll the attempt back after this claim, and
+  // its caller then settles the mail. Do not settle it from the claim's stale
+  // marker. Cleanup rechecks under the allocation lock; an advanced fence
+  // settles failure, while a rolled-back attempt is resolved by its caller.
   if (allocation.initializationLeaseId !== undefined) return;
   // Claiming the lease prevents the previous attempt from publishing. Its
   // marker and key now distinguish a committed initialization from failure,
@@ -1322,8 +1349,8 @@ export function createSessionService(
       // pack, reserve the manifest row, then send the pack. The manifest
       // reservation MUST happen before the pack send: if the sidecar acks
       // but the row is missing, the session has materialization without
-      // a recorded manifest. An allocated replacement may reuse the exact row
-      // its predecessor recorded. If reservation fails, no pack is sent.
+      // a recorded manifest. A retried first deploy may reuse the exact row an
+      // earlier attempt recorded. If reservation fails, no pack is sent.
       //
       // The fan-out materializes the package-registry assets the
       // tool-package resolver picked. They live behind tenant
@@ -1487,7 +1514,7 @@ export function createSessionService(
         const committed =
           await agentRepoStore.repoStore.openCommittedReadsAtCommit(
             HUB_PRINCIPAL,
-            { kind: "workflow", id: source.assetId },
+            { kind: workflowSourceRepoKind(source), id: source.assetId },
             source.package.commitSha,
           );
         if (committed === null) {
@@ -1561,7 +1588,7 @@ export function createSessionService(
     return source.kind === "asset"
       ? bindAssetAttachmentResolver(
           source.assetId,
-          source.package.format === "source" ? "workflow" : "package-registry",
+          workflowSourceRepoKind(source),
         )
       : null;
   }
@@ -1594,7 +1621,7 @@ export function createSessionService(
     if (!approved.approval.ok) {
       throw new WorkflowDefinitionInvalidError(
         approved.projection.id,
-        `code-sourced workflow install did not approve (reason: ${approved.approval.reason})`,
+        `code-sourced workflow install did not approve (${describeProbeGateRefusal(approved.approval)})`,
       );
     }
     return approved;
@@ -1688,8 +1715,8 @@ export function createSessionService(
       operatorApprovals: approval.approvedSurface,
     });
 
-    // Restore the Hub-authoritative run ref onto the exact allocation generation
-    // before its address is routed.
+    // Seed the deployment with the Hub's copy of its history on the exact
+    // allocation generation before its address is routed.
     await restoreWorkflowRunToAllocation({
       agentRepoStore,
       allocationRouter,
@@ -1729,10 +1756,10 @@ export function createSessionService(
       );
     }
 
-    let restoredPublicKey: string | null | undefined;
+    let initializationCleared = false;
     const commonEmit = {
-      onUnsentInitializationCleared(publicKey: string | null) {
-        restoredPublicKey = publicKey;
+      onInitializationCleared() {
+        initializationCleared = true;
       },
       approved: params.approved,
       sidecarAllocationRouter: allocationRouter,
@@ -1812,19 +1839,14 @@ export function createSessionService(
         publicKey: result.publicKey,
       };
     } catch (error) {
-      if (restoredPublicKey !== undefined) {
-        sidecarRouter.noteSenderDeploySettled(
-          senderAttempt,
-          restoredPublicKey === null
-            ? { failed: error instanceof Error ? error.message : String(error) }
-            : { recorded: restoredPublicKey },
-        );
-      }
       // A sent deploy or cancelled publication may have committed despite its
       // lost response, as may an unsent rollback. Without a confirmed rollback,
-      // recovery owns transport failures too. Only an uncancelled preparation
-      // failure can settle definitively here.
-      else if (!signal.aborted && !(error instanceof SessionLaunchError)) {
+      // recovery owns transport failures too. A recorded rejection, confirmed
+      // rollback, or uncancelled preparation failure can settle here.
+      if (
+        initializationCleared ||
+        (!signal.aborted && !(error instanceof SessionLaunchError))
+      ) {
         sidecarRouter.noteSenderDeploySettled(senderAttempt, {
           failed: error instanceof Error ? error.message : String(error),
         });
@@ -1856,8 +1878,8 @@ export function createSessionService(
       sourceCommitSha,
     };
 
-    // Reserve durable recovery intent before the pack send. A replacement
-    // generation may reuse the exact row its predecessor recorded.
+    // Reserve durable recovery intent before the pack send. A retried first
+    // deploy may reuse the exact row an earlier attempt recorded.
     const inserted = await db
       .insert(sessionAssetTable)
       .values({ ...record, materializedAt: new Date() })

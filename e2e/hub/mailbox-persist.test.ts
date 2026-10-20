@@ -19,7 +19,11 @@ import {
   principalMail,
   type MailboxDb,
 } from "@corbits/mailbox";
-import { createHubSessionLookups, type AgentRepoStore } from "@intx/hub-sessions";
+import {
+  createHubSessionLookups,
+  createWorkflowHistoryReceiveTracker,
+  type AgentRepoStore,
+} from "@intx/hub-sessions";
 import { createHubMailboxAuthorizeSender } from "../../apps/hub/src/mailbox-persist";
 import { e2eDatabaseUrl } from "../lib/database-url";
 import { dbGate } from "../lib/db-gate";
@@ -140,9 +144,10 @@ async function setup(opts: { withSession?: boolean } = {}) {
   const baseLookups = createHubSessionLookups({
     db,
     // persistMail (the only lookup this suite exercises) never touches
-    // agentRepoStore -- unlike the pack-receive lookups -- so an
-    // unimplemented stand-in is safe here.
-    agentRepoStore: undefined as unknown as AgentRepoStore,
+    // agentRepoStore or historyReceives -- unlike the pack-receive lookups --
+    // so unimplemented stand-ins are safe here.
+    agentRepoStore: { repoStore: undefined } as unknown as AgentRepoStore,
+    historyReceives: createWorkflowHistoryReceiveTracker(),
   });
 
   return {

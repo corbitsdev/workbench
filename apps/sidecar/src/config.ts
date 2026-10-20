@@ -8,10 +8,33 @@
 // resolved value through `DefaultHarnessBuilderConfig` rather than
 // re-reading env, so the boundary stays at the boot edge.
 
-import { AdapterManifest } from "@intx/inference";
-import { hexDecode } from "@intx/types";
+import { type AdapterManifest, parseAdapterManifestEnv } from "@intx/types/adapter-manifest";
+import { hexDecode } from "@intx/types/hex";
+import { DEFAULT_SIDECAR_CAPACITY, SidecarCapacity } from "@intx/types/sidecar";
+import { type } from "arktype";
 
 const DEFAULT_CACHE_MAX_BYTES = 10 * 1024 * 1024 * 1024;
+
+export function parseDeploymentCapacity(
+  active: string | undefined,
+  retained: string | undefined,
+): SidecarCapacity {
+  const capacity = SidecarCapacity({
+    maxActiveDeployments:
+      active === undefined || active.trim() === ""
+        ? DEFAULT_SIDECAR_CAPACITY.maxActiveDeployments
+        : Number(active),
+    maxRetainedDeployments:
+      retained === undefined || retained.trim() === ""
+        ? DEFAULT_SIDECAR_CAPACITY.maxRetainedDeployments
+        : Number(retained),
+  });
+  if (capacity instanceof type.errors)
+    throw new Error(
+      `Invalid SIDECAR_MAX_ACTIVE_DEPLOYMENTS or SIDECAR_MAX_RETAINED_DEPLOYMENTS: ${capacity.summary}`,
+    );
+  return capacity;
+}
 
 // The operator key the sidecar seals its at-rest credential material under
 // (inference-source apiKeys, and the tool credential material store). A
@@ -92,22 +115,13 @@ export function parseReconnectDelayMs(raw: string | undefined): number | undefin
 // `import(specifier)` is arbitrary code execution, so a specifier must
 // never originate from deploy or tenant data — the agent deploy tree
 // carries only a `provider` key, never a specifier. The shape is
-// arktype-validated here (and re-validated at the workflow-child spawn
-// boundary as defense in depth), but the value itself is trusted.
+// validated by the shared reader (and re-validated at the workflow-child
+// spawn boundary as defense in depth), but the value itself is trusted.
 //
 // Unset or whitespace-only means "no custom adapters", a valid
 // configuration — the sidecar then resolves only the statically-linked
-// built-ins. A present-but-malformed value fails loud at boot: an
-// opaque `JSON.parse` SyntaxError is rethrown naming the env key, and
-// the parsed value is asserted against `AdapterManifest`.
+// built-ins, and the empty manifest is what the workflow child receives.
+// A present-but-malformed value fails loud at boot.
 export function readAdapterManifest(): AdapterManifest {
-  const raw = process.env["SIDECAR_ADAPTER_MANIFEST"];
-  if (raw === undefined || raw.trim() === "") return [];
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (cause) {
-    throw new Error("SIDECAR_ADAPTER_MANIFEST is not valid JSON", { cause });
-  }
-  return AdapterManifest.assert(parsed);
+  return parseAdapterManifestEnv(process.env["SIDECAR_ADAPTER_MANIFEST"]) ?? [];
 }

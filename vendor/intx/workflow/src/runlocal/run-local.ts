@@ -12,6 +12,7 @@ import {
   createDefaultDirectorRegistry,
   type DirectorRegistry,
 } from "@intx/agent";
+import type { HostCredentialCapability } from "@intx/types";
 
 import type {
   AuthorizeContext,
@@ -24,13 +25,17 @@ import {
 } from "../ontrigger-bodies";
 import { runtimeRun, type RuntimeRunOptions } from "../runtime/run";
 import { createNoopDrainController } from "../runtime/drain";
+import { guardCredentialCapability } from "../runtime/credential-guard";
 import { createEffectContext } from "../runtime/effect-context";
 import { createLoopIterationHandle } from "../runtime/loop-iteration-handle";
+import { createSuspendableChildHandle } from "../runtime/suspendable-child-handle";
 import type {
+  ActionCredentialsFactory,
   ActionInvoker,
   EffectLedger,
   LoopFnRegistry,
   StepInvoker,
+  RepoStore,
   SpawnChildWorkflow,
   SpawnSuspendableChild,
   WorkflowRun,
@@ -58,6 +63,17 @@ export interface RunLocalOptions extends RuntimeRunOptions {
    * ledger across a re-run construct the env directly instead.
    */
   invokeAction?: ActionInvoker;
+  /**
+   * Build each action invocation's credentials capability. The default is
+   * `unavailableActionCredentials`: an action that declares credentials fails
+   * before its handler runs, and any other action's `resolve` fails closed.
+   * `createActionCredentialsFactory` from `@intx/harness` builds one over a
+   * material cell, a grants resolver and a provider registry, the same builder
+   * the deployed host uses. A `childWorkflow` child inherits it. It applies
+   * only to the default action-runner, so passing it with `invokeAction` is
+   * refused.
+   */
+  actionCredentials?: ActionCredentialsFactory;
   /** Resolve an action `handler` ref to a handler function. */
   actionResolver?: (ref: string) => ActionHandler;
   /** Resolve a loop's `while`/`carry` refs to pure functions. */
@@ -85,9 +101,9 @@ export interface RunLocalOptions extends RuntimeRunOptions {
    * rather than defaulted, because an absent value would have to mean
    * permissive and a call site that forgot it would silently inherit a park
    * nothing can answer. Pass true for a run the control plane can address: a
-   * top-level local run, whose caller holds the handle that delivers. The
-   * terminal-child spawner passes false, since nothing can address a child
-   * run.
+   * top-level local run, whose caller holds the handle that delivers. A
+   * spawned child forces true for itself: its parent relays each park down,
+   * and inheriting a parent false would refuse a gate the parent can answer.
    */
   hasUpstreamSignalResolver: boolean;
 }
@@ -102,14 +118,45 @@ export function runLocal(
   definition: WorkflowDefinition,
   options: RunLocalOptions,
 ): WorkflowRun {
+  const { rewritten, env } = assembleRunLocalEnv(definition, options);
+  return runtimeRun(rewritten, env, extractRuntimeOptions(options));
+}
+
+/**
+ * The per-run env `runLocal` and the child spawner share. The top-level call
+ * builds a fresh repo, channel, blob store, effect ledger, and drain. A
+ * spawned child writes its event log into the store it is given, under its
+ * own run id, and still builds a fresh channel, blob store, effect ledger,
+ * and drain. The top-level run drives this env with `runtimeRun`. The
+ * spawner hands the same shape to `createSuspendableChildHandle` and does
+ * not also drive it.
+ */
+function assembleRunLocalEnv(
+  definition: WorkflowDefinition,
+  options: RunLocalOptions,
+  sharedRepoStore?: RepoStore,
+): { rewritten: WorkflowDefinition; env: WorkflowRuntimeEnv } {
   const directors = options.directors ?? createDefaultDirectorRegistry();
   const authorize = options.authorize;
   const invokeStep: StepInvoker =
     options.invokeStep ?? createDefaultStepInvoker(authorize);
+  if (
+    options.invokeAction !== undefined &&
+    options.actionCredentials !== undefined
+  ) {
+    throw new Error(
+      "runLocal: actionCredentials applies only to the default action-runner; a custom invokeAction must build its own credentials",
+    );
+  }
   const effects = createInMemoryEffectLedger();
   const invokeAction: ActionInvoker =
     options.invokeAction ??
-    createDefaultActionInvoker(authorize, effects, options.actionResolver);
+    createDefaultActionInvoker(
+      authorize,
+      effects,
+      options.actionResolver,
+      options.actionCredentials ?? unavailableActionCredentials,
+    );
   const clock = options.clock ?? defaultClock;
   const newId = options.newId ?? defaultNewId;
 
@@ -139,7 +186,7 @@ export function runLocal(
     }
   }
 
-  const repoStore = createInMemoryRepoStore();
+  const repoStore = sharedRepoStore ?? createInMemoryRepoStore();
   const env: WorkflowRuntimeEnv = {
     repoStore,
     scheduler: createInMemoryScheduler({ repoStore, clock }),
@@ -153,6 +200,7 @@ export function runLocal(
     spawnChild: createInMemorySpawnChild(
       childBodies,
       inheritChildOptions(options),
+      repoStore,
     ),
     clock,
     newId,
@@ -168,7 +216,7 @@ export function runLocal(
     env.loopFns = options.loopFns;
   }
 
-  return runtimeRun(rewritten, env, extractRuntimeOptions(options));
+  return { rewritten, env };
 }
 
 function extractRuntimeOptions(options: RunLocalOptions): RuntimeRunOptions {
@@ -201,15 +249,17 @@ function extractRuntimeOptions(options: RunLocalOptions): RuntimeRunOptions {
  *
  * Everything omitted here is either per-run identity the spawn callback
  * supplies itself (`runId`, `triggerPayload`, `depth`) or per-run
- * substrate the child builds fresh (its own event log, blob store, signal
- * channel, and effect ledger), matching how the deployed host scopes each
- * child run's substrate under its own `childRunId`.
+ * substrate the child builds fresh (its blob store, signal channel, and
+ * effect ledger). The event log is the parent's store, scoped by
+ * `childRunId`, the same way the deployed host scopes each child under
+ * one workflow-run repo.
  */
 type InheritedChildOptions = Pick<
   RunLocalOptions,
   | "authorize"
   | "invokeStep"
   | "invokeAction"
+  | "actionCredentials"
   | "actionResolver"
   | "loopFns"
   | "directors"
@@ -225,6 +275,9 @@ function inheritChildOptions(options: RunLocalOptions): InheritedChildOptions {
       : {}),
     ...(options.invokeAction !== undefined
       ? { invokeAction: options.invokeAction }
+      : {}),
+    ...(options.actionCredentials !== undefined
+      ? { actionCredentials: options.actionCredentials }
       : {}),
     ...(options.actionResolver !== undefined
       ? { actionResolver: options.actionResolver }
@@ -271,18 +324,31 @@ function createDefaultStepInvoker(authorize: WorkflowAuthorizeFn): StepInvoker {
 }
 
 /**
- * Default action invoker. Resolves the handler ref, builds an
- * EffectContext against the supplied ledger and authorize, and runs the
- * handler. Failing loudly when no resolver is wired mirrors
- * `createNoopSpawnChild`: a silent stub would let action workflows pass
- * tests against effects that never ran.
+ * Default action invoker. Resolves the handler ref, builds the action's
+ * credentials capability and an EffectContext against the supplied ledger and
+ * authorize, and runs the handler. Failing loudly when no resolver is wired
+ * mirrors `createNoopSpawnChild`: a silent stub would let action workflows
+ * pass tests against effects that never ran.
+ *
+ * The capability is built before the handler runs, so a factory that throws
+ * fails the action before any effect. It is disposed when the handler settles.
+ * A dispose failure fails the invocation, so a handle that does not release
+ * its resources surfaces; when the handler also threw, both errors surface.
  */
 export function createDefaultActionInvoker(
   authorize: WorkflowAuthorizeFn,
   effects: EffectLedger,
   resolver: ((ref: string) => ActionHandler) | undefined,
+  credentialsFactory: ActionCredentialsFactory,
 ): ActionInvoker {
-  return async ({ handler, input, requires, authzContext, signal }) => {
+  return async ({
+    handler,
+    input,
+    requires,
+    credentials,
+    authzContext,
+    signal,
+  }) => {
     // Refuse before anything is constructed, so a cancelled run resolves no
     // handler and touches no ledger. An action is single-attempt with
     // observable side effects and there is no retry to reconsider the
@@ -297,17 +363,91 @@ export function createDefaultActionInvoker(
       );
     }
     const fn = resolver(handler);
-    const ctx = createEffectContext({
-      authorize,
-      effects,
-      requires,
+    const capability = credentialsFactory({
+      handler,
+      credentials,
       authzContext,
-      input,
     });
-    const output = await fn(input, ctx, signal);
+    // The handler's `perform` scopes see only `resolve`; `dispose` stays with
+    // the invoker. The view, and every handle it returns, refuses once
+    // disposal starts, so a `perform` the handler left pending cannot shape a
+    // handle that nothing would dispose, or use one it already holds.
+    let disposed = false;
+    const dispose = (): Promise<void> => {
+      disposed = true;
+      return capability.dispose();
+    };
+    let output: unknown;
+    try {
+      const ctx = createEffectContext({
+        handler,
+        authorize,
+        effects,
+        requires,
+        authzContext,
+        input,
+        credentials: guardCredentialCapability(
+          capability,
+          () => !disposed,
+          (h, verb) =>
+            `action ${handler} cannot ${verb} credential handle "${h}": its credentials capability is disposed`,
+        ),
+      });
+      output = await fn(input, ctx, signal);
+    } catch (handlerError) {
+      try {
+        await dispose();
+      } catch (disposeError) {
+        throw new AggregateError(
+          [handlerError, disposeError],
+          `action ${handler} failed and its credentials capability failed to dispose`,
+        );
+      }
+      throw handlerError;
+    }
+    await dispose();
     return { output };
   };
 }
+
+/**
+ * A credentials capability for a host that delivers no credential to the
+ * named handler: `resolve` fails closed for every handle and `dispose` releases
+ * nothing.
+ */
+export function unavailableCredentialCapability(
+  handler: string,
+): HostCredentialCapability {
+  return {
+    resolve(handle) {
+      return Promise.reject(
+        new Error(
+          `action ${handler} cannot resolve credential handle "${handle}": no credential source is configured for action handlers`,
+        ),
+      );
+    },
+    dispose() {
+      return Promise.resolve();
+    },
+  };
+}
+
+/**
+ * The credentials factory for a host with no credential source. An action
+ * that declares credentials fails before its handler runs; any other action
+ * gets a capability whose `resolve` fails closed.
+ */
+export const unavailableActionCredentials: ActionCredentialsFactory = ({
+  handler,
+  credentials,
+}) => {
+  if (credentials.length > 0) {
+    throw new Error(
+      `action ${handler} declares credential handle(s) ${credentials.join(", ")}, but no credential source is configured for action handlers`,
+    );
+  }
+  return unavailableCredentialCapability(handler);
+};
 
 export function createInMemoryEffectLedger(): EffectLedger {
   const store = new Map<string, { output: unknown }>();
@@ -365,6 +505,7 @@ export function createSpawnLoopIteration(
 export function createInMemorySpawnChild(
   bodies: ReadonlyMap<string, WorkflowDefinition>,
   inherited: InheritedChildOptions,
+  sharedRepoStore?: RepoStore,
 ): SpawnChildWorkflow {
   return async ({
     definitionRef,
@@ -373,15 +514,15 @@ export function createInMemorySpawnChild(
     signal,
     depth,
     maxChildSpawnDepth,
+    resumeFromEvents,
   }) => {
     // Four awaits separate the child run id allocation from this call, one of
-    // them a durable flush, so a cancel can land before the spawner runs. The
-    // abort bridge below subscribes to an edge and would miss one already
-    // past, leaving the child uncancelled and this function awaiting a
-    // terminal that never comes. Refusing outright also avoids writing a whole
-    // child log subtree for a run already known to be cancelled, and matches
-    // what the deployed spawn adapter does, so a local rehearsal does not
-    // diverge from production.
+    // them a durable flush, so a cancel can land before the spawner runs.
+    // The signal handed in is already aborted in that case: the parent drive
+    // bridges the step abort onto it before the call, including an abort that
+    // has already fired. Refusing outright avoids writing a child log for a
+    // run already known to be cancelled, and matches what the deployed spawn
+    // adapter does, so a local rehearsal does not diverge from production.
     if (signal.aborted) {
       throw abortReason(signal);
     }
@@ -396,36 +537,31 @@ export function createInMemorySpawnChild(
         `childWorkflow ${definitionRef} has no lifted definition; the inline child should have been extracted before the run started`,
       );
     }
-    // Recursively invoke runLocal for the resolved child against the
-    // parent-allocated childRunId so the parent's audit log and the
-    // child's own log agree on identity. Carry the depth (already checked
-    // one rung up) and the tree-wide ceiling so the child's own spawns keep
-    // counting against the same bound, and the inherited env overrides so
-    // the child runs under the same authorize and invokers as its parent.
-    const child = runLocal(resolved, {
-      ...inherited,
-      triggerPayload: input,
-      runId: childRunId,
+    // Build the child's own env and hand it to the shared handle. The parent
+    // drives the handle. Carry the depth (already checked one rung up) and
+    // the tree-wide ceiling so the child's own spawns keep counting against
+    // the same bound, and the inherited authorize and invokers so a strict
+    // parent env is the env the child runs under. The resolver flag is forced
+    // true: the parent relays, and a parent false must not refuse a gate the
+    // relay can answer. The in-memory channel has no stop.
+    const { rewritten, env } = assembleRunLocalEnv(
+      resolved,
+      {
+        ...inherited,
+        hasUpstreamSignalResolver: true,
+      },
+      sharedRepoStore,
+    );
+    return createSuspendableChildHandle(env, {
+      definition: rewritten,
+      childRunId,
+      input,
       depth,
       maxChildSpawnDepth,
-      // Terminal: the parent awaits this child's terminal rather than driving
-      // it across parks, and nothing upstream can address the child run, so a
-      // park inside it could never be answered.
-      hasUpstreamSignalResolver: false,
+      ...(resumeFromEvents !== undefined ? { resumeFromEvents } : {}),
+      signal,
+      surfaceInputPark: true,
     });
-    const onParentAbort = (): void => {
-      void child.cancel("supervisor-operator", "parent cancelled");
-    };
-    signal.addEventListener("abort", onParentAbort);
-    try {
-      const result = await child.complete;
-      return { terminalStatus: result.terminalStatus };
-    } finally {
-      // Drop the listener when the child has settled so the parent's
-      // per-step abort signal does not retain a reference to a child
-      // that no longer needs cancellation.
-      signal.removeEventListener("abort", onParentAbort);
-    }
   };
 }
 

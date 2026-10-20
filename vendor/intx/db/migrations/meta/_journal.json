@@ -694,6 +694,118 @@
       "when": 1790350152048,
       "tag": "0099_dark_old_lace",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1790350212048,
+      "tag": "0100_workflow_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 101,
+      "version": "7",
+      "when": 1790350272048,
+      "tag": "0101_workflow_pending_projection",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1790350332048,
+      "tag": "0102_workflow_cancellation_reason",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1790350392048,
+      "tag": "0103_workflow_dispatch_abandonment",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1790358456398,
+      "tag": "0104_workflow_lifecycle_sweep_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1790358709307,
+      "tag": "0105_workflow_infrastructure_failure",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1791488793986,
+      "tag": "0106_burly_virginia_dare",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1791488793987,
+      "tag": "0107_sidecar_reuse",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1791488793988,
+      "tag": "0108_workflow_run_failure_reason",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1791488793989,
+      "tag": "0109_sidecar_allocation_max_disconnected",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1791488793990,
+      "tag": "0110_sidecar_allocation_first_deploy_failure",
+      "breakpoints": true
+    },
+    {
+      "idx": 111,
+      "version": "7",
+      "when": 1791842736947,
+      "tag": "0111_sidecar_timestamps_with_time_zone",
+      "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1791907231430,
+      "tag": "0112_sidecar_adapter_manifest_digest",
+      "breakpoints": true
+    },
+    {
+      "idx": 113,
+      "version": "7",
+      "when": 1791968464970,
+      "tag": "0113_sidecar_deployment_cleanup_confirmation",
+      "breakpoints": true
+    },
+    {
+      "idx": 114,
+      "version": "7",
+      "when": 1791968762497,
+      "tag": "0114_sidecar_provider_hold_release",
+      "breakpoints": true
+    },
+    {
+      "idx": 115,
+      "version": "7",
+      "when": 1792341629593,
+      "tag": "0115_sidecar_provisioner_binding",
+      "breakpoints": true
     }
   ]
 }

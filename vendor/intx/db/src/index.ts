@@ -20,6 +20,17 @@ export {
   type BackfillPrincipalKeysReport,
 } from "./backfill-principal-keys";
 export { createGrantStore } from "./grant-store";
+export {
+  loadTenantLifecyclePolicies,
+  canExecuteWorkflowRun,
+  workflowRunExecutability,
+  workflowCapacityReleaseAt,
+  withExecutableWorkflowRun,
+  WorkflowRunNotExecutableError,
+  type WorkflowRunExecutionTarget,
+  resolveDeploymentLifecyclePolicy,
+  validateLifecyclePolicyEdit,
+} from "./workflow-lifecycle-policy";
 export { createPrincipalStore, type PrincipalStore } from "./principal-store";
 export {
   createPrincipalKeyStore,
@@ -63,7 +74,18 @@ export {
   type WorkflowRunDispatchStore,
 } from "./workflow-run-dispatch-store";
 export {
+  createWorkflowPendingProjectionStore,
+  type WorkflowPendingProjectionStore,
+} from "./workflow-pending-projection-store";
+export {
   createSidecarAllocationStore,
+  SIDECAR_DEPLOYMENT_STOPPED_FAILURE_CODE,
+  SIDECAR_CLEANUP_UNCONFIRMED_FAILURE_CODE,
+  SIDECAR_PROVISIONER_RELEASE_FAILURE_CODE,
+  SIDECAR_CLEANUP_RETRY_EXHAUSTED_FAILURE_CODE,
+  SIDECAR_CLEANUP_DISCONNECT_TIMEOUT_FAILURE_CODE,
+  SIDECAR_CLEANUP_PREPARATION_TIMEOUT_FAILURE_CODE,
+  SIDECAR_CLEANUP_OPERATOR_RELEASED_FAILURE_CODE,
   type BeginSidecarReleaseArgs,
   type BeginSidecarReplacementArgs,
   type BindInitialSidecarArgs,
@@ -72,16 +94,30 @@ export {
   type ClaimSidecarAllocationArgs,
   type CreatePendingSidecarAllocationArgs,
   type FailSidecarAllocationArgs,
+  type FailStoppedSidecarDeploymentArgs,
   type MarkSidecarAllocatedArgs,
   type MarkSidecarConnectionLostArgs,
   type MarkSidecarConnectionReadyArgs,
   type MarkSidecarDestroyFailedArgs,
   type MarkSidecarReleasedArgs,
   type ParkSidecarReconciliationPolicy,
+  type ReleaseStoppedSidecarCleanupArgs,
+  type ReleaseStoppedSidecarCleanupResult,
   type ScheduleSidecarAllocationRetryArgs,
+  type ScheduleSidecarReconnectAfterHubStartArgs,
   type SidecarAllocation,
   type SidecarAllocationStore,
 } from "./sidecar-allocation-store";
+export {
+  SidecarReuseRejectedError,
+  SidecarInventoryUnavailableError,
+  type RetainedSidecarIncarnation,
+  type SidecarInventory,
+  type SidecarAllocationStoreOptions,
+  type AllocationConnectionCheck,
+  type ProvisionerSidecarRetirement,
+  type SidecarProvisionerBinding,
+} from "./sidecar-reuse";
 export {
   createWorkflowProbeStore,
   type BindWorkflowProbeSidecarArgs,
@@ -146,9 +182,6 @@ export {
   type CatalogSourceResolution,
   type OfferingSourceResolution,
   type SourceSkip,
-  type ServingRefresh,
-  type ServingRefreshResult,
-  type ModelSourceResolutionOpts,
 } from "./model-source-resolution";
 export {
   parseGrantRow,
@@ -166,6 +199,7 @@ export {
   parseCredentialRow,
   parseProviderRow,
   parseTenantRow,
+  TenantConfigInvalidError,
   parseWalletRow,
   parseTransactionRow,
   parseOAuthClientRow,

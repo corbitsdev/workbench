@@ -22,8 +22,12 @@ import {
   workflowDefinition,
   workflowRun,
 } from "@intx/db/schema";
-import type { DB, PrincipalKeyStore } from "@intx/db";
-import { loadFrozenGrantSnapshot, resolveFrameSenderKey } from "@intx/db";
+import type { DB, DBExecutor, PrincipalKeyStore } from "@intx/db";
+import {
+  loadFrozenGrantSnapshot,
+  resolveFrameSenderKey,
+  WorkflowRunNotExecutableError,
+} from "@intx/db";
 import type { GrantStore } from "@intx/types/authz";
 import {
   assembleSignedContent,
@@ -36,6 +40,7 @@ import {
   deriveWorkflowRunId,
   isSidecarAllocationDispatchable,
   SendMessage,
+  validateAttachments,
   type AttachmentError,
 } from "@intx/types";
 import type { RunGrantsFrame } from "@intx/types/sidecar";
@@ -52,12 +57,13 @@ import {
   collectCreatorGrants,
   commitRunGrants,
   loadCommittedRunGrants,
+  grantRowsWithLockedCredentialResolution,
+  lockAnchorCredentialResolution,
   lockDispatchableAllocation,
   lockWorkflowRunState,
   stageRunGrantsFromSnapshot,
 } from "./run-grant-materialization";
 import type { MaterializedGrantRow } from "./grant-materialization";
-import { validateAttachments } from "./attachment-validation";
 import { readDurableWorkflowRunLifecycle } from "./workflow-run-lifecycle";
 
 // DoS guard on the trigger route body. Sized identically to the agent
@@ -107,6 +113,25 @@ export type TriggerWorkflowRunResult =
       body: { runId: string; address: string; messageId: string };
     }
   | { ok: false; status: 400 | 403 | 404 | 409 | 503; body: TriggerErrorBody };
+
+function runUnavailable(
+  runId: string,
+  state: "stopping" | "terminal",
+): TriggerWorkflowRunResult {
+  return {
+    ok: false,
+    status: 409,
+    body: {
+      error: {
+        code:
+          state === "stopping"
+            ? "workflow_run_stopping"
+            : "workflow_run_terminal",
+        message: `Workflow run ${runId} is ${state} and cannot receive more mail`,
+      },
+    },
+  };
+}
 
 /**
  * Build the workflow-run trigger over its stable per-app dependencies. The
@@ -183,9 +208,9 @@ export function createWorkflowRunTrigger(deps: TriggerWorkflowRunDeps) {
     const messageAttachments = attachmentResult.attachments;
 
     // Resolve the deployment's anchor run and, through its definition, the
-    // workflow asset the trigger's grants derive from. The inner join to the
-    // definition yields the asset id and the definition id in one read, off
-    // the run rather than the deployment projection.
+    // definition asset the trigger's grants derive from. The inner join to
+    // the definition yields the asset id and the definition id in one read,
+    // off the run rather than the deployment projection.
     const [anchor] = await db
       .select({
         definitionId: workflowRun.definitionId,
@@ -194,6 +219,7 @@ export function createWorkflowRunTrigger(deps: TriggerWorkflowRunDeps) {
         allocationStatus: sidecarAllocation.status,
         anchorStatus: workflowRun.status,
         runStatus: topLevelRun.status,
+        credentialRefs: workflowRun.credentialRefs,
       })
       .from(workflowRun)
       .innerJoin(
@@ -246,16 +272,7 @@ export function createWorkflowRunTrigger(deps: TriggerWorkflowRunDeps) {
         !isLiveWorkflowRunStatus(anchor.runStatus)) ||
       durableLifecycle === "terminal"
     ) {
-      return {
-        ok: false,
-        status: 409,
-        body: {
-          error: {
-            code: "workflow_run_terminal",
-            message: `Workflow run ${runId} is terminal and cannot receive more mail`,
-          },
-        },
-      };
+      return runUnavailable(runId, "terminal");
     }
     if (
       anchor.allocationStatus !== null &&
@@ -330,7 +347,6 @@ export function createWorkflowRunTrigger(deps: TriggerWorkflowRunDeps) {
         where: and(
           eq(asset.id, definitionAssetId),
           eq(asset.tenantId, tenant.id),
-          eq(asset.kind, "workflow"),
         ),
       });
       if (!assetRow) {
@@ -340,7 +356,7 @@ export function createWorkflowRunTrigger(deps: TriggerWorkflowRunDeps) {
           body: {
             error: {
               code: "invalid_workflow",
-              message: `Workflow asset ${definitionAssetId} not found`,
+              message: `Definition asset ${definitionAssetId} not found`,
             },
           },
         };
@@ -370,6 +386,7 @@ export function createWorkflowRunTrigger(deps: TriggerWorkflowRunDeps) {
         invokerGrants,
         creatorGrants,
         grantRequirements: declaredGrantRequirements,
+        credentialBindings: anchor.credentialRefs?.bindings ?? [],
       });
       if (!staged.ok) {
         const { status, code, message } = staged.rejection;
@@ -419,6 +436,43 @@ export function createWorkflowRunTrigger(deps: TriggerWorkflowRunDeps) {
     const rawMessage = assembleMessage(headers, signedContent, signature);
     const base64 = base64Encode(rawMessage);
 
+    // The pre-transaction binding read races initialization. A first commit
+    // re-reads the anchor under its row lock and stamps from that row, or
+    // inserts nothing when resolution is still unrecorded.
+    const commitFirstOrCanonical = async (
+      tx: DBExecutor,
+    ): Promise<RunGrantsFrame["stepGrants"] | "not-ready"> => {
+      const grantArgs = {
+        db,
+        principalKeyStore,
+        tenantId: tenant.id,
+        anchorRunId,
+        definitionId: anchor.definitionId,
+        runId,
+        runPrincipalId,
+        now,
+      };
+      if (committedRunGrants !== null) {
+        return commitRunGrants(
+          { ...grantArgs, grantRows: stagedGrantRows },
+          tx,
+        );
+      }
+      const resolution = await lockAnchorCredentialResolution(tx, anchorRunId);
+      if (resolution === null) {
+        throw new Error(
+          `trigger run ${runId}: anchor run ${anchorRunId} disappeared while locking credential resolution`,
+        );
+      }
+      const grantRows = grantRowsWithLockedCredentialResolution(
+        stagedGrantRows,
+        resolution,
+        { tenantId: tenant.id, runPrincipalId, now },
+      );
+      if (grantRows === "not-ready") return grantRows;
+      return commitRunGrants({ ...grantArgs, grantRows }, tx);
+    };
+
     const allocationId = anchor.allocationId;
     if (allocationId !== null) {
       if (workflowDispatchService === undefined) {
@@ -448,26 +502,15 @@ export function createWorkflowRunTrigger(deps: TriggerWorkflowRunDeps) {
         ) {
           return "run-terminal" as const;
         }
-        if (
-          (await lockWorkflowRunState(tx, anchorRunId, anchorRunId)) !==
-          "running"
-        ) {
-          return "run-terminal" as const;
-        }
-        const canonicalStepGrants = await commitRunGrants(
-          {
-            db,
-            principalKeyStore,
-            tenantId: tenant.id,
-            anchorRunId,
-            definitionId: anchor.definitionId,
-            runId,
-            runPrincipalId,
-            now,
-            grantRows: stagedGrantRows,
-          },
+        const anchorState = await lockWorkflowRunState(
           tx,
+          anchorRunId,
+          anchorRunId,
         );
+        if (anchorState === "stopping") return "run-stopping" as const;
+        if (anchorState !== "running") return "run-terminal" as const;
+        const canonicalStepGrants = await commitFirstOrCanonical(tx);
+        if (canonicalStepGrants === "not-ready") return "not-ready" as const;
         await workflowDispatchService.enqueue(
           {
             id: `dispatch:${anchorRunId}:${messageId}`,
@@ -482,20 +525,31 @@ export function createWorkflowRunTrigger(deps: TriggerWorkflowRunDeps) {
         );
         return "committed" as const;
       });
+      if (committed === "not-ready") {
+        return {
+          ok: false,
+          status: 409,
+          body: {
+            error: {
+              code: "deployment_not_ready",
+              message:
+                "Workflow deployment has not recorded credential resolution",
+            },
+          },
+        };
+      }
+      if (committed === "run-terminal")
+        return runUnavailable(runId, "terminal");
+      if (committed === "run-stopping")
+        return runUnavailable(runId, "stopping");
       if (committed !== "committed") {
         return {
           ok: false,
           status: 409,
           body: {
             error: {
-              code:
-                committed === "run-terminal"
-                  ? "workflow_run_terminal"
-                  : "deployment_unreachable",
-              message:
-                committed === "run-terminal"
-                  ? `Workflow run ${runId} is terminal and cannot receive more mail`
-                  : "Workflow deployment allocation is no longer active",
+              code: "deployment_unreachable",
+              message: "Workflow deployment allocation is no longer active",
             },
           },
         };
@@ -510,38 +564,30 @@ export function createWorkflowRunTrigger(deps: TriggerWorkflowRunDeps) {
     }
 
     const reserved = await db.transaction(async (tx) => {
-      if (
-        (await lockWorkflowRunState(tx, anchorRunId, anchorRunId)) !== "running"
-      ) {
-        return null;
-      }
-      return commitRunGrants(
-        {
-          db,
-          principalKeyStore,
-          tenantId: tenant.id,
-          anchorRunId,
-          definitionId: anchor.definitionId,
-          runId,
-          runPrincipalId,
-          now,
-          grantRows: stagedGrantRows,
-        },
+      const anchorState = await lockWorkflowRunState(
         tx,
+        anchorRunId,
+        anchorRunId,
       );
+      if (anchorState !== "running")
+        return anchorState === "stopping" ? anchorState : "terminal";
+      return commitFirstOrCanonical(tx);
     });
-    if (reserved === null) {
+    if (reserved === "not-ready") {
       return {
         ok: false,
         status: 409,
         body: {
           error: {
-            code: "workflow_run_terminal",
-            message: `Workflow run ${runId} is terminal and cannot receive more mail`,
+            code: "deployment_not_ready",
+            message:
+              "Workflow deployment has not recorded credential resolution",
           },
         },
       };
     }
+    if (reserved === "stopping" || reserved === "terminal")
+      return runUnavailable(runId, reserved);
     stepGrants = reserved;
 
     // Stamp the hub-verified principal address (fromAddr, the address the
@@ -563,38 +609,25 @@ export function createWorkflowRunTrigger(deps: TriggerWorkflowRunDeps) {
         ? [{ address: fromAddr, publicKey: authenticatedSenderPublicKey }]
         : undefined;
 
-    // Send the run's grants BEFORE the trigger mail. Both frames route
-    // through the same per-address channel, so same-websocket FIFO
-    // ordering guarantees the grants land at the sidecar before the mail
-    // that dispatches the run -- no ack round-trip is needed. Reserving the
-    // grants first makes concurrent deliveries converge on this exact
-    // snapshot. If routing fails, the grants-only run remains eligible for
-    // its first fire because Git has no RunStarted event yet.
-    const grantsDelivered = sidecarRouter.sendRunGrants(
-      address,
-      runId,
-      stepGrants,
-      senderIdentities,
-    );
-    if (!grantsDelivered) {
-      return {
-        ok: false,
-        status: 409,
-        body: {
-          error: {
-            code: "deployment_unreachable",
-            message: `Deployment address ${address} is not routable`,
-          },
+    // Admit grants and their mail together so a concurrent delivery cannot
+    // replace the sender's key between the two frames.
+    let delivered: boolean;
+    try {
+      delivered = await sidecarRouter.routeMail(
+        address,
+        base64,
+        fromAddr,
+        messageId,
+        {
+          runId,
+          stepGrants,
+          ...(senderIdentities !== undefined ? { senderIdentities } : {}),
         },
-      };
+      );
+    } catch (error) {
+      if (!(error instanceof WorkflowRunNotExecutableError)) throw error;
+      return runUnavailable(runId, error.reason);
     }
-
-    const delivered = sidecarRouter.routeMail(
-      address,
-      base64,
-      fromAddr,
-      messageId,
-    );
     if (!delivered) {
       return {
         ok: false,

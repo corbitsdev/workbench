@@ -33,7 +33,7 @@ import type {
   WorkflowRunSupervisorPrincipal,
 } from "@intx/hub-sessions/substrate";
 import type { CancelOrigin } from "@intx/workflow";
-import { hexEncode } from "@intx/types";
+import { hexEncode } from "@intx/types/hex";
 
 import type {
   PrincipalSigner,
@@ -161,7 +161,7 @@ export async function commitCancelRequested(
     {
       preservePrefix: prefix,
       merge: async (existing) => {
-        let maxSeq = -1;
+        let maxSeq = 0;
         for (const filepath of existing.keys()) {
           const name = filepath.slice(prefix.length);
           const seq = parseEventSeq(name);

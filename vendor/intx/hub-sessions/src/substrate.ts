@@ -30,6 +30,7 @@ export {
   requireEventSeq,
   StaleInboxEnqueueError,
   WORKFLOW_RUN_AGENT_STATE_PREFIX,
+  WORKFLOW_RUN_GITIGNORE_PATH,
   WORKFLOW_RUN_PARTS_DIR,
   WORKFLOW_RUN_EVENTS_DIR,
   WORKFLOW_RUN_RUNS_PREFIX,
@@ -56,8 +57,6 @@ export {
   WORKFLOW_RUN_EVENTS_FILE,
 } from "./workflow-run-event-log";
 
-export { workflowDefinitionEnvelopeSchema } from "./workflow-kind";
-
 export { subscribeKind } from "./repo-store/subscribe-kind";
 export type { SubscribeKindEntry } from "./repo-store/subscribe-kind";
 
@@ -73,3 +72,5 @@ export type {
   InitRepoOpts,
   NewlyTerminalRun,
 } from "./repo-store/types";
+
+export { WORKFLOW_RUN_RESTORE_REFS } from "./workflow-run-restore";

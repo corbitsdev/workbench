@@ -38,7 +38,7 @@ import type {
 } from "@intx/agent";
 import type { ToolPackagePin } from "@intx/types/tool-packages";
 import type { CredentialBinding, SidecarCapabilityPolicy } from "@intx/types";
-import type { InboundMailPolicy } from "@intx/types/runtime";
+import type { InboundMailPolicy } from "@intx/types/inbound-mail-policy";
 import type {
   ActionPrimitive,
   AwaitSignalPrimitive,
@@ -117,6 +117,7 @@ export interface InertStepStep {
   readonly agent: InertAgent;
   readonly after?: readonly string[];
   readonly input?: Selector;
+  readonly inference?: Selector;
   readonly reads?: readonly Selector[];
   readonly writes?: readonly Selector[];
   readonly retry?: RetryPolicy;
@@ -144,6 +145,7 @@ export interface InertLoop {
   readonly input?: Selector;
   readonly maxIterations: number;
   readonly onExhausted: string;
+  readonly onIterationFailure?: BodyFailurePolicy;
   readonly drainBehavior?: DrainBehavior;
   readonly after?: readonly string[];
 }
@@ -205,15 +207,15 @@ export interface InertWorkflowDefinition {
   readonly stepOrder: readonly string[];
   readonly steps: Record<string, InertStep>;
   readonly state?: { readonly schema?: unknown };
-  // The definition's credential bindings -- each maps a tool package's
-  // declared handle to a concrete provider/locator. These are pure plain
-  // data (no secret material; the secret is resolved fresh at deploy), so
-  // they project verbatim. They are part of the hashed surface on purpose:
-  // a binding names WHICH provider-backed credential the code may request,
-  // so it belongs to what the operator approves. On the code-sourced path
-  // the inert projection is the ONLY carrier of the bindings the deploy
-  // resolves -- a moved or tampered registry that served code with
-  // different bindings would change this projection and fail re-verify.
+  // The definition's credential bindings -- each maps a tool package's or an
+  // action handler's declared handle to a concrete provider/locator. These are
+  // pure plain data (no secret material; the secret is resolved fresh at
+  // deploy), so they project verbatim. They are part of the hashed surface on
+  // purpose: a binding names WHICH provider-backed credential the code may
+  // request, so it belongs to what the operator approves. On the code-sourced
+  // path the inert projection is the ONLY carrier of the bindings the deploy
+  // resolves -- a moved or tampered registry that served code with different
+  // bindings would change this projection and fail re-verify.
   readonly credentialBindings?: readonly CredentialBinding[];
   readonly sidecarPlacement?: SidecarCapabilityPolicy;
   // The author-declared inbound-mail admission policy, projected verbatim (it
@@ -353,6 +355,7 @@ function projectStepPrimitive(step: StepPrimitive): InertStepStep {
     agent: projectAgent(step.agent),
     ...(step.after !== undefined ? { after: [...step.after] } : {}),
     ...(step.input !== undefined ? { input: step.input } : {}),
+    ...(step.inference !== undefined ? { inference: step.inference } : {}),
     ...(step.reads !== undefined ? { reads: [...step.reads] } : {}),
     ...(step.writes !== undefined ? { writes: [...step.writes] } : {}),
     ...(step.retry !== undefined ? { retry: step.retry } : {}),
@@ -386,6 +389,9 @@ function projectLoop(primitive: LoopPrimitive): InertLoop {
     ...(primitive.input !== undefined ? { input: primitive.input } : {}),
     maxIterations: primitive.maxIterations,
     onExhausted: primitive.onExhausted,
+    ...(primitive.onIterationFailure !== undefined
+      ? { onIterationFailure: primitive.onIterationFailure }
+      : {}),
     ...(primitive.drainBehavior !== undefined
       ? { drainBehavior: primitive.drainBehavior }
       : {}),
@@ -429,6 +435,9 @@ function projectAction(primitive: ActionPrimitive): ActionPrimitive {
     ...(primitive.after !== undefined ? { after: [...primitive.after] } : {}),
     ...(primitive.onFailure !== undefined
       ? { onFailure: primitive.onFailure }
+      : {}),
+    ...(primitive.credentials !== undefined
+      ? { credentials: [...primitive.credentials] }
       : {}),
   };
 }

@@ -1,5 +1,13 @@
 # @intx/workflow-deploy
 
+Use `@intx/workflow-deploy/capabilities` to import `walkCapabilities` and
+its grant projections without loading deployment orchestration or package
+materialization.
+
+Use `@intx/workflow-deploy/addresses` for run and step address derivation,
+and `@intx/workflow-deploy/child-grants` for collecting a child workflow's
+declared resources and credential consumers and filtering its inherited grants.
+
 Deploy-time validation, capability walk, operator-approval gating,
 address derivation, and per-step source pinning for the code-sourced
 deploy.
@@ -25,6 +33,22 @@ Public surface:
 - `walkCapabilities(workflow, registry, pluginDefs)` — the pure
   capability walk; reused to populate per-step capability declarations
   and as the input to the approval gate.
+- `runtimeGrantRules(snapshot)` / `credentialUseGrantRules(bindings)`, from
+  `@intx/workflow-deploy/capabilities` only — a run's runtime
+  `tool:`/`effect:` rules and its `credential:` use rules
+  (`RuntimeGrantRule`, without storage identity). The hub stores them as the
+  run principal's grants; a host with no hub builds the same rules.
+- `collectDeclaredResources(definition, directors, pluginDefs)` /
+  `collectDeclaredCredentialConsumers(definition, directors, pluginDefs)` /
+  `filterGrantsToDeclaredResources(parentGrants, declared, credentialConsumers)`
+  — cap a spawned child's inherited grants at what the child body
+  declares. The resource collector walks declared grant strings. The
+  consumer collector returns `toolConsumer(factory.id)` for each factory
+  the pre-rewrite body instantiates and `actionConsumer(handler)` for each
+  action it runs that declares credentials. The filter removes a
+  non-credential `allow` only when its pattern covers none of the
+  declared set, removes a `credential:` `allow` unless `conditions.tool`
+  equals one of those consumers, and keeps every `deny` and `ask`.
 - `createApprovalSet(grants, requirements)` — the edge of the approval
   vocabulary. An `ApprovalSet` is one approved surface behind one operator
   decision, carrying the two kinds of approved item in two fields:
@@ -84,6 +108,13 @@ Public surface:
   projection so the hub can stage it and pin its per-step sources. The
   enumeration is purely structural; each body step's `(provider, model)`
   preference is read at pin time by `buildInertBodyStepSources`.
+- `checkCredentialBindings(projection)` /
+  `describeCredentialBindingViolation(violation)` — every credential binding
+  in a frozen inert projection that cannot be delivered: a declared action
+  handle with no root binding, `credentialBindings` on a nested body, a
+  binding whose tool factory or action handler the workflow does not run, a
+  binding for a handle the handler does not declare, and a duplicate binding.
+  The hub's probe gate refuses a definition with any of these.
 - `inertNestedBodies(step, descent)` — the nested body projections one step of
   a frozen inert projection carries, filtered by a `StepWalkDescent`. This is
   the inert counterpart of `@intx/workflow`'s live `nestedWorkflowBodies`, so

@@ -58,19 +58,20 @@ import {
   type AgentDefinition,
   type AuthorizeFn,
   type BaseEnv,
+  type SendOptions,
   type SendResult,
 } from "@intx/agent";
 import { getLogger } from "@intx/log";
 import { createInboundMessage, extractAddrSpec, isMessageId } from "@intx/mime";
+import type { InferenceEvent } from "@intx/types/inference-events";
 import type {
   InboundMessage,
-  InferenceEvent,
   InferenceSource,
   Mail,
   MailPartReader,
   MessageAttachment,
-} from "@intx/types/runtime";
-import { isMail } from "@intx/types/runtime";
+} from "@intx/types/runtime-core";
+import { isMail } from "@intx/types/runtime-core";
 import type {
   AuthorizeContext,
   StepInvokeRequest,
@@ -342,8 +343,9 @@ async function invokeColdStep(
 }
 
 /**
- * The connector router lives in `@intx/harness`, which this package does not
- * depend on, so its error is recognized by `name` rather than `instanceof`.
+ * The reply drain reports this cause through the structural `WarmReplyDrive`,
+ * so the harness error arrives as a value whose class is not part of that
+ * contract. Match it by name.
  */
 function describeReplyFailure(cause: unknown): string {
   if (cause instanceof Error && cause.name === "NoActiveConnectorThreadError") {
@@ -593,7 +595,10 @@ async function sendWithAbort(
       };
       abortListener = onAbort;
       req.signal.addEventListener("abort", onAbort, { once: true });
-      const sendOpts = cfg.closeOnAbort ? undefined : { signal: req.signal };
+      const sendOpts: SendOptions = {
+        ...(cfg.closeOnAbort ? {} : { signal: req.signal }),
+        ...(req.inference !== undefined ? { inference: req.inference } : {}),
+      };
       agent.send(message, sendOpts).then(resolve, (cause: unknown) => {
         reject(cause instanceof Error ? cause : new Error(String(cause)));
       });

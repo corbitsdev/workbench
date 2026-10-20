@@ -358,7 +358,7 @@ function isErrorCode(error: unknown, code: string): boolean {
 
 export type CreateSidecarProvisionerOpts = {
   readonly id: string;
-  readonly apiVersion: 1;
+  readonly apiVersion: 2;
   readonly bindingFingerprint: string;
   /**
    * Empty matches any deployment stating no requirement — the behaviour
@@ -491,7 +491,7 @@ export function createSidecarProvisioner(opts: CreateSidecarProvisionerOpts): Si
           return rejected(...classify(error, "destroy_unit_failed"));
         }
       }
-      return { kind: "destroyed" };
+      return { kind: "destroyed", cleanup: "confirmed" };
     },
   };
 }

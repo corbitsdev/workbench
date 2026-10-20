@@ -13,6 +13,7 @@ import {
   workflowRun,
 } from "@intx/db/schema";
 import {
+  TenantConfigInvalidError,
   WorkflowRunDispatchPayloadConflictError,
   type DB,
   type PrincipalKeyStore,
@@ -36,6 +37,8 @@ import {
   type WorkflowAllocationService,
   type WorkflowDispatchService,
   WorkflowProvisioningError,
+  WORKFLOW_RUN_REF,
+  workflowSourceRepoKind,
 } from "@intx/hub-sessions";
 import { generateId } from "@intx/hub-common";
 import {
@@ -44,8 +47,13 @@ import {
 } from "@intx/workflow-deploy";
 
 import type { TenantEnv } from "../context";
-import { errorResponse } from "../error-response";
-import { idResource, type RequireGrant } from "../middleware/grant";
+import { errorResponse, tenantConfigErrorResponse } from "../error-response";
+import {
+  denyUnlessAssetGrant,
+  idResource,
+  type AuthorizeGrant,
+  type RequireGrant,
+} from "../middleware/grant";
 import {
   lockDispatchableAllocation,
   lockWorkflowRunState,
@@ -55,7 +63,6 @@ import { WorkflowRunEventsResponse, formatRunEvent } from "./run-events-view";
 import {
   readDurableWorkflowRunLifecycle,
   workflowRunRepoId,
-  WORKFLOW_RUN_REF,
 } from "../workflow-run-lifecycle";
 import {
   createWorkflowRunTrigger,
@@ -98,6 +105,9 @@ const DeliverSignal = type({
   signalName: "string > 0",
   signalId: "string > 0",
   "payload?": "unknown",
+  // Addresses one onTrigger relay park. Absent, delivery stays
+  // name-FIFO and does not complete a correlated park.
+  "correlationId?": "string > 0",
 });
 
 const WorkflowRunListResponse = type({
@@ -195,6 +205,7 @@ export type CreateWorkflowRoutesDeps = {
   sidecarRouter: SidecarRouter;
   repoStore: RepoStore;
   grantStore: GrantStore;
+  authorizeGrant: AuthorizeGrant;
   requireGrant: RequireGrant;
 };
 
@@ -206,6 +217,7 @@ export function createWorkflowRoutes({
   sidecarRouter,
   repoStore,
   grantStore,
+  authorizeGrant,
   requireGrant,
 }: CreateWorkflowRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
@@ -246,9 +258,13 @@ export function createWorkflowRoutes({
           "Workflow deployment accepted for provisioning",
           WorkflowDeploymentResponse,
         ),
-        404: jsonResponse("Workflow asset not found", ErrorResponse),
+        403: jsonResponse(
+          "Caller lacks the read grant on the definition asset",
+          ErrorResponse,
+        ),
+        404: jsonResponse("Definition asset not found", ErrorResponse),
         409: jsonResponse(
-          "Workflow definition or source offering chain invalid, workflow provisioning unavailable, or provisioner selection failed",
+          "Asset kind does not match the source's package format, workflow definition, source offering chain, or stored tenant config invalid, workflow provisioning unavailable, or provisioner selection failed",
           ErrorResponse,
         ),
         500: jsonResponse(
@@ -263,11 +279,10 @@ export function createWorkflowRoutes({
       const tenant = c.get("tenant");
       const body = c.req.valid("json");
 
-      // The deployment anchors its frozen `workflow_definition` to a
-      // `workflow`-kind asset. An asset-sourced deploy projects the definition
-      // over the very asset it sources from; a registry-sourced deploy has no
-      // backing asset for the definition, so this route (which anchors every
-      // deployment to a workflow asset) does not support it yet.
+      // The deployment anchors its frozen `workflow_definition` to the asset
+      // it sources from, whichever kind the package format lives in. A
+      // registry-sourced deploy has no backing asset for the definition, so
+      // this route does not support it yet.
       if (body.source.kind !== "asset") {
         return errorResponse(
           c,
@@ -277,15 +292,31 @@ export function createWorkflowRoutes({
       }
       const definitionAssetId = body.source.assetId;
 
+      const denied = await denyUnlessAssetGrant({
+        c,
+        authorizeGrant,
+        assetId: definitionAssetId,
+      });
+      if (denied !== null) {
+        return denied;
+      }
+
       const assetRow = await db.query.asset.findFirst({
         where: and(
           eq(asset.id, definitionAssetId),
           eq(asset.tenantId, tenant.id),
-          eq(asset.kind, "workflow"),
         ),
       });
       if (!assetRow) {
-        return errorResponse(c, "not_found", "Workflow asset not found");
+        return errorResponse(c, "not_found", "Definition asset not found");
+      }
+      const expectedKind = workflowSourceRepoKind(body.source);
+      if (assetRow.kind !== expectedKind) {
+        return errorResponse(
+          c,
+          "asset_kind_mismatch",
+          `A ${body.source.package.format}-format workflow source must name a ${expectedKind} asset; ${assetRow.id} is a ${assetRow.kind} asset`,
+        );
       }
 
       if (workflowAllocationService === undefined) {
@@ -324,6 +355,9 @@ export function createWorkflowRoutes({
         // is a client/definition error, not a sidecar-reachability failure.
         if (err instanceof WorkflowDefinitionInvalidError) {
           return errorResponse(c, "invalid_workflow", err.message);
+        }
+        if (err instanceof TenantConfigInvalidError) {
+          return tenantConfigErrorResponse(c, err);
         }
         if (err instanceof WorkflowProvisioningError) {
           return c.json(
@@ -432,7 +466,7 @@ export function createWorkflowRoutes({
       tags: ["Workflows"],
       summary: "Deliver a signal to a workflow run",
       description:
-        "Delivers a caller-supplied, stable signal to the named run of a workflow deployment. The signalId must be supplied by the caller; the run state machine dedups on it.",
+        "Delivers a caller-supplied, stable signal to the named run of a workflow deployment. The signalId must be supplied by the caller; the run state machine dedups on it. An onTrigger body await is addressed by correlationId from that relay's SignalAwaited together with the author signalName. Omit correlationId to address a name-FIFO await, such as a loop or a top-level gate.",
       responses: {
         202: {
           description: "Signal accepted for delivery",
@@ -600,6 +634,9 @@ export function createWorkflowRoutes({
                   signalName: body.signalName,
                   signalId: body.signalId,
                   payload: body.payload ?? null,
+                  ...(body.correlationId !== undefined
+                    ? { correlationId: body.correlationId }
+                    : {}),
                 },
               },
               tx,
@@ -639,12 +676,15 @@ export function createWorkflowRoutes({
       }
 
       try {
-        sidecarRouter.sendSignalDeliver({
+        await sidecarRouter.sendSignalDeliver({
           agentAddress,
           runId: body.runId,
           signalName: body.signalName,
           signalId: body.signalId,
           payload: body.payload,
+          ...(body.correlationId !== undefined
+            ? { correlationId: body.correlationId }
+            : {}),
         });
       } catch (err) {
         return errorResponse(
@@ -674,12 +714,12 @@ export function createWorkflowRoutes({
           WorkflowRunTriggerResponse,
         ),
         400: jsonResponse(
-          "Attachment validation error. Each variant carries a structured code (oversize_attachment, disallowed_mime_type, malformed_base64, oversize_total) with the offending index and limits. A malformed request body that fails SendMessage validation returns the generic error shape instead.",
+          "Attachment validation error. Each variant carries a structured code (too_many_attachments, oversize_attachment, disallowed_mime_type, invalid_attachment_name, malformed_base64, oversize_total) with the offending index and limits. A malformed request body that fails SendMessage validation returns the generic error shape instead.",
           ErrorResponse,
         ),
         404: jsonResponse("Workflow deployment not found", ErrorResponse),
         409: jsonResponse(
-          "Deployment address is not routable, its allocation is no longer active, or its top-level run is terminal",
+          "Deployment address is not routable, its allocation is no longer active, or its top-level run is stopping or terminal",
           ErrorResponse,
         ),
         413: jsonResponse(

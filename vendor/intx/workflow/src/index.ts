@@ -6,9 +6,9 @@ export type {
 export * from "./state-machine/index";
 export * from "./definition/index";
 export { collectDeclaredPluginNames } from "./declared-plugins";
+export { inlineBodyRef } from "./inline-body-ref";
 export { collectSidecarCapabilityRules } from "./sidecar-capabilities";
 export {
-  inlineBodyRef,
   rewriteInlineOnTriggerBodies,
   rewriteInlineChildWorkflowBodies,
   enumerateInlineLoopBodies,
@@ -38,7 +38,13 @@ export {
 } from "./live-inert-projector";
 export {
   runtimeRun,
+  bodyParkedSignals,
+  loopIterationCursor,
+  loopOccurrenceReattach,
+  onTriggerOccurrenceReattach,
+  resumeResidualOf,
   createSuspendableChildHandle,
+  createTerminalChildHandle,
   createLoopIterationHandle,
   MAX_CHILD_SPAWN_DEPTH,
   ChildSpawnDepthExceededError,
@@ -51,6 +57,8 @@ export {
   scopedStepId,
   baseStepId,
   loopBodyRunId,
+  sectionBodyRunId,
+  type ActionCredentialsFactory,
   type ActionInvokeRequest,
   type ActionInvokeResult,
   type ActionInvoker,
@@ -62,10 +70,16 @@ export {
   type LoopFn,
   type LoopFnRegistry,
   type ParkedApprovalOp,
+  type PerformScope,
   type ReadParkedApprovalOps,
   type RepoStore,
   type RunResult,
   type RuntimeRunOptions,
+  type LoopIterationCursor,
+  type OccurrenceReattach,
+  type ResumeResidual,
+  type StepKindLookup,
+  type RuntimeWorkflowRun,
   type Scheduler,
   type SignalChannel,
   type SpawnChildWorkflow,
@@ -83,6 +97,8 @@ export {
   runLocal,
   createDefaultActionInvoker,
   createInMemoryEffectLedger,
+  unavailableActionCredentials,
+  unavailableCredentialCapability,
   createSpawnLoopIteration,
   createInMemoryRepoStore,
   createInMemoryScheduler,

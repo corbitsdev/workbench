@@ -33,7 +33,7 @@
 
 import { getLogger } from "@intx/log";
 
-import { base64Encode } from "@intx/types";
+import { base64Encode } from "@intx/types/base64";
 import type { OutboundMessage, SendReceipt } from "@intx/types/runtime";
 
 import type {
@@ -57,7 +57,11 @@ const logger = getLogger(["workflow-host", "child", "outbound-mail-bridge"]);
  * down.
  */
 export interface ChildOutboundMailBridge {
-  submit(senderAddress: string, message: OutboundMessage): Promise<SendReceipt>;
+  submit(
+    senderAddress: string,
+    message: OutboundMessage,
+    opts?: { readonly completeReferences: boolean },
+  ): Promise<SendReceipt>;
   handleResult(
     data: Extract<ControlPayload, { type: "outbound.result" }>["data"],
   ): void;
@@ -98,6 +102,7 @@ export function createChildOutboundMailBridge(
     async submit(
       senderAddress: string,
       message: OutboundMessage,
+      submitOpts?: { readonly completeReferences: boolean },
     ): Promise<SendReceipt> {
       const { requestId, promise } = pending.register(undefined);
       try {
@@ -106,6 +111,11 @@ export function createChildOutboundMailBridge(
           data: {
             requestId,
             senderAddress,
+            // Only `true` is a request to complete References. A false
+            // or omitted flag is the same send the supervisor leaves alone.
+            ...(submitOpts?.completeReferences === true
+              ? { completeReferences: true }
+              : {}),
             message: projectOutboundMessage(message),
           },
         });

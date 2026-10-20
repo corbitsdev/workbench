@@ -1,6 +1,6 @@
 // `runWorkflowChild` -- the workflow-process child's runtime body.
 //
-// The package-owned binary at `packages/workflow-host/bin/workflow-child`
+// The sidecar binary at `apps/sidecar/bin/workflow-child`
 // is a thin wrapper that parses `process.env`, opens stdin/stdout for
 // the control channel, accepts the inherited event-channel fd, builds
 // the substrate `RepoStore`, and invokes this function. Tests bypass
@@ -51,7 +51,7 @@
 
 import { getLogger } from "@intx/log";
 import { generateKeyPair } from "@intx/crypto";
-import { hexEncode } from "@intx/types";
+import { hexEncode } from "@intx/types/hex";
 
 import type {
   Principal,
@@ -64,12 +64,15 @@ import {
   rewriteInlineChildWorkflowBodies,
   enumerateInlineLoopBodies,
   eagerlyResolveLoopFns,
+  walkWorkflowSteps,
+  LOOP_BODY_DESCENT,
 } from "@intx/workflow";
-import type { AuthzCallResult } from "@intx/inference";
 
 import type {
+  ActionCredentialsFactory,
   ActionHandler,
   RunResult,
+  RuntimeWorkflowRun,
   Scheduler,
   ReadParkedApprovalOps,
   StepInvokeRequest,
@@ -81,11 +84,9 @@ import type {
   WorkflowAuthorizeFn,
   WorkflowDefinition,
   WorkflowPark,
-  WorkflowRun,
   WorkflowRuntimeEnv,
 } from "@intx/workflow";
 import {
-  baseStepId,
   createDefaultActionInvoker,
   createInMemoryEffectLedger,
   createLoopIterationHandle,
@@ -99,11 +100,11 @@ import {
 } from "../drain-controller";
 
 import type { InferenceSource, MailPartReader } from "@intx/types/runtime";
-import type { CredentialDelivery } from "@intx/types/sidecar";
+import type { CredentialDelivery } from "@intx/types/credential-delivery";
 
 import { createWorkflowRunRepoStore } from "../adapters/repo-store";
+import { createCancellationBarrier } from "./cancellation-barrier";
 import { createWorkflowRunBlobSubstrate } from "../adapters/blob-substrate";
-import { createMailPartReader } from "../adapters/mail-part-store";
 import type {
   HostSpawnSuspendableChild,
   HostSpawnChild,
@@ -116,15 +117,17 @@ import {
 } from "../adapters/spawn-child";
 import {
   createControlChannelSender,
-  createEventChannelSender,
-  receiveControlChannel,
   type ControlChannelSender,
-  type ControlPayload,
-  type EventPayload,
-  type FrameWriter,
   type NdjsonReader,
   type NdjsonWriter,
-} from "../ipc/index";
+} from "../ipc/control-sender";
+import { receiveControlChannel } from "../ipc/control-receiver";
+import type { ControlPayload } from "../ipc/control-payloads";
+import {
+  createEventChannelSender,
+  type FrameWriter,
+} from "../ipc/event-sender";
+import type { EventPayload } from "../ipc/event-channel";
 import { runBodyThenCleanup } from "../run-body-then-cleanup";
 import { createWorkflowHostSignalChannel } from "../seams/signal-channel";
 import type { CredentialsSnapshot } from "../supervisor/credentials";
@@ -143,30 +146,20 @@ import {
   type LoadParkedApproval,
 } from "./parked-correlations";
 import type { ChildOutboundMailBridge } from "./outbound-mail-bridge";
+import type { ChildMailboxCallBridge } from "./mailbox-call-bridge";
+import { createSupervisorBackedMailPartReader } from "./supervisor-backed-mail-part-reader";
 import type { ChildMailboxMutationBridge } from "./mailbox-mutation-bridge";
 import type { MailboxWatchRegistry } from "./mailbox-watch-registry";
 import { createWarmAgentCache, type WarmAgentCache } from "./warm-agent-cache";
 import { mergeCredentialDelivery } from "./credential-cell";
+import {
+  createCredentialsBackedAuthorize,
+  resolveSnapshotStepGrants,
+  type CredentialsSnapshotRef,
+  type GrantEvaluator,
+} from "./credentials-backed-authorize";
 
 const logger = getLogger(["workflow-host", "child"]);
-
-/**
- * `WorkflowAuthorize` closure factory shape. The child's authorize
- * evaluates a `(resource, action)` request against the active
- * credentialsSnapshot for the originating step. The closure used here
- * is intentionally permissive on missing context: the workflow runtime
- * supplies `stepId` from the `AuthorizeContext` it threads through
- * every step's invoker, so a bare-call without a step id is a
- * programming error rather than a security-sensitive path. The closure
- * surfaces it loudly.
- *
- * Read-site: the closure consults a mutable reference so a
- * `grants-updated` control frame swaps the snapshot in place without
- * the caller having to reconstruct the closure.
- */
-export type CredentialsSnapshotRef = {
-  current: CredentialsSnapshot | null;
-};
 
 /**
  * The deployment's decrypted credential material and per-handle descriptors,
@@ -193,89 +186,6 @@ export type CredentialMaterialRef = {
 export type SourcesSnapshotRef = {
   current: Record<string, InferenceSource[]>;
 };
-
-/**
- * Construct the workflow-level authorize closure backed by a
- * mutable credentialsSnapshot reference.
- *
- * The closure looks up the step's grants by `stepId`, then delegates
- * to the caller-supplied grant evaluator. The evaluator slot exists so
- * the host wires its own grant-rule semantics without leaking the
- * grant-rule grammar into the workflow-host package; tests inject a
- * spy that records inputs.
- */
-export type GrantEvaluator = (input: {
-  resource: string;
-  action: string;
-  stepId: string;
-  attempt: number | undefined;
-  runId: string | undefined;
-  grants: readonly unknown[];
-}) => Promise<AuthzCallResult>;
-
-/**
- * CL-6448: the credentials snapshot is keyed by the PARENT step's own
- * stepOrder, so an `onTrigger` body's step id (e.g. a section's inline
- * `reply` step) never appears in it verbatim. For a single-step
- * deployment the sole entry IS the deployment's whole grant set, so an
- * unmatched lookup collapses to it — mirroring the head/step collapse
- * the body's tool materialization already uses. A multi-step snapshot
- * stays strict: an unmatched id there is genuinely ambiguous (which of
- * several sibling steps' grants would apply?), so it falls through to
- * the loud miss below instead of guessing.
- */
-function findStepGrantsEntry(
-  steps: CredentialsSnapshot["steps"],
-  stepId: string,
-): CredentialsSnapshot["steps"][number] | undefined {
-  const direct = steps.find((s) => s.stepId === stepId);
-  if (direct !== undefined) return direct;
-  if (steps.length === 1) return steps[0];
-  return undefined;
-}
-
-export function createCredentialsBackedAuthorize(
-  ref: CredentialsSnapshotRef,
-  evaluate: GrantEvaluator,
-): WorkflowAuthorizeFn {
-  return async (resource, action, ctx) => {
-    const stepId = ctx?.stepId;
-    if (stepId === undefined) {
-      throw new Error(
-        "workflow-child authorize: missing stepId in AuthorizeContext; the runtime body must thread it through every step invocation",
-      );
-    }
-    const snapshot = ref.current;
-    if (snapshot === null) {
-      throw new Error(
-        "workflow-child authorize: no credentialsSnapshot active; the supervisor must push one before any step runs",
-      );
-    }
-    // The credentials snapshot is keyed per base step; a map iteration's
-    // scoped id `<base>[<index>]` resolves to its base entry so every
-    // iteration shares the base step's grants. `baseStepId` is the identity
-    // on an unscoped id, so a plain step is unaffected.
-    const lookupStepId = baseStepId(stepId);
-    const entry = findStepGrantsEntry(snapshot.steps, lookupStepId);
-    if (entry === undefined) {
-      const scopedNote =
-        lookupStepId === stepId
-          ? ""
-          : ` (normalized from scoped invocation id ${stepId})`;
-      throw new Error(
-        `workflow-child authorize: credentialsSnapshot has no entry for stepId ${lookupStepId}${scopedNote}`,
-      );
-    }
-    return evaluate({
-      resource,
-      action,
-      stepId,
-      attempt: ctx?.attempt,
-      runId: ctx?.runId,
-      grants: entry.grants,
-    });
-  };
-}
 
 /**
  * The workflow-host child's drain controller is the production
@@ -313,11 +223,12 @@ export type DrainController = WorkflowHostDrainController;
  * only reads it through to the adapter.
  */
 /**
- * Per-run credential inputs the top-level step invoker carries to the
- * substrate: the live material cell the control channel writes each delivery
- * into, and a resolver for a step's grants (which the substrate gates
+ * Per-run credential inputs the top-level step and action invokers carry to
+ * the substrate: the live material cell the control channel writes each
+ * delivery into, and a resolver for a step's grants (which the substrate gates
  * credential use against). The substrate combines these with its own static
- * provider registry to assemble each tool bundle's `credentials` capability.
+ * provider registry to assemble each tool bundle's and each action handler's
+ * `credentials` capability.
  *
  * Grants are typed `readonly unknown[]` here: this package owns no grant
  * grammar (the credentials snapshot's grants are `unknown[]` throughout), so
@@ -370,6 +281,13 @@ export interface RunWorkflowChildBindings {
    * with the host's per-step env builder; tests inject a stub.
    */
   invokeStep: ChildStepInvoker;
+  /**
+   * Builds the action credentials factory for a run from the run's credential
+   * wiring. The host combines the wiring with its provider registry, so an
+   * action handler resolves its declared handles against the run's live
+   * material and the action step's grants.
+   */
+  actionCredentials: (wiring: CredentialWiring) => ActionCredentialsFactory;
   /**
    * Terminal child-spawn callback the runtime body invokes for a
    * `childWorkflow` primitive when the deployment embeds NO inline child
@@ -494,11 +412,12 @@ export interface RunWorkflowChildBindings {
    */
   initialSources?: Record<string, InferenceSource[]>;
   /**
-   * Bootstrap credential material for the deployment's tools, decrypted
-   * hub-side and delivered on the deploy frame so it is resident before any
-   * step runs. Seeds the mutable `credentialMaterialRef` the gated capability
-   * reads. Absent when the deployment binds no credentials; a later
-   * `credentials-updated` control frame refreshes it on rotation.
+   * Bootstrap credential material for the deployment's binding consumers and
+   * inference sources, decrypted hub-side and delivered on the deploy frame so
+   * it is resident before any step runs. Seeds the mutable
+   * `credentialMaterialRef` the gated capability reads. Absent when the
+   * deployment binds no credentials; a later `credentials-updated` control
+   * frame refreshes it on rotation.
    */
   initialCredentialMaterial?: CredentialDelivery;
   /**
@@ -594,6 +513,14 @@ export interface RunWorkflowChildOpts {
    */
   mailboxMutationBridge?: ChildMailboxMutationBridge;
   /**
+   * Optional mailbox-call bridge. The step agent's transport forwards every
+   * mailbox method that is not `send` and not a flag or expunge mutation
+   * through this bridge. The control loop routes `mailbox.call.response`
+   * to `handleResult` and `cancelAll`s it on exit. When omitted, a response
+   * is logged and dropped.
+   */
+  mailboxCallBridge?: ChildMailboxCallBridge;
+  /**
    * Optional mailbox watch registry (INBOUND half of mailbox ownership,
    * design §3b). The supervisor -- the sole mail owner -- commits an arrived
    * message to the workflow-run substrate mailbox and fires a `mailbox.notify`
@@ -667,18 +594,15 @@ export async function runWorkflowChild(
       const snapshot = credentialsRef.current;
       if (snapshot === null) {
         throw new Error(
-          `workflow-child credential wiring: no credentials snapshot for step ${stepId}; a tool-bearing step cannot resolve its grants before the run carries any`,
+          `workflow-child credential wiring: no credentials snapshot for step ${stepId}; a step that uses credentials cannot resolve its grants before the run carries any`,
         );
       }
-      const entry = snapshot.steps.find(
-        (step) => step.stepId === baseStepId(stepId),
+      return resolveSnapshotStepGrants(
+        snapshot,
+        stepId,
+        (lookupStepId) =>
+          `workflow-child credential wiring: credentials snapshot has no entry for step ${lookupStepId}`,
       );
-      if (entry === undefined) {
-        throw new Error(
-          `workflow-child credential wiring: credentials snapshot has no entry for step ${baseStepId(stepId)}`,
-        );
-      }
-      return entry.grants;
     },
   };
   const clock = opts.bindings.clock ?? defaultClock;
@@ -804,11 +728,13 @@ export async function runWorkflowChild(
   );
 
   // Action handlers resolve from the pinned closure's `interchange.actions`
-  // module, on the same terms as loop fns. Resolve every action handler ref
-  // reachable from the definition eagerly here (recursing into loop bodies,
-  // where an action body is the common case), so a deployment that declares an
-  // action whose handler the closure does not export fails at establish rather
-  // than mid-run.
+  // module, on the same terms as loop fns. This call walks the rewritten
+  // top-level definition plus each lifted onTrigger and childWorkflow body;
+  // loop bodies share the top-level env and are walked with it. The walk is
+  // `LOOP_BODY_DESCENT`, so a grandchild action still inline inside one of
+  // those bodies is not resolved here. That grandchild's own env resolves it
+  // when the grandchild is built. A handler this call does walk, and that the
+  // closure does not export, fails at establish.
   const actionResolver = await loadWorkflowActionHandlersFromClosure({
     packageDir: opts.env.closurePackageDir,
   });
@@ -934,7 +860,11 @@ export async function runWorkflowChild(
   // race to settle the same residual and the loser throws an uncaught
   // TransitionError into its fire-and-forget continuation. Each site
   // removes its entry when the run reaches terminal.
-  const runsInFlight = new Map<string, WorkflowRun>();
+  const runsInFlight = new Map<string, RuntimeWorkflowRun>();
+  const cancellationBarrier = createCancellationBarrier(
+    runtimeRepoStore,
+    upstreamSender,
+  );
   for (const run of discovered) {
     const env = buildRuntimeEnv({
       runId: run.runId,
@@ -954,6 +884,9 @@ export async function runWorkflowChild(
       warmCache,
       sourcesRef,
       credentialWiring,
+      ...(opts.mailboxCallBridge !== undefined
+        ? { mailboxCallBridge: opts.mailboxCallBridge }
+        : {}),
       onEvent: (event, childRunId) => {
         void eventSender.send(event, childRunId).catch((cause) => {
           logger.error`event-channel send failed during resume run ${run.runId}: ${String(cause)}`;
@@ -1062,6 +995,7 @@ export async function runWorkflowChild(
           drainController,
           triggeredRunIds,
           runsInFlight,
+          cancellationBarrier,
           warmCache,
           sourcesRef,
           credentialMaterialRef,
@@ -1074,6 +1008,9 @@ export async function runWorkflowChild(
             : {}),
           ...(opts.mailboxMutationBridge !== undefined
             ? { mailboxMutationBridge: opts.mailboxMutationBridge }
+            : {}),
+          ...(opts.mailboxCallBridge !== undefined
+            ? { mailboxCallBridge: opts.mailboxCallBridge }
             : {}),
           ...(mailboxWatchRegistry !== undefined
             ? { mailboxWatchRegistry }
@@ -1088,6 +1025,7 @@ export async function runWorkflowChild(
   };
 
   const cleanupControlLoop = async (): Promise<void> => {
+    cancellationBarrier.close("workflow-child control loop exited");
     // Any exit path -- clean (iterator end), dirty (thrown error),
     // shutdown (already cancelled, repeat is a no-op on an empty map)
     // -- cancels every still-pending substrate write so the runtime
@@ -1112,6 +1050,9 @@ export async function runWorkflowChild(
       opts.mailboxMutationBridge.cancelAll(
         "workflow-child control loop exited",
       );
+    }
+    if (opts.mailboxCallBridge !== undefined) {
+      opts.mailboxCallBridge.cancelAll("workflow-child control loop exited");
     }
     // Evict the warm-agent cache (design §3b) on every exit path:
     // graceful (shutdown frame -> iterator end), dirty (thrown error),
@@ -1171,7 +1112,8 @@ async function handleControlPayload(
     upstreamSender: ControlChannelSender;
     drainController: DrainController;
     triggeredRunIds: string[];
-    runsInFlight: Map<string, WorkflowRun>;
+    runsInFlight: Map<string, RuntimeWorkflowRun>;
+    cancellationBarrier: ReturnType<typeof createCancellationBarrier>;
     warmCache: WarmAgentCache | undefined;
     sourcesRef: SourcesSnapshotRef;
     credentialMaterialRef: CredentialMaterialRef;
@@ -1179,6 +1121,7 @@ async function handleControlPayload(
     substrateWriteBridge?: SubstrateWriteResponseSink;
     outboundMailBridge?: ChildOutboundMailBridge;
     mailboxMutationBridge?: ChildMailboxMutationBridge;
+    mailboxCallBridge?: ChildMailboxCallBridge;
     mailboxWatchRegistry?: MailboxWatchRegistry;
   },
 ): Promise<boolean> {
@@ -1230,6 +1173,9 @@ async function handleControlPayload(
         warmCache: ctx.warmCache,
         sourcesRef: ctx.sourcesRef,
         credentialWiring: ctx.credentialWiring,
+        ...(ctx.mailboxCallBridge !== undefined
+          ? { mailboxCallBridge: ctx.mailboxCallBridge }
+          : {}),
         onEvent: (event, childRunId) => {
           void ctx.eventSender.send(event, childRunId).catch((cause) => {
             logger.error`event-channel send failed during run ${payload.data.runId}: ${String(cause)}`;
@@ -1237,7 +1183,7 @@ async function handleControlPayload(
         },
         upstreamSender: ctx.upstreamSender,
       });
-      const handle: WorkflowRun = runtimeRun(ctx.definition, env, {
+      const handle = runtimeRun(ctx.definition, env, {
         runId: payload.data.runId,
         consumedMessageId: payload.data.messageId,
         triggerPayload,
@@ -1353,6 +1299,7 @@ async function handleControlPayload(
       // delivery.
       const transientSignalChannel = createWorkflowHostSignalChannel({
         repoStore: ctx.bindings.substrate,
+        runtimeStore: ctx.runtimeRepoStore,
         principal: ctx.bindings.principal,
         repoId: ctx.bindings.workflowRunRepoId,
         ref: ctx.bindings.workflowRunRef,
@@ -1367,6 +1314,9 @@ async function handleControlPayload(
             payload.data.signalName,
             payload.data.payload,
             payload.data.signalId,
+            ...(payload.data.correlationId !== undefined
+              ? [payload.data.correlationId]
+              : []),
           );
         } catch (cause) {
           const reason = cause instanceof Error ? cause.message : String(cause);
@@ -1376,6 +1326,27 @@ async function handleControlPayload(
         }
       })();
       return false;
+    }
+    case "cancel.prepare": {
+      // Preparation flushes through the same IPC stream; keep consuming replies.
+      void ctx.cancellationBarrier
+        .prepare(payload.data)
+        .then(() =>
+          ctx.runsInFlight
+            .get(payload.data.runId)
+            ?.applyCommittedCancellation(),
+        )
+        .catch((error: unknown) => {
+          logger.error`Failed to apply cancellation for ${payload.data.runId}: ${error instanceof Error ? error.message : String(error)}`;
+        });
+      return false;
+    }
+    case "cancel.committed": {
+      ctx.cancellationBarrier.complete(payload.data);
+      return false;
+    }
+    case "cancel.prepared": {
+      throw new Error("workflow-child received an upstream cancellation reply");
     }
     case "drain": {
       // The supervisor's `drain` control mail flips the controller's
@@ -1550,6 +1521,26 @@ async function handleControlPayload(
       ctx.mailboxMutationBridge.handleResult(payload.data);
       return false;
     }
+    case "mailbox.call.request": {
+      // `mailbox.call.request` is the child->supervisor mailbox-call frame;
+      // receiving one on the child's downstream side is a protocol violation
+      // in the same shape as a downstream `mailbox.mutate.request`.
+      throw new Error(
+        "workflow-child received a `mailbox.call.request` frame on its inbound control channel; this is a child-only upstream payload",
+      );
+    }
+    case "mailbox.call.response": {
+      // Route the supervisor's answer to the mailbox-call bridge if one is
+      // wired. A response that lands without an active bridge means a stale
+      // frame for which no awaiter exists; log and drop rather than throwing
+      // so the runtime keeps progressing.
+      if (ctx.mailboxCallBridge === undefined) {
+        logger.warn`workflow-child mailbox.call.response received without a bridge wired; requestId=${payload.data.requestId} dropped`;
+        return false;
+      }
+      ctx.mailboxCallBridge.handleResult(payload.data);
+      return false;
+    }
     case "substrate.merge.request": {
       // Route the request to the substrate-write bridge if one is
       // wired. A request that lands without an active bridge means a
@@ -1625,27 +1616,43 @@ async function handleControlPayload(
  */
 
 /**
- * Force-resolve every `action` handler ref reachable from these definitions
- * against the resolver, so a missing action handler surfaces at establish
- * rather than when the action is first invoked mid-run. Recurses into loop
- * bodies (an action body is the common loop shape). The caller passes the
- * lifted onTrigger/childWorkflow bodies separately, as with loop fns.
+ * Force-resolve every `action` handler ref these definitions run against the
+ * resolver, so a missing action handler surfaces before the run starts rather
+ * than when the action is first invoked. The walk is `LOOP_BODY_DESCENT`: a
+ * loop body shares this env, and an inline onTrigger or childWorkflow body
+ * does not. The establish caller passes those lifted bodies as their own
+ * definitions; a spawned body passes only the definition it is about to run,
+ * and a grandchild action is resolved when that grandchild builds its own env.
  */
-function eagerlyResolveActionHandlers(
+export function eagerlyResolveActionHandlers(
   definitions: readonly WorkflowDefinition[],
   actionResolver: (ref: string) => ActionHandler,
 ): void {
-  const visit = (def: WorkflowDefinition): void => {
-    for (const step of Object.values(def.steps)) {
-      if (step.kind === "action") {
-        // Throws (fail closed) if the handler names no export, or a non-function.
-        actionResolver(step.handler);
-      } else if (step.kind === "loop") {
-        visit(step.body);
-      }
-    }
+  for (const definition of definitions) {
+    walkWorkflowSteps({
+      definition,
+      descent: LOOP_BODY_DESCENT,
+      context: "eagerlyResolveActionHandlers: ",
+      visit: ({ step }) => {
+        if (step.kind === "action") {
+          // Throws (fail closed) if the handler names no export, or a non-function.
+          actionResolver(step.handler);
+        }
+      },
+    });
+  }
+}
+
+function unwiredMailPartReader(): MailPartReader {
+  return {
+    read(ref) {
+      return Promise.reject(
+        new Error(
+          `mail part reader: this child has no mailbox call bridge; cannot read ${ref}`,
+        ),
+      );
+    },
   };
-  for (const def of definitions) visit(def);
 }
 
 function buildRuntimeEnv(args: {
@@ -1666,11 +1673,13 @@ function buildRuntimeEnv(args: {
   warmCache: WarmAgentCache | undefined;
   sourcesRef: SourcesSnapshotRef;
   credentialWiring: CredentialWiring;
+  mailboxCallBridge?: ChildMailboxCallBridge;
   onEvent: (event: EventPayload, childRunId?: string) => void;
   upstreamSender: ControlChannelSender;
 }): WorkflowRuntimeEnv {
   const signalChannel = createWorkflowHostSignalChannel({
     repoStore: args.bindings.substrate,
+    runtimeStore: args.runtimeRepoStore,
     principal: args.bindings.principal,
     repoId: args.bindings.workflowRunRepoId,
     ref: args.bindings.workflowRunRef,
@@ -1686,17 +1695,16 @@ function buildRuntimeEnv(args: {
     runId: args.runId,
     ref: args.bindings.workflowRunRef,
   });
-  // Reader for inbound-mail parts, a sibling of `blobs` over the same
-  // workflow-run repo. The step invoker resolves a `Mail` part's `ref` to its
-  // bytes through it at `agent.send` time; the supervisor committed the bytes
-  // before the trigger. Deployment-scoped (the ref encodes the owning run), so
-  // one reader resolves any run's parts.
-  const mailPartReader = createMailPartReader({
-    substrate: args.bindings.substrate,
-    repoId: args.bindings.workflowRunRepoId,
-    principal: args.bindings.principal,
-    ref: args.bindings.workflowRunRef,
-  });
+  // The supervisor committed each part before the trigger. A step asks it
+  // for the bytes. A child with no call bridge cannot read them; inlined
+  // text never asks.
+  const mailPartReader =
+    args.mailboxCallBridge === undefined
+      ? unwiredMailPartReader()
+      : createSupervisorBackedMailPartReader({
+          callBridge: args.mailboxCallBridge,
+          runId: args.runId,
+        });
   // Wrap the step invoker so every `InferenceEvent` the harness emits
   // funnels through the per-run `onEvent` closure, which forwards
   // the event up the HMAC-authenticated event channel. The wrap is
@@ -1730,7 +1738,9 @@ function buildRuntimeEnv(args: {
       : (spawnInput) =>
           hostSuspendable(
             spawnInput,
-            args.onEvent,
+            (event) => {
+              args.onEvent(event, spawnInput.childRunId);
+            },
             args.credentialWiring.materialRef,
           );
   // Same adaptation for the terminal childWorkflow seam: inject THIS run's event
@@ -1827,6 +1837,7 @@ function buildRuntimeEnv(args: {
       });
       const childSignalChannel = createWorkflowHostSignalChannel({
         repoStore: args.bindings.substrate,
+        runtimeStore: args.runtimeRepoStore,
         principal: args.bindings.principal,
         repoId: args.bindings.workflowRunRepoId,
         ref: args.bindings.workflowRunRef,
@@ -1870,6 +1881,7 @@ function buildRuntimeEnv(args: {
     args.authorize,
     effects,
     args.actionResolver,
+    args.bindings.actionCredentials(args.credentialWiring),
   );
   return env;
 }

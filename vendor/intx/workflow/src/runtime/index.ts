@@ -1,4 +1,5 @@
 export type {
+  ActionCredentialsFactory,
   ActionInvokeRequest,
   ActionInvokeResult,
   ActionInvoker,
@@ -8,10 +9,12 @@ export type {
   LoopFn,
   LoopFnRegistry,
   ParkedApprovalOp,
+  PerformScope,
   PrimitiveKind,
   ReadParkedApprovalOps,
   RepoStore,
   RunResult,
+  RuntimeWorkflowRun,
   Scheduler,
   SignalChannel,
   SpawnChildWorkflow,
@@ -32,8 +35,27 @@ export {
 } from "./effect-context";
 
 export { runtimeRun, type RuntimeRunOptions } from "./run";
+export {
+  bodyParkedSignals,
+  loopIterationCursor,
+  loopOccurrenceReattach,
+  onTriggerOccurrenceReattach,
+  type LoopIterationCursor,
+  type OccurrenceReattach,
+} from "./run";
+export {
+  bufferedEvents,
+  commitBuffered,
+  dropChain,
+  reloadState,
+  whenRunNextBuffers,
+  withRunCommitBarrier,
+} from "./commit-chain";
 
-export { createSuspendableChildHandle } from "./suspendable-child-handle";
+export {
+  createSuspendableChildHandle,
+  createTerminalChildHandle,
+} from "./suspendable-child-handle";
 
 export { createLoopIterationHandle } from "./loop-iteration-handle";
 
@@ -52,9 +74,20 @@ export {
   type DrainController,
 } from "./drain";
 
-export { nextSchedulable, isRunDone, hasFailedStep } from "./dag";
+export {
+  nextSchedulable,
+  isRunDone,
+  hasFailedStep,
+  resumeResidualOf,
+} from "./dag";
+export type { ResumeResidual, StepKindLookup } from "./dag";
 
-export { scopedStepId, baseStepId, loopBodyRunId } from "./step-scope";
+export {
+  scopedStepId,
+  baseStepId,
+  loopBodyRunId,
+  sectionBodyRunId,
+} from "./step-scope";
 
 export {
   evaluate as evaluateSelector,

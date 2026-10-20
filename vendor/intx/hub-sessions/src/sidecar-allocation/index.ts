@@ -20,8 +20,18 @@ export {
   type EnsureSidecarRequest,
   type SidecarCredentialIdentity,
   type SidecarCredentialResolver,
+  type SidecarCredentials,
+  type SidecarIdentityUse,
   type SidecarProvisioner,
+  type SidecarProvisionerHost,
+  type SidecarStoppedOptions,
+  type SidecarStoppedResult,
 } from "./contracts";
+export {
+  attachSidecarProvisioners,
+  type AttachSidecarProvisionersDeps,
+} from "./provisioner-host";
+export { adapterManifestDigest } from "./adapter-manifest-digest";
 export {
   createSidecarAllocationReconciler,
   type SidecarAllocationReconciler,
