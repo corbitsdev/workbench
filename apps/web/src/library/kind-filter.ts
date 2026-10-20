@@ -1,7 +1,7 @@
 // Names here keep the "library" vocabulary (the internal name for the
 // artifact store), but `LIBRARY_PATH` tracks the app's real mount point.
 
-import { decodedOrNull } from "@corbits/url-path";
+import { decodedOrNull } from "@/lib/url-path";
 
 import { titleExtension } from "./title-extension";
 import type { ArtifactSummary } from "./artifact-summary";

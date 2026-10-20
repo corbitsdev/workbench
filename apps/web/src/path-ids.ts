@@ -2,7 +2,7 @@
 // out to their own top-level rail destinations (`/agents/:id`, `/skills/:id`).
 
 import { isValidSlug, type Slug } from "@/lib/slug";
-import { decodedOrNull } from "@corbits/url-path";
+import { decodedOrNull } from "@/lib/url-path";
 
 export const SETTINGS_PATH_PREFIX = "/settings";
 export const WORKERS_PATH_PREFIX = "/workers";

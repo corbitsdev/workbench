@@ -8,16 +8,10 @@
       "path": "./apps/sidecar/tsconfig.src.json"
     },
     {
-      "path": "./packages/approvals/tsconfig.src.json"
-    },
-    {
       "path": "./packages/deferred-tools/tsconfig.src.json"
     },
     {
       "path": "./packages/error-sink/tsconfig.src.json"
-    },
-    {
-      "path": "./packages/url-path/tsconfig.src.json"
     },
     {
       "path": "./packages/workflows/tsconfig.src.json"

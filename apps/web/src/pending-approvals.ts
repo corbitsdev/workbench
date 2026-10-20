@@ -6,8 +6,8 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { type } from "arktype";
 
 import type { APIQuery } from "@/lib/api-query";
-import { argumentsSummaryFor, headlineFor, toolNameFor } from "@corbits/approvals/headline";
 
+import { argumentsSummaryFor, headlineFor, toolNameFor } from "./chat/approval-headline";
 import { listChatAgents } from "./chat/threads-api";
 import { TenantApprovalsSchema, useAPIQuery } from "./api";
 import { useBench } from "./bench-context";
