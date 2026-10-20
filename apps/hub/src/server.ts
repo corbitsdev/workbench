@@ -117,6 +117,7 @@ import { artifactMatchesLibraryKindSegment, LIBRARY_KIND_SEGMENTS } from "./libr
 import { workflowRun } from "@intx/db/schema";
 import path from "node:path";
 import { migrateHub } from "./migrate";
+import { createWorkflowRunStreamRoutes } from "./run-stream";
 import { createWorkflowRunAuthenticator } from "./workflow-run-authenticator";
 
 // The same condition registry `mountHubRoutes` builds by default when no
@@ -511,6 +512,19 @@ export async function createHubServer({
       ),
     });
     app.route(TENANT_PREFIX, artifactsApi);
+  }
+  {
+    app.route(
+      TENANT_PREFIX,
+      createWorkflowRunStreamRoutes({
+        db,
+        sidecarRouter,
+        requireGrant: createRequireGrant({
+          grantStore,
+          conditionRegistry: grantConditionRegistry,
+        }),
+      }),
+    );
   }
   {
     // Minting an agent token is minting a credential, so it is gated by the
