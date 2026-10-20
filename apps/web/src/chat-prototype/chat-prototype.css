@@ -1,0 +1,3691 @@
+/* Chat prototype. Semantic tokens only (theme-tokens.css), so every
+   theme works without a rule here. Every class is `cp-` prefixed so nothing
+   leaks into the live chat; the composer reuses the live `chat-composer-*`
+   classes untouched and only adds the orange focus ring. */
+
+.cp-page {
+  --cp-column-max: 1200px;
+  --cp-measure: 76ch;
+  --cp-card-max: 640px;
+  /* Side padding of the column and the composer dock, so the two stay
+     aligned; the conversation map widens it to sit in its own lane. */
+  --cp-gutter: 32px;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-body);
+}
+
+.cp-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.cp-versions {
+  display: inline-flex;
+  padding: 2px;
+  font-size: 12px;
+  border-radius: var(--r-md);
+  background: var(--surface-sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.cp-versions button {
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+.cp-versions button[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--raised);
+}
+
+.cp-layout {
+  position: relative;
+  /* Lets the panel cap itself against the layout's own width (cqw). */
+  container-type: inline-size;
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.cp-surface {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.cp-conversation {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+/* The conversation holds the reader's place itself (pinned to the message
+   being read, see Conversation): the browser's own anchoring would pick
+   the message's wrapper, whose day header comes and goes as history loads,
+   and fight it. */
+.cp-scroll {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+}
+.cp-column {
+  max-width: var(--cp-column-max);
+  margin: 0 auto;
+  padding: 72px var(--cp-gutter) 16px;
+}
+
+/* The top of a windowed history while more is on its way. */
+.cp-earlier {
+  padding: 8px 0 16px;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+/* A rail in the gutter beside the message column, one tick per turn.
+   Faint by default, darker for turns on screen, orange for the one being
+   read. Pointing at the rail fans the on-screen ticks out; a tick shows
+   its turn in a card. */
+.cp-surface:has(.cp-map) {
+  --cp-gutter: 72px;
+}
+.cp-map {
+  position: absolute;
+  top: 72px;
+  bottom: 24px;
+  /* In the column's widened gutter (centered, capped): 24px of rail with
+     air on both sides, so it never crowds the avatars. */
+  left: max(20px, calc((100% - var(--cp-column-max)) / 2 + 20px));
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+.cp-map-rail {
+  display: flex;
+  width: 24px;
+  max-height: 100%;
+  flex-direction: column;
+  justify-content: center;
+  padding: 8px 0;
+  pointer-events: auto;
+}
+.cp-map-tick {
+  display: flex;
+  /* A 14px hit area per turn; a very long thread squeezes them, but never
+     below what a pointer can still land on. */
+  min-height: 4px;
+  flex: 0 1 14px;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  outline: none;
+}
+/* Ticks resize by transform only, so pointing at the rail never lays
+   anything out: the span is drawn at full length and scaled down. */
+.cp-map-tick span {
+  width: 24px;
+  height: 2px;
+  border-radius: var(--r-full);
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+  transform: scaleX(0.5);
+  transform-origin: left center;
+  transition:
+    transform 140ms var(--ease-out),
+    background-color 140ms var(--ease-out);
+}
+.cp-map-tick[data-visible="true"] span {
+  background: color-mix(in srgb, var(--ink) 40%, transparent);
+}
+.cp-map-tick[aria-current="true"] span {
+  background: var(--action);
+  transform: scale(0.667, 1.5);
+}
+.cp-map-rail:hover .cp-map-tick[data-visible="true"] span,
+.cp-map-rail:focus-within .cp-map-tick[data-visible="true"] span {
+  transform: scaleX(0.75);
+}
+.cp-map-rail:hover .cp-map-tick[aria-current="true"] span,
+.cp-map-rail:focus-within .cp-map-tick[aria-current="true"] span,
+.cp-map-tick[aria-current="true"]:hover span {
+  transform: scale(1, 1.5);
+}
+.cp-map-tick:not([aria-current="true"]):hover span,
+.cp-map-tick:not([aria-current="true"]):focus-visible span {
+  background: color-mix(in srgb, var(--ink) 70%, transparent);
+  transform: scaleX(1);
+}
+.cp-map-tick:focus-visible {
+  border-radius: var(--r-sm);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--action) 45%, transparent);
+}
+.cp-map-preview {
+  position: absolute;
+  left: 36px;
+  width: 240px;
+  padding: 12px 14px;
+  border-radius: var(--r-xl);
+  background: var(--surface);
+  box-shadow: var(--floating);
+  pointer-events: none;
+  transform: translateY(-50%);
+  animation: cp-map-in 120ms var(--ease-out);
+}
+.cp-map-preview b {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.cp-map-preview p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 4px 0 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+@keyframes cp-map-in {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.97);
+  }
+}
+
+.cp-jump {
+  --cp-rise-x: -50%;
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  z-index: 5;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-full);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 18px;
+  box-shadow: var(--floating);
+  transform: translateX(-50%);
+  cursor: pointer;
+  animation: cp-rise 160ms var(--ease-out);
+  transition: box-shadow 150ms var(--ease-out);
+}
+.cp-jump:hover {
+  box-shadow:
+    0 0 0 1px var(--action),
+    var(--floating);
+}
+.cp-jump:focus-visible {
+  outline: 2px solid var(--action);
+  outline-offset: 2px;
+}
+/* Arrow and dots share one cell; while the agent works the dots show,
+   and hovering brings the arrow back so the click target stays legible. */
+.cp-jump > * {
+  grid-area: 1 / 1;
+  transition: opacity 120ms var(--ease-out);
+}
+.cp-jump[data-working="true"] .cp-jump-arrow {
+  opacity: 0;
+}
+.cp-jump[data-working="true"]:hover .cp-jump-arrow,
+.cp-jump[data-working="true"]:focus-visible .cp-jump-arrow {
+  opacity: 1;
+}
+.cp-jump[data-working="true"]:hover .cp-dots,
+.cp-jump[data-working="true"]:focus-visible .cp-dots {
+  opacity: 0;
+}
+.cp-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+.cp-dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--ink-2);
+  animation: cp-dot 1.2s var(--ease-in-out) infinite;
+}
+.cp-dots span:nth-child(2) {
+  animation-delay: 150ms;
+}
+.cp-dots span:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+.cp-day {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0 8px;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 500;
+}
+.cp-day::before,
+.cp-day::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.cp-system {
+  margin: 8px 0;
+  text-align: center;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+
+/* Every message gets the same rhythm: the bottom padding is the gap to the
+   next one, and an agent's action row lives inside it rather than adding
+   to it, so spacing stays even whether the actions show or not. */
+.cp-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  padding: 6px 0 26px;
+}
+/* No avatar column: others' messages run the full width of the column. */
+.cp-row[data-avatar="off"] {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+.cp-row--own {
+  display: flex;
+  justify-content: flex-end;
+  padding-right: 16px;
+}
+.cp-main {
+  min-width: 0;
+}
+.cp-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 22px;
+  font-size: 13px;
+}
+.cp-head b {
+  font-weight: 600;
+}
+.cp-role,
+.cp-head time {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.cp-pinned {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--ink-3);
+  font-size: 11.5px;
+}
+.cp-pinned svg.lucide {
+  width: 11px;
+  height: 11px;
+}
+
+.cp-parts {
+  display: flex;
+  max-width: var(--cp-measure);
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.cp-own {
+  display: flex;
+  max-width: min(var(--cp-measure), 80%);
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.cp-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 18px 18px 6px 18px;
+  background: var(--surface-sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.cp-row--own[data-status="sending"] .cp-bubble {
+  opacity: 0.7;
+}
+.cp-sending,
+.cp-failed {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.cp-failed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--danger);
+}
+.cp-failed button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* With no mark beside them, the words start where message text does. */
+.cp-page .cp-working {
+  padding-left: 44px;
+}
+.cp-column:has(.cp-row[data-avatar="off"]) .cp-working {
+  padding-left: 0;
+}
+/* The message footer: reactions, replies, actions on one line inside the
+   row's bottom spacing, starting at the text column. Whatever comes first
+   is pulled back by its own inset so its content lines up with the text. */
+.cp-footer {
+  position: absolute;
+  right: 0;
+  bottom: 2px;
+  left: 44px;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+.cp-row[data-avatar="off"] .cp-footer {
+  left: 0;
+}
+.cp-row--own .cp-footer {
+  right: 16px;
+  left: auto;
+  justify-content: flex-end;
+}
+.cp-footer > .cp-actions:first-child {
+  margin-left: -4px;
+}
+.cp-footer > .cp-thread-link:first-child {
+  margin-left: -8px;
+}
+/* Response actions: 20px buttons, 2px apart, 12px hairline glyphs in a
+   muted grey that darkens on hover. */
+.cp-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 120ms var(--ease-out);
+}
+.cp-row:hover .cp-actions,
+.cp-row:focus-within .cp-actions,
+.cp-row[data-latest="true"] .cp-actions,
+.cp-actions:has([data-state="open"]),
+.cp-actions:has([aria-pressed="true"]) {
+  opacity: 1;
+}
+.cp-actions button {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  /* A resting grey drawn from the theme so dark mode follows. */
+  color: color-mix(in srgb, var(--ink-3) 62%, var(--surface));
+  cursor: pointer;
+}
+.cp-actions button:hover,
+.cp-actions button[data-state="open"] {
+  background: var(--hover);
+  color: var(--ink);
+}
+.cp-actions button[aria-pressed="true"] {
+  background: var(--press);
+  color: var(--ink);
+}
+.cp-actions button[aria-pressed="true"][data-vote="up"] {
+  color: var(--success);
+}
+.cp-actions button[aria-pressed="true"][data-vote="down"] {
+  color: var(--danger);
+}
+.cp-actions button:focus-visible {
+  outline: 1.5px solid var(--action);
+  outline-offset: 0;
+}
+.cp-actions svg.lucide {
+  width: 12px;
+  height: 12px;
+}
+
+/* CSS-only tooltips: small, translucent, blurred. */
+.cp-tip {
+  position: relative;
+}
+.cp-tip[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  z-index: 6;
+  padding: 4px 5px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--primary) 78%, transparent);
+  backdrop-filter: blur(6px);
+  color: var(--primary-ink);
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  filter: blur(2px);
+  transform: translate(-50%, 1px);
+  transition:
+    opacity 50ms ease,
+    transform 50ms ease,
+    filter 50ms ease;
+}
+.cp-tip:hover::after,
+.cp-tip:focus-visible::after {
+  opacity: 1;
+  filter: none;
+  transform: translate(-50%, 0);
+  transition:
+    opacity 150ms ease 80ms,
+    transform 150ms ease 80ms,
+    filter 150ms ease 80ms;
+}
+/* An open menu replaces its trigger's tooltip outright. */
+.cp-tip[data-state="open"]::after {
+  display: none;
+}
+.cp-panel-head .cp-tip[data-tip]::after {
+  top: calc(100% + 6px);
+  bottom: auto;
+}
+
+/* Menus from react-ui, tuned for the toolbar. */
+.cp-emoji-menu {
+  display: flex;
+  min-width: 0;
+  gap: 0;
+  padding: 2px;
+  border-radius: 12px;
+}
+.cp-emoji-menu [role="menuitem"] {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 8px;
+  font-size: 16px;
+  line-height: 1;
+}
+.cp-more-menu [role="menuitem"] {
+  gap: 8px;
+}
+.cp-more-menu svg.lucide {
+  color: var(--ink-3);
+}
+
+.cp-reactions {
+  display: flex;
+  gap: 4px;
+}
+.cp-reactions button {
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px 0 6px;
+  border: 0;
+  border-radius: var(--r-full);
+  background: var(--surface-sunk);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: box-shadow 120ms var(--ease-out);
+}
+.cp-reactions button:hover {
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+/* Yours: a hairline, not a fill. */
+.cp-reactions button[aria-pressed="true"] {
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: var(--ink);
+}
+.cp-reaction-count {
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cp-thread-link {
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-full);
+  background: none;
+  color: var(--ink-3);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cp-thread-link b {
+  color: var(--info);
+  font-weight: 600;
+}
+.cp-thread-link:hover,
+.cp-thread-link[data-active="true"] {
+  background: var(--hover);
+}
+.cp-thread-view {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  color: var(--ink-2);
+}
+.cp-thread-link:hover .cp-thread-last {
+  display: none;
+}
+.cp-thread-link:hover .cp-thread-view {
+  display: inline-flex;
+}
+
+.cp-text {
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+/* The caret rides the last block Streamdown has drawn so far. */
+.cp-text--streaming .cp-md > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.18em;
+  background: var(--action);
+}
+
+/* Streamdown ships Tailwind classes this app doesn't compile; it also tags
+   every element with `data-streamdown`, and these rules style those hooks
+   with our tokens. Spacing is one rhythm: blocks sit 0.65em apart. */
+.cp-md > * {
+  margin: 0;
+}
+.cp-md > * + * {
+  margin-top: 0.65em;
+}
+.cp-md [data-streamdown^="heading-"] {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.cp-md [data-streamdown="heading-1"] {
+  font-size: 1.2em;
+}
+.cp-md [data-streamdown="heading-2"] {
+  font-size: 1.1em;
+}
+.cp-md [data-streamdown="heading-3"],
+.cp-md [data-streamdown="heading-4"] {
+  font-size: 1em;
+}
+.cp-md > [data-streamdown^="heading-"]:not(:first-child) {
+  margin-top: 1.1em;
+}
+.cp-md [data-streamdown="unordered-list"],
+.cp-md [data-streamdown="ordered-list"] {
+  margin-block: 0;
+  padding-left: 1.3em;
+}
+.cp-md > [data-streamdown$="-list"] {
+  margin-top: 0.35em;
+}
+.cp-md [data-streamdown="unordered-list"] {
+  list-style: disc;
+}
+.cp-md [data-streamdown="ordered-list"] {
+  list-style: decimal;
+}
+.cp-md [data-streamdown="list-item"] {
+  padding: 2px 0;
+}
+.cp-md [data-streamdown="list-item"]::marker {
+  color: var(--ink-3);
+}
+.cp-md [data-streamdown="strong"] {
+  font-weight: 600;
+}
+.cp-md [data-streamdown="link"] {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--ink) 30%, transparent);
+  text-underline-offset: 2px;
+  transition: text-decoration-color 120ms var(--ease-out);
+}
+.cp-md [data-streamdown="link"]:hover {
+  text-decoration-color: currentColor;
+}
+.cp-md [data-streamdown="inline-code"] {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--hover);
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+.cp-md [data-streamdown="blockquote"] {
+  padding-left: 12px;
+  border-left: 2px solid var(--line-strong);
+  color: var(--ink-2);
+}
+.cp-md [data-streamdown="horizontal-rule"] {
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+/* Streamdown's wrappers carry utilities (border, p-2, gap-2, my-4,
+   bg-background) that the shared UI stylesheet happens to define. Our
+   cards draw their own frame and the block rhythm sets the margin, so
+   those are cleared here. */
+.cp-md [data-streamdown="code-block"],
+.cp-md [data-streamdown="table-wrapper"] {
+  display: block;
+  margin: 0.65em 0 0;
+  padding: 0;
+  border: 0;
+  gap: 0;
+}
+.cp-md > [data-streamdown="code-block"]:first-child,
+.cp-md > [data-streamdown="table-wrapper"]:first-child {
+  margin-top: 0;
+}
+
+/* Code: a sunk card, the language on a quiet header, copy at its right.
+   Streamdown defers code blocks with an inline `content-visibility`; their
+   real height then lands late and moves whatever follows. A windowed
+   conversation is small enough to lay out exactly, so they render eagerly. */
+.cp-md [data-streamdown="code-block"] {
+  content-visibility: visible !important;
+  position: relative;
+  overflow: hidden;
+  max-width: var(--cp-card-max);
+  border-radius: 12px;
+  background: var(--surface-sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.cp-md [data-streamdown="code-block-header"] {
+  display: flex;
+  height: 34px;
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  text-transform: lowercase;
+}
+.cp-md [data-streamdown="code-block"] > div:has(> [data-streamdown="code-block-actions"]) {
+  position: absolute;
+  top: 0;
+  right: 6px;
+  display: flex;
+  height: 34px;
+  align-items: center;
+}
+/* Some of Streamdown's utilities (border, bg-background, rounded-md) do
+   exist in the shared UI stylesheet; the card draws the frame, so the
+   body and the action strip inside it carry none. */
+.cp-md [data-streamdown="code-block-body"] {
+  overflow: auto;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.cp-md [data-streamdown="code-block-actions"] {
+  padding: 0;
+  border: 0;
+  background: none;
+  backdrop-filter: none;
+}
+.cp-md [data-streamdown="code-block-body"] pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.cp-md [data-streamdown="code-block-body"] code > span {
+  display: block;
+}
+
+/* Tables: hairline card, sunk header row, copy revealed on hover. */
+.cp-md [data-streamdown="table-wrapper"] {
+  position: relative;
+  max-width: var(--cp-card-max);
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.cp-md [data-streamdown="table-wrapper"] > div:first-child {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 120ms var(--ease-out);
+}
+.cp-md [data-streamdown="table-wrapper"]:hover > div:first-child,
+.cp-md [data-streamdown="table-wrapper"]:focus-within > div:first-child {
+  opacity: 1;
+}
+.cp-md [data-streamdown="table-wrapper"] > div:last-child {
+  overflow: auto;
+  border: 0;
+  border-radius: inherit;
+  background: var(--surface);
+}
+.cp-md [data-streamdown="table"] {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.cp-md [data-streamdown="table-header-cell"] {
+  padding: 8px 12px;
+  background: var(--surface-sunk);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+.cp-md [data-streamdown="table-cell"] {
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+}
+
+/* Streamdown's copy buttons: the action-row look. */
+.cp-md [data-streamdown="code-block-copy-button"],
+.cp-md [data-streamdown="table-wrapper"] button {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition:
+    background-color 120ms var(--ease-out),
+    color 120ms var(--ease-out);
+}
+.cp-md [data-streamdown="table-wrapper"] button {
+  background: var(--surface);
+  box-shadow: var(--raised);
+}
+.cp-md [data-streamdown="code-block-copy-button"]:hover,
+.cp-md [data-streamdown="table-wrapper"] button:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.cp-md [data-streamdown="code-block-copy-button"] svg,
+.cp-md [data-streamdown="table-wrapper"] button svg {
+  width: 14px;
+  height: 14px;
+}
+.cp-md [data-streamdown="image"] {
+  max-width: 100%;
+  border-radius: 10px;
+}
+
+.cp-fold summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: 13px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.cp-fold summary::-webkit-details-marker {
+  display: none;
+}
+.cp-fold summary:hover {
+  color: var(--ink);
+}
+.cp-fold-caret {
+  transition: transform 160ms var(--ease-out);
+}
+.cp-fold[open] > summary .cp-fold-caret {
+  transform: rotate(180deg);
+}
+/* A very long answer: folded, its opening fades out above "Show full
+   answer"; open, "Collapse" rides the bottom of the view while it's read. */
+.cp-text--long[data-folded] .cp-md {
+  overflow: hidden;
+  max-height: 420px;
+  mask-image: linear-gradient(to bottom, #000 70%, transparent);
+}
+.cp-text-fold {
+  position: sticky;
+  bottom: 12px;
+  z-index: 1;
+  display: flex;
+  margin-top: 8px;
+}
+.cp-text--long[data-folded] .cp-text-fold {
+  position: static;
+}
+.cp-text-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 12px 0 10px;
+  border: 0;
+  border-radius: var(--r-full);
+  background: var(--surface);
+  box-shadow: var(--raised);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color 120ms var(--ease-out),
+    color 120ms var(--ease-out);
+}
+.cp-text-toggle:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.cp-text-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--action) 45%, transparent);
+  outline-offset: 2px;
+}
+.cp-text-toggle svg.lucide {
+  width: 14px;
+  height: 14px;
+}
+
+/* Placeholders hold each image's exact shape while it's made, so nothing
+   moves when it lands; the picture blurs in rather than popping. */
+.cp-gen {
+  display: flex;
+  max-width: var(--cp-card-max);
+  flex-direction: column;
+  gap: 8px;
+}
+.cp-gen-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+.cp-gen:not([data-count="1"]) .cp-gen-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.cp-gen-tile {
+  position: relative;
+  margin: 0;
+}
+.cp-gen-open,
+.cp-gen-pending {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: var(--surface-sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.cp-gen-open {
+  cursor: zoom-in;
+}
+.cp-gen-open:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--action) 45%, transparent);
+  outline-offset: 2px;
+}
+.cp-gen-open img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  filter: blur(14px);
+  transform: scale(1.03);
+  transition:
+    opacity 360ms var(--ease-out),
+    filter 480ms var(--ease-out),
+    transform 480ms var(--ease-out);
+}
+.cp-gen-tile[data-loaded] .cp-gen-open img {
+  opacity: 1;
+  filter: none;
+  transform: none;
+}
+/* While generating: a slow drift of warm light, and the size it will be. */
+.cp-gen-glow {
+  position: absolute;
+  inset: -40%;
+  background:
+    radial-gradient(
+      circle at 30% 40%,
+      color-mix(in srgb, var(--action) 28%, transparent),
+      transparent 50%
+    ),
+    radial-gradient(
+      circle at 70% 65%,
+      color-mix(in srgb, var(--info) 24%, transparent),
+      transparent 50%
+    );
+  filter: blur(24px);
+  animation: cp-gen-drift 5s ease-in-out infinite alternate;
+}
+@keyframes cp-gen-drift {
+  to {
+    transform: translate(12%, -8%) rotate(18deg);
+  }
+}
+.cp-gen-size {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 7px;
+  border-radius: var(--r-full);
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+/* Download, Copy, Open: on hover or focus, over the image's corner. */
+.cp-gen-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 120ms var(--ease-out);
+}
+.cp-gen-tile:hover .cp-gen-actions,
+.cp-gen-tile:focus-within .cp-gen-actions {
+  opacity: 1;
+}
+@media (hover: none) {
+  .cp-gen-actions {
+    opacity: 1;
+  }
+}
+.cp-gen-action {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-full);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: var(--raised);
+  color: var(--ink);
+  font-size: 14px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+.cp-gen-action:hover {
+  background: var(--surface);
+}
+.cp-gen-action:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--action) 45%, transparent);
+  outline-offset: 1px;
+}
+.cp-gen-caption {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.cp-gen-model::before {
+  content: " · ";
+}
+.cp-gen-error {
+  display: flex;
+  max-width: var(--cp-card-max);
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.cp-gen-error > svg.lucide {
+  color: var(--danger);
+}
+.cp-gen-error .cp-btn {
+  margin-left: auto;
+}
+
+.cp-activity-head {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+.cp-activity-head:hover {
+  color: var(--ink);
+}
+.cp-activity-head:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid color-mix(in srgb, var(--action) 45%, transparent);
+  outline-offset: 2px;
+}
+.cp-activity-head[aria-expanded="true"] .cp-fold-caret {
+  transform: rotate(180deg);
+}
+.cp-activity-count {
+  color: var(--ink-3);
+}
+/* The live window: a few lines, newest at the bottom, older fading out at
+   the top. Fixed height, so streaming never moves the page. */
+.cp-activity-peek {
+  margin: 6px 0 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.cp-activity-thought {
+  display: flex;
+  overflow: hidden;
+  height: calc(1.5em * 3);
+  flex-direction: column;
+  justify-content: flex-end;
+  mask-image: linear-gradient(to bottom, transparent, #000 60%);
+}
+.cp-activity-thought p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.cp-activity-running {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+}
+.cp-activity-running li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cp-activity-running svg.lucide {
+  width: 12px;
+  height: 12px;
+}
+.cp-activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+  list-style: none;
+}
+.cp-activity-more {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.cp-activity-more:hover {
+  color: var(--ink);
+}
+/* A thought: one line until opened; opened, a capped box that scrolls. */
+.cp-thought-head {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.cp-thought-head:hover {
+  color: var(--ink-2);
+}
+.cp-thought-head svg.lucide {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.cp-thought-label {
+  flex: none;
+  color: var(--ink-2);
+}
+.cp-thought-preview {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-thought-body {
+  overflow: auto;
+  max-height: 320px;
+  margin: 6px 0 0 20px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-sunk);
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+/* Calls that ran together: one row, the calls indented beneath. */
+.cp-batch-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.cp-batch-head svg.lucide {
+  width: 14px;
+  height: 14px;
+}
+.cp-batch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 0 6px;
+  padding-left: 12px;
+  border-left: 1px dashed var(--line-strong);
+  list-style: none;
+}
+
+.cp-steps-failed {
+  color: var(--danger);
+}
+.cp-step {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 8px;
+  font-size: 13px;
+}
+.cp-step svg.lucide {
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+}
+.cp-step code,
+.cp-approval code,
+.cp-approval-resolved code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+.cp-step-detail {
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+.cp-step-done {
+  color: var(--success);
+}
+.cp-step-error {
+  color: var(--danger);
+}
+
+.cp-card {
+  max-width: var(--cp-card-max);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--raised);
+}
+
+.cp-approval {
+  padding: 14px 16px;
+  /* The one attention moment in view: an orange ring on the decision. */
+  box-shadow:
+    0 0 0 1.5px var(--action),
+    var(--raised);
+}
+.cp-approval-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.cp-approval-head code {
+  margin-left: auto;
+}
+.cp-approval-summary {
+  margin: 10px 0 2px;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.cp-approval-scope {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+.cp-approval-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
+}
+.cp-btn {
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cp-btn:hover {
+  background: var(--hover);
+}
+.cp-btn--primary {
+  background: var(--primary);
+  box-shadow: none;
+  color: var(--primary-ink);
+}
+.cp-btn--primary:hover {
+  background: var(--primary-hover);
+}
+.cp-btn--deny {
+  margin-left: auto;
+  background: none;
+  box-shadow: none;
+  color: var(--danger);
+}
+.cp-approval-resolved {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.cp-approval-resolved svg.lucide {
+  color: var(--success);
+}
+.cp-approval-resolved[data-decision="deny"] svg.lucide {
+  color: var(--danger);
+}
+
+/* Files in a message, as thumbnail tiles: a person's ride above their
+   bubble, right-aligned; an agent's sit in line with its answer. */
+.cp-msg-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cp-own .cp-msg-files {
+  justify-content: flex-end;
+}
+.cp-tile-file {
+  position: relative;
+  display: flex;
+  width: 120px;
+  height: 120px;
+  flex: none;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  transition: box-shadow 120ms var(--ease-out);
+}
+button.cp-tile-file {
+  cursor: pointer;
+}
+button.cp-tile-file[data-kind="image"],
+button.cp-tile-file[data-kind="video"] {
+  cursor: zoom-in;
+}
+button.cp-tile-file:hover {
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.cp-tile-file:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--action) 45%, transparent);
+  outline-offset: 2px;
+}
+.cp-tile-file > img,
+.cp-tile-file > video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
+  background: var(--surface-sunk);
+}
+/* Pictures keep their shape: one height, as wide as they need up to
+   twice that, so a wide screenshot keeps its heading in view. */
+.cp-tile-file[data-kind="image"],
+.cp-tile-file[data-kind="video"] {
+  width: auto;
+  min-width: 80px;
+  max-width: 240px;
+}
+.cp-tile-file[data-kind="image"] > img,
+.cp-tile-file[data-kind="video"] > video {
+  width: auto;
+  max-width: 240px;
+}
+/* A hairline over pictures too, so a white screenshot keeps its edge. */
+.cp-tile-file[data-kind="image"]::after,
+.cp-tile-file[data-kind="video"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--line);
+  pointer-events: none;
+}
+.cp-tile-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  width: 34px;
+  height: 34px;
+  margin: auto;
+  place-items: center;
+  border-radius: var(--r-full);
+  background: color-mix(in srgb, var(--charcoal) 64%, transparent);
+  color: var(--cream);
+  font-size: 15px;
+}
+.cp-tile-doc {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+}
+.cp-tile-type {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--surface-sunk);
+  color: var(--ink-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.cp-tile-type svg.lucide {
+  font-size: 12px;
+}
+.cp-tile-excerpt {
+  overflow: hidden;
+  flex: 1;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  mask-image: linear-gradient(to bottom, #000 55%, transparent);
+}
+.cp-tile-name {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: auto;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+.cp-tile-excerpt + .cp-tile-name {
+  margin-top: 0;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+.cp-tile-size {
+  color: var(--ink-3);
+  font-size: 11.5px;
+}
+/* Audio plays in place: a wider tile with its own player. */
+.cp-tile-file[data-kind="audio"] {
+  width: 260px;
+  height: auto;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+}
+.cp-tile-file[data-kind="audio"] .cp-tile-name {
+  margin-top: 0;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+.cp-tile-file audio {
+  width: 100%;
+  height: 32px;
+}
+
+.cp-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cp-sources a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 4px;
+  border-radius: var(--r-full);
+  background: var(--surface-sunk);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  text-decoration: none;
+}
+.cp-sources a:hover {
+  background: var(--press);
+  color: var(--ink);
+}
+.cp-source-index {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: var(--r-full);
+  background: var(--surface);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.cp-tile {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: var(--r-md);
+  background: var(--surface-sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink-2);
+  font-size: 16px;
+}
+.cp-tile[data-kind="doc"] {
+  background: var(--info-wash);
+  color: var(--info);
+}
+.cp-tile[data-kind="sheet"] {
+  background: var(--success-wash);
+  color: var(--success);
+}
+
+.cp-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+}
+.cp-plan[data-state="proposed"] {
+  /* A draft: dashed, quiet, waiting for Start. */
+  box-shadow: none;
+  outline: 1px dashed var(--line-strong);
+  outline-offset: -1px;
+}
+.cp-plan-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cp-plan-title {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.cp-plan-title b {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.cp-eyebrow {
+  color: var(--ink-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.cp-plan-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.cp-meter {
+  display: block;
+  width: 72px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--r-full);
+  background: var(--line);
+}
+.cp-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ink-2);
+  transition: width 400ms var(--ease-out);
+}
+.cp-plan[data-state="done"] .cp-meter span {
+  background: var(--success);
+}
+.cp-plan-steps {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cp-plan-fold .cp-plan-steps {
+  margin-top: 8px;
+}
+.cp-plan-steps li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  font-size: 14px;
+}
+/* The rail that connects each step to the next. */
+.cp-plan-steps li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 27px;
+  bottom: -3px;
+  left: 8.25px;
+  width: 1.5px;
+  background: var(--line);
+}
+.cp-plan-steps li[data-status="done"]::after {
+  background: color-mix(in srgb, var(--success) 50%, transparent);
+}
+.cp-plan-steps li[data-status="done"] .cp-plan-label {
+  color: var(--ink-3);
+}
+.cp-plan-steps li[data-status="pending"] .cp-plan-label {
+  color: var(--ink-2);
+}
+.cp-plan-steps li[data-status="skipped"] .cp-plan-label {
+  color: var(--ink-3);
+  text-decoration: line-through;
+}
+.cp-plan-marker {
+  position: relative;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: var(--r-full);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line-strong);
+}
+.cp-plan-marker[data-status="done"] {
+  background: var(--success);
+  box-shadow: none;
+  color: var(--surface);
+}
+.cp-plan-marker[data-status="done"] svg.lucide {
+  width: 11px;
+  height: 11px;
+  stroke-width: 3;
+}
+.cp-plan-marker[data-status="active"] {
+  box-shadow: inset 0 0 0 1.5px var(--action);
+}
+.cp-plan-marker[data-status="active"]::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-full);
+  background: var(--action);
+  animation: cp-breathe 1.4s var(--ease-in-out) infinite;
+}
+.cp-plan-marker[data-status="skipped"] {
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+.cp-plan-started {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+.cp-plan-started b {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+.cp-plan-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.cp-plan-hint {
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+
+/* Quiet cards: the approval is the one orange moment in view. */
+
+.cp-offer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+}
+.cp-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cp-card-title {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.cp-card-title b {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.cp-offer-summary {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.cp-offer-needs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cp-offer-needs li {
+  padding: 3px 8px;
+  border-radius: var(--r-full);
+  background: var(--surface-sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.cp-card-actions {
+  display: flex;
+  gap: 6px;
+  padding-top: 4px;
+}
+.cp-resolved {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.cp-resolved svg.lucide {
+  color: var(--ink-3);
+}
+.cp-resolved[data-done="true"] svg.lucide {
+  color: var(--success);
+}
+.cp-resolved b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* A scheduled run's name beside the time: this wasn't a reply to anyone. */
+.cp-via {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px 1px 6px;
+  border-radius: var(--r-full);
+  background: var(--surface-sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink-2);
+  font-size: 11.5px;
+}
+.cp-via svg.lucide {
+  width: 11px;
+  height: 11px;
+}
+
+.cp-artifact {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: box-shadow 150ms var(--ease-out);
+}
+.cp-artifact[data-ready="true"]:hover {
+  box-shadow: var(--raised-hover);
+}
+.cp-artifact[data-active="true"] {
+  box-shadow:
+    0 0 0 1.5px var(--ink),
+    var(--raised);
+}
+.cp-artifact:has(.cp-artifact-hit:focus-visible) {
+  box-shadow:
+    0 0 0 2px var(--action),
+    var(--raised);
+}
+.cp-artifact-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px 10px;
+}
+.cp-artifact-title {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.cp-artifact-title > span {
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+/* The title is the button; its ::after stretches over the whole card. */
+.cp-artifact-hit {
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 600;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cp-artifact-hit::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-lg);
+}
+.cp-artifact-hit:focus-visible {
+  outline: none;
+}
+.cp-artifact-hit:disabled {
+  cursor: default;
+}
+.cp-artifact-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  transition: color 120ms var(--ease-out);
+}
+.cp-artifact:hover .cp-artifact-open,
+.cp-artifact[data-active="true"] .cp-artifact-open {
+  color: var(--ink);
+}
+/* The preview fits its content: a document shows two clamped lines, a
+   sheet or file a few rows that fade out, so no empty band is left over. */
+.cp-artifact-preview {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  margin: 0 14px 14px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--surface-sunk);
+}
+.cp-artifact-preview[data-kind="sheet"],
+.cp-artifact-preview[data-kind="code"] {
+  max-height: 96px;
+  mask-image: linear-gradient(to bottom, #000 60%, transparent);
+}
+.cp-mini-doc {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.cp-mini-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.cp-mini-table th {
+  padding: 0 10px 4px 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-3);
+  font-weight: 600;
+  text-align: left;
+}
+.cp-mini-table td {
+  padding: 4px 10px 0 0;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.cp-mini-code {
+  margin: 0;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  white-space: pre;
+}
+.cp-skeleton-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding-top: 4px;
+}
+.cp-skeleton-lines span {
+  height: 8px;
+  border-radius: var(--r-full);
+  background: var(--line);
+  animation: cp-breathe 1.6s var(--ease-in-out) infinite;
+}
+.cp-skeleton-lines span:nth-child(1) {
+  width: 92%;
+}
+.cp-skeleton-lines span:nth-child(2) {
+  width: 78%;
+  animation-delay: 120ms;
+}
+.cp-skeleton-lines span:nth-child(3) {
+  width: 54%;
+  animation-delay: 240ms;
+}
+
+.cp-artifact-update {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.cp-artifact-update svg.lucide {
+  color: var(--ink-3);
+}
+.cp-artifact-update b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.cp-artifact-note {
+  color: var(--ink-3);
+}
+.cp-artifact-update button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--info);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cp-composer-dock {
+  padding: 0 var(--cp-gutter) 16px;
+}
+.cp-composer {
+  position: relative;
+  max-width: calc(var(--cp-column-max) - 2 * var(--cp-gutter));
+  margin: 0 auto;
+}
+.cp-page .chat-composer-box:focus-within {
+  box-shadow:
+    0 0 0 1.5px var(--action),
+    var(--floating);
+}
+/* The live composer box is one row; it wraps so the drop hint can take a
+   line of its own. */
+.cp-page .chat-composer-box {
+  flex-wrap: wrap;
+}
+/* With a mode or model picker the text gets its own row, controls under
+   it. */
+.cp-box[data-layout="stacked"] {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.cp-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.cp-toolbar-end {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* The text: a transparent-text textarea over a mirror that draws the same
+   letters, so tokens can take colour while caret and selection stay the
+   textarea's. Both keep the live input's metrics, and reserve the same
+   scrollbar gutter, so they wrap identically. */
+.cp-input {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 1;
+}
+.cp-box[data-layout="stacked"] .cp-input {
+  flex: none;
+}
+.cp-page .cp-input-field {
+  position: relative;
+  z-index: 1;
+  color: transparent;
+  caret-color: var(--ink);
+  scrollbar-gutter: stable;
+}
+@supports (field-sizing: content) {
+  .cp-page .cp-input-field {
+    field-sizing: content;
+  }
+}
+.cp-page .cp-input-mirror {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+  color: var(--ink);
+  pointer-events: none;
+  scrollbar-gutter: stable;
+}
+.cp-input:has(.cp-input-field:disabled) .cp-input-mirror {
+  opacity: 0.6;
+}
+/* Colour and a tint only: anything that changes width would pull the
+   letters out from under the caret. The tint is widened by a shadow. */
+.cp-token {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--action) 14%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--action) 14%, transparent);
+  color: color-mix(in srgb, var(--action) 78%, var(--ink));
+  box-decoration-break: clone;
+}
+.cp-token-tip {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  width: max-content;
+  max-width: 260px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--primary) 92%, transparent);
+  color: var(--primary-ink);
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+  transform: translateY(calc(-100% - 6px));
+  animation: cp-fade 120ms var(--ease-out);
+}
+.cp-token-tip b {
+  font-weight: 600;
+}
+.cp-token-tip span {
+  opacity: 0.8;
+}
+
+/* Model and mode: quiet text buttons until pointed at. */
+.cp-picker {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 0 10px;
+  border: 0;
+  border-radius: var(--r-full);
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 120ms var(--ease-out),
+    color 120ms var(--ease-out);
+}
+.cp-picker:hover:not(:disabled),
+.cp-picker[data-state="open"] {
+  background: var(--hover);
+  color: var(--ink);
+}
+.cp-picker:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--action) 45%, transparent);
+  outline-offset: 1px;
+}
+.cp-picker:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.cp-picker svg.lucide {
+  width: 14px;
+  height: 14px;
+  color: var(--ink-3);
+}
+.cp-picker-sub {
+  color: var(--ink-3);
+}
+.cp-picker-menu {
+  width: 280px;
+  padding: 4px;
+  border-radius: 12px;
+}
+.cp-picker-label {
+  padding: 6px 10px 4px;
+  color: var(--ink-3);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.cp-picker-item {
+  align-items: flex-start;
+  gap: 10px;
+}
+.cp-picker-item svg.lucide {
+  margin-top: 2px;
+  color: var(--ink);
+}
+.cp-picker-text {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+}
+.cp-picker-text b {
+  color: var(--ink);
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.cp-picker-text span {
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+/* Floating above the box: the `@`/`/` list, notices, then what the next
+   message carries (reply context, attachments), nearest the box. */
+.cp-composer-float {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: none;
+}
+.cp-composer-float > * {
+  pointer-events: auto;
+}
+.cp-composer-float .chat-composer-mentions {
+  position: static;
+}
+.cp-composer-tray {
+  display: flex;
+  max-width: 100%;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: -24px;
+  padding-left: 16px;
+}
+.cp-composer-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--r-full);
+  background: var(--surface);
+  box-shadow: var(--raised);
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+.cp-composer-notice svg.lucide {
+  color: var(--danger);
+}
+/* Room under the last message for what floats above the composer, and the
+   jump button lifted clear of it. */
+/* `--cp-held` is the measured height of what floats over the bottom edge
+   (the composer sets it), so however many rows the tray grows to, the last
+   message stays clear of it. */
+.cp-dropzone:has(.cp-composer-float[data-held]) .cp-column {
+  padding-bottom: calc(var(--cp-held, 56px) + 24px);
+}
+.cp-dropzone:has(.cp-composer-float[data-held]) .cp-jump {
+  bottom: calc(var(--cp-held, 56px) + 12px);
+}
+
+/* "+N more", "Show less", "Remove all": text buttons sized like a chip. */
+.cp-file-more {
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--raised);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 120ms var(--ease-out),
+    color 120ms var(--ease-out);
+}
+.cp-file-more:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.cp-file-more:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--action) 45%, transparent);
+  outline-offset: 1px;
+}
+.cp-file-more-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+/* A sent batch past a handful: the rest behind one tile. */
+.cp-tile-more {
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-2);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* A deck of cards tucked behind the box's top-left edge; the box stays
+   above it. Pointing at it lifts and fans it out; past a few cards a "+N"
+   card pins it open, every card laid out in rows. */
+.cp-composer .chat-composer-box {
+  position: relative;
+  z-index: 2;
+}
+.cp-stack-card:has(.cp-stack-open:focus-visible) {
+  outline: 2px solid color-mix(in srgb, var(--action) 45%, transparent);
+  outline-offset: 1px;
+}
+/* Pointing at an attachment shows it at a readable size. */
+.cp-file-preview {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 5;
+  display: flex;
+  width: 240px;
+  flex-direction: column;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--floating);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px) scale(0.98);
+  transform-origin: bottom left;
+  transition:
+    opacity 120ms var(--ease-out),
+    transform 120ms var(--ease-out);
+}
+.cp-stack-card:hover .cp-file-preview,
+.cp-stack-card:has(.cp-stack-open:focus-visible) .cp-file-preview {
+  opacity: 1;
+  transform: none;
+}
+/* Name and size alone, for a file with nothing to picture. */
+.cp-file-preview[data-bare] {
+  width: max-content;
+  max-width: 240px;
+  padding: 2px 6px 4px;
+}
+.cp-file-preview img {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  border-radius: 8px;
+  background: var(--surface-sunk);
+  object-fit: contain;
+}
+.cp-file-preview-text {
+  display: block;
+  max-height: 112px;
+  overflow: hidden;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--surface-sunk);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  mask-image: linear-gradient(to bottom, #000 70%, transparent);
+}
+.cp-file-preview-meta {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 4px 2px;
+  font-size: 12px;
+}
+.cp-file-preview-meta b {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-file-preview-meta span {
+  flex: none;
+  color: var(--ink-3);
+}
+
+/* Only the tray tucks under the box (8px gap + 16px); the `@`/`/` list and
+   notices above it stay clear. Pinned open, the deck sits fully in view. */
+.cp-composer-float[data-expanded] .cp-composer-tray {
+  flex-direction: column;
+  align-items: flex-start;
+  margin-bottom: 0;
+  padding-right: 16px;
+}
+.cp-stack {
+  display: flex;
+  outline: none;
+  transition: transform 200ms var(--ease-out);
+}
+.cp-stack:hover,
+.cp-stack:focus-within {
+  transform: translateY(-14px);
+}
+.cp-stack-card {
+  position: relative;
+  display: grid;
+  width: 52px;
+  height: 52px;
+  flex: none;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--raised);
+  outline: none;
+  transition:
+    margin-left 200ms var(--ease-out),
+    transform 200ms var(--ease-out);
+}
+.cp-stack-card + .cp-stack-card {
+  margin-left: -42px;
+}
+.cp-stack-card:nth-child(odd) {
+  transform: rotate(-4deg);
+}
+.cp-stack-card:nth-child(even) {
+  transform: rotate(5deg);
+}
+.cp-stack:hover .cp-stack-card,
+.cp-stack:focus-within .cp-stack-card {
+  transform: none;
+}
+.cp-stack:hover .cp-stack-card + .cp-stack-card,
+.cp-stack:focus-within .cp-stack-card + .cp-stack-card {
+  margin-left: 8px;
+}
+.cp-stack-open {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+button.cp-stack-open {
+  cursor: zoom-in;
+}
+.cp-stack-open > img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+.cp-stack-type {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: var(--ink-3);
+  font-size: 16px;
+}
+.cp-stack-type span {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.cp-stack-count {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: grid;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  padding: 0 5px;
+  border-radius: var(--r-full);
+  background: var(--primary);
+  box-shadow: 0 0 0 2px var(--surface);
+  color: var(--primary-ink);
+  font-size: 11px;
+  font-weight: 600;
+  transition: opacity 120ms var(--ease-out);
+}
+.cp-stack:hover .cp-stack-count,
+.cp-stack:focus-within .cp-stack-count {
+  opacity: 0;
+}
+.cp-stack-remove {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-full);
+  cursor: pointer;
+  background: var(--primary);
+  box-shadow: 0 0 0 2px var(--surface);
+  color: var(--primary-ink);
+  font-size: 11px;
+  opacity: 0;
+  transition: opacity 120ms var(--ease-out);
+}
+.cp-stack:hover .cp-stack-card:hover .cp-stack-remove,
+.cp-stack-remove:focus-visible {
+  opacity: 1;
+}
+/* The stack's "+N" card only shows once the deck fans out. */
+.cp-stack-more {
+  display: none;
+  padding: 0;
+  border: 0;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cp-stack:hover .cp-stack-more,
+.cp-stack:focus-within .cp-stack-more {
+  display: grid;
+}
+/* Pinned open: every card in rows, upright, no lift. */
+.cp-stack[data-open],
+.cp-stack[data-open]:hover,
+.cp-stack[data-open]:focus-within {
+  flex-wrap: wrap;
+  gap: 8px;
+  transform: none;
+}
+.cp-stack[data-open] .cp-stack-card,
+.cp-stack[data-open] .cp-stack-card + .cp-stack-card {
+  margin-left: 0;
+  transform: none;
+}
+.cp-stack[data-open] .cp-stack-count {
+  display: none;
+}
+/* Names show only with the deck pinned open, under each card. */
+.cp-stack-name {
+  display: none;
+}
+.cp-stack[data-open] .cp-stack-card {
+  width: 76px;
+  height: auto;
+  grid-template-rows: 52px auto;
+  justify-items: center;
+  padding-bottom: 6px;
+}
+.cp-stack[data-open] .cp-stack-open {
+  height: 52px;
+  border-radius: 12px 12px 0 0;
+}
+.cp-stack[data-open] .cp-stack-name {
+  display: -webkit-box;
+  overflow: hidden;
+  width: 100%;
+  padding: 0 6px;
+  color: var(--ink-2);
+  font-size: 11px;
+  line-height: 1.3;
+  text-align: center;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+/* Touch screens can't hover: removes stay visible, the deck stays fanned. */
+@media (hover: none) {
+  .cp-stack-remove {
+    opacity: 1;
+  }
+  .cp-stack-card,
+  .cp-stack-card:nth-child(odd),
+  .cp-stack-card:nth-child(even) {
+    transform: none;
+  }
+  .cp-stack-card + .cp-stack-card {
+    margin-left: 8px;
+  }
+  .cp-stack-count {
+    display: none;
+  }
+}
+
+/* Small print under the box; the dock gives up some of its bottom room. */
+.cp-composer-note {
+  margin: 8px 0 0;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+}
+.cp-composer-dock:has(.cp-composer-note) {
+  padding-bottom: 8px;
+}
+
+/* The native modal dialog, in the top layer over everything. Its scrim is
+   charcoal in every theme, so the picture always sits on dark. */
+.cp-viewer {
+  width: 100vw;
+  max-width: none;
+  height: 100vh;
+  max-height: none;
+  margin: 0;
+  padding: 56px 80px 40px;
+  border: 0;
+  background: transparent;
+  color: var(--cream);
+  overflow: hidden;
+}
+.cp-viewer[open] {
+  display: grid;
+  place-items: center;
+}
+.cp-viewer::backdrop {
+  background: color-mix(in srgb, var(--charcoal) 88%, transparent);
+  backdrop-filter: blur(6px);
+  animation: cp-fade 160ms var(--ease-out);
+}
+.cp-viewer-figure {
+  display: grid;
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+  gap: 12px;
+  margin: 0;
+}
+.cp-viewer-figure img {
+  display: block;
+  max-width: min(1200px, 100%);
+  max-height: calc(100vh - 168px);
+  justify-self: center;
+  border-radius: 12px;
+  box-shadow: 0 24px 64px -16px color-mix(in srgb, var(--charcoal) 70%, transparent);
+  object-fit: contain;
+  animation: cp-viewer-in 200ms var(--ease-out);
+}
+@keyframes cp-viewer-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+.cp-viewer-figure video {
+  display: block;
+  max-width: min(1200px, 100%);
+  max-height: calc(100vh - 168px);
+  justify-self: center;
+  border-radius: 12px;
+  background: var(--charcoal);
+}
+.cp-viewer-pdf,
+.cp-viewer-text {
+  width: min(900px, calc(100vw - 160px));
+  height: calc(100vh - 168px);
+  border: 0;
+  border-radius: 12px;
+  background: var(--surface);
+}
+.cp-viewer-text {
+  overflow: auto;
+  margin: 0;
+  padding: 24px 28px;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.cp-viewer-bar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+.cp-viewer-name {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  margin-right: auto;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.cp-viewer-name b {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-viewer-name span {
+  color: color-mix(in srgb, var(--cream) 62%, transparent);
+  font-size: 12px;
+}
+.cp-viewer-btn {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-full);
+  background: color-mix(in srgb, var(--cream) 12%, transparent);
+  color: var(--cream);
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 120ms var(--ease-out);
+}
+.cp-viewer-btn:hover {
+  background: color-mix(in srgb, var(--cream) 22%, transparent);
+}
+.cp-viewer-btn:focus-visible {
+  outline: 2px solid var(--action);
+  outline-offset: 2px;
+}
+.cp-viewer-step {
+  position: absolute;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  font-size: 20px;
+  transform: translateY(-50%);
+}
+.cp-viewer-step[data-side="previous"] {
+  left: 20px;
+}
+.cp-viewer-step[data-side="next"] {
+  right: 20px;
+}
+@media (max-width: 640px) {
+  .cp-viewer {
+    padding: 48px 12px 24px;
+  }
+  .cp-viewer-pdf,
+  .cp-viewer-text {
+    width: calc(100vw - 24px);
+  }
+  .cp-viewer-step {
+    top: auto;
+    bottom: 20px;
+    transform: none;
+  }
+}
+
+/* Drop target: the whole column. */
+.cp-dropzone {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+/* While files are held over a drop zone, its composer lights up and says
+   so; nothing covers the conversation. */
+.cp-drop-hint {
+  display: none;
+  flex-basis: 100%;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 4px 6px 2px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+}
+.cp-drop-hint svg.lucide {
+  color: var(--action);
+}
+.cp-dropzone[data-over="true"] .cp-drop-hint {
+  display: flex;
+}
+.cp-page .cp-dropzone[data-over="true"] .chat-composer-box {
+  box-shadow:
+    0 0 0 1.5px var(--action),
+    var(--floating);
+}
+
+.cp-chip {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 10px;
+  border-radius: var(--r-full);
+  background: var(--surface);
+  box-shadow: var(--raised);
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+.cp-chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cp-chip b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.cp-chip button {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-full);
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.cp-chip button:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.cp-panel {
+  position: relative;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  /* The conversation keeps at least 440px however wide the panel is set
+     (MAIN_MIN in the handle); below that the panel gives way, down to 320px. */
+  max-width: max(320px, calc(100cqw - 440px));
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+  width: var(--cp-panel-w, clamp(480px, 46vw, 760px));
+  animation: cp-panel-in 260ms var(--ease-drawer);
+}
+
+/* A 12px hit strip over the panel's 1px border. Hover darkens the border,
+   holding it turns it light orange. Nothing else. */
+.cp-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -6px;
+  z-index: 8;
+  width: 12px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.cp-resize-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* Offsets are measured inside the panel's border, so 5px lands on it. */
+  left: 5px;
+  width: 1px;
+  background: transparent;
+  transition: background-color 80ms ease-out;
+}
+.cp-resize:hover .cp-resize-line {
+  background: var(--line-strong);
+}
+.cp-resize[data-dragging="true"] .cp-resize-line,
+.cp-resize:focus-visible .cp-resize-line {
+  background: color-mix(in srgb, var(--action) 70%, var(--surface));
+}
+
+/* While dragging, the whole page shows the resize cursor and nothing selects. */
+:root[data-cp-resizing="true"] {
+  cursor: col-resize;
+  user-select: none;
+}
+.cp-layout[data-panel="open"] .cp-composer-dock {
+  padding-right: 16px;
+}
+.cp-panel-head {
+  display: flex;
+  min-height: 40px;
+  align-items: stretch;
+  gap: 6px;
+  padding: 4px 6px 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-sunk);
+}
+.cp-panel-head .cp-panel-actions {
+  /* On the tab row's centre line: the row sits 1px over the border. */
+  align-self: flex-end;
+  margin-left: auto;
+}
+.cp-panel-head .cp-icon-btn {
+  width: 28px;
+  height: 28px;
+  font-size: 14px;
+}
+
+/* The row of tabs: compact, sitting on the header's bottom edge. The active
+   tab takes the content's colour and covers that edge, so it reads as the
+   front of what's below; the rest are plain labels split by hairlines. A
+   long row scrolls. While a tab is dragged the others slide aside. */
+.cp-tabs {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: flex-end;
+  /* Over the header's border, so the active tab can cover it. */
+  margin-bottom: -1px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.cp-tabs::-webkit-scrollbar {
+  display: none;
+}
+.cp-tab {
+  position: relative;
+  display: flex;
+  min-width: 72px;
+  max-width: 180px;
+  height: 30px;
+  flex: 0 1 auto;
+  align-items: center;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  color: var(--ink-3);
+  user-select: none;
+  transition:
+    background-color 80ms ease-out,
+    color 80ms ease-out;
+}
+/* Hairlines between resting tabs, gone beside the active or hovered one. */
+.cp-tab + .cp-tab::before {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: -1px;
+  width: 1px;
+  background: var(--line);
+  content: "";
+}
+.cp-tab[data-active]::before,
+.cp-tab[data-active] + .cp-tab::before,
+.cp-tab:hover::before,
+.cp-tab:hover + .cp-tab::before {
+  opacity: 0;
+}
+.cp-tab:hover {
+  background: var(--hover);
+  color: var(--ink-2);
+}
+.cp-tab[data-active] {
+  z-index: 1;
+  height: 31px;
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+.cp-tabs[data-dragging] .cp-tab {
+  transition: transform 160ms var(--ease-out);
+}
+.cp-tabs[data-dragging] .cp-tab[data-dragging] {
+  z-index: 2;
+  border-color: var(--line);
+  background: var(--surface);
+  box-shadow: var(--raised);
+  cursor: grabbing;
+  transition: none;
+}
+.cp-tab-select {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.cp-tab-select:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--action) 45%, transparent);
+  outline-offset: -2px;
+}
+.cp-tab-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  font-size: 13px;
+}
+.cp-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Close sits over the tab's right end and takes room from the label only
+   where it shows: on the active tab and the one under the pointer. */
+.cp-tab:hover .cp-tab-select,
+.cp-tab[data-active] .cp-tab-select {
+  padding-right: 24px;
+}
+.cp-tab-close {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--ink-3);
+  font-size: 11px;
+  opacity: 0;
+  cursor: pointer;
+}
+.cp-tab:hover .cp-tab-close,
+.cp-tab[data-active] .cp-tab-close {
+  opacity: 1;
+}
+.cp-tab-close:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+@media (hover: none) {
+  .cp-tab-select {
+    padding-right: 24px;
+  }
+  .cp-tab-close {
+    opacity: 1;
+  }
+}
+
+.cp-tab-add {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  align-self: flex-end;
+  place-items: center;
+  /* Centred on the tab row, which hangs 1px over the border. */
+  margin: 0 0 1px 2px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--ink-3);
+  font-size: 14px;
+  cursor: pointer;
+}
+.cp-tab-add:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--ink);
+}
+.cp-tab-add:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.cp-tab-add:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--action) 45%, transparent);
+  outline-offset: 1px;
+}
+.cp-tab-menu {
+  max-width: 300px;
+}
+.cp-tab-menu-text {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Pressing a tab or the + gives way a touch. */
+.cp-tab-select:active,
+.cp-tab-add:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.cp-tab-select,
+.cp-tab-add {
+  transition: transform 120ms var(--ease-out);
+}
+.cp-tab-indicator {
+  display: none;
+}
+
+/* Index: the bench drawer's tabs. A flat header, bold labels, and an ink
+   underline that glides to the active tab (instantly for keyboard moves).
+   The resize edge shows a grip on hover. */
+.cp-panel[data-variant="index"] .cp-panel-head {
+  min-height: 40px;
+  align-items: center;
+  padding: 0 6px 0 8px;
+  background: var(--surface);
+}
+.cp-panel[data-variant="index"] .cp-tabs {
+  align-self: stretch;
+  align-items: stretch;
+  gap: 2px;
+}
+.cp-panel[data-variant="index"] .cp-tab,
+.cp-panel[data-variant="index"] .cp-tab[data-active] {
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.cp-panel[data-variant="index"] .cp-tab::before {
+  display: none;
+}
+.cp-panel[data-variant="index"] .cp-tab:hover {
+  background: none;
+  color: var(--ink);
+}
+.cp-panel[data-variant="index"] .cp-tab[data-active] {
+  color: var(--ink);
+}
+.cp-panel[data-variant="index"] .cp-tab-select {
+  font-size: 13px;
+  font-weight: 700;
+}
+.cp-panel[data-variant="index"] .cp-tab[data-active]:not(:hover) .cp-tab-select {
+  padding-right: 8px;
+}
+.cp-panel[data-variant="index"] .cp-tab[data-active]:not(:hover) .cp-tab-close {
+  opacity: 0;
+}
+.cp-panel[data-variant="index"] .cp-tab-indicator {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  display: block;
+  width: 1px;
+  height: 2px;
+  background: var(--ink);
+  pointer-events: none;
+  transform-origin: left;
+  transition: transform 160ms var(--ease-out);
+}
+.cp-panel[data-variant="index"] .cp-tabs[data-instant] .cp-tab-indicator {
+  transition: none;
+}
+.cp-panel[data-variant="index"] .cp-tabs[data-dragging] .cp-tab-indicator {
+  opacity: 0;
+}
+.cp-panel[data-variant="index"] .cp-tabs[data-dragging] .cp-tab[data-dragging] {
+  border-radius: var(--r-md);
+  box-shadow: var(--floating);
+}
+.cp-panel[data-variant="index"] .cp-tab-add,
+.cp-panel[data-variant="index"] .cp-panel-actions {
+  align-self: center;
+  margin-bottom: 0;
+}
+.cp-panel[data-variant="index"] .cp-resize::after {
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  width: 4px;
+  height: 32px;
+  border-radius: var(--r-full);
+  background: var(--line-strong);
+  content: "";
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 120ms ease;
+}
+.cp-panel[data-variant="index"] .cp-resize:hover::after,
+.cp-panel[data-variant="index"] .cp-resize[data-dragging="true"]::after,
+.cp-panel[data-variant="index"] .cp-resize:focus-visible::after {
+  opacity: 1;
+}
+.cp-panel[data-variant="index"] .cp-resize[data-dragging="true"]::after {
+  background: color-mix(in srgb, var(--action) 70%, var(--surface));
+}
+
+/* Sheet: the panel floats as a card in a gutter, its tabs pills in a sunk
+   track like the version switcher. The gutter is the resize handle. */
+.cp-panel[data-variant="sheet"] {
+  height: auto;
+  margin: 8px 8px 8px 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--raised);
+}
+.cp-panel[data-variant="sheet"] .cp-panel-head {
+  min-height: 0;
+  align-items: center;
+  padding: 8px;
+  border-radius: 14px 14px 0 0;
+  background: var(--surface);
+}
+.cp-panel[data-variant="sheet"] .cp-tab-panes {
+  overflow: hidden;
+  border-radius: 0 0 14px 14px;
+}
+.cp-panel[data-variant="sheet"] .cp-tabs {
+  align-items: center;
+  gap: 2px;
+  margin: 0;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--surface-sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.cp-panel[data-variant="sheet"] .cp-tab,
+.cp-panel[data-variant="sheet"] .cp-tab[data-active] {
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+}
+.cp-panel[data-variant="sheet"] .cp-tab::before {
+  display: none;
+}
+.cp-panel[data-variant="sheet"] .cp-tab:hover {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.cp-panel[data-variant="sheet"] .cp-tab[data-active] {
+  background: var(--surface);
+  box-shadow: var(--raised);
+}
+.cp-panel[data-variant="sheet"] .cp-tabs[data-dragging] .cp-tab[data-dragging] {
+  box-shadow: var(--floating);
+}
+.cp-panel[data-variant="sheet"] .cp-tab-add,
+.cp-panel[data-variant="sheet"] .cp-panel-actions {
+  align-self: center;
+  margin-bottom: 0;
+}
+.cp-panel[data-variant="sheet"] .cp-resize {
+  left: -9px;
+  width: 10px;
+}
+.cp-panel[data-variant="sheet"] .cp-resize-line {
+  top: 50%;
+  bottom: auto;
+  left: 4px;
+  width: 2px;
+  height: 28px;
+  border-radius: var(--r-full);
+  transform: translateY(-50%);
+}
+
+/* Every open tab stays mounted in the same cell; only the active one shows,
+   so the others keep their scroll position and what was typed in them. */
+.cp-tab-panes {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+}
+.cp-tab-pane {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  grid-area: 1 / 1;
+}
+.cp-tab-pane:not([data-active]) {
+  visibility: hidden;
+}
+/* A tab's own controls, between the tab row and its content. */
+.cp-pane-bar {
+  display: flex;
+  min-height: 44px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.cp-pane-bar .cp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cp-pane-meta {
+  overflow: hidden;
+  min-width: 0;
+  flex: 1;
+  color: var(--ink-3);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Changes between two versions: unified, removed over added, unchanged
+   stretches folded. */
+.cp-diff {
+  overflow: auto;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.cp-diff-line {
+  display: grid;
+  grid-template-columns: 40px 40px 20px minmax(0, 1fr);
+}
+.cp-diff-line[data-kind="add"] {
+  background: color-mix(in srgb, var(--success) 16%, transparent);
+}
+.cp-diff-line[data-kind="del"] {
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
+}
+.cp-diff-no {
+  padding-right: 8px;
+  color: var(--ink-3);
+  text-align: right;
+  user-select: none;
+}
+.cp-diff-sign {
+  color: var(--ink-3);
+  text-align: center;
+  user-select: none;
+}
+.cp-diff-line code {
+  padding-right: 12px;
+  font: inherit;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.cp-diff-fold {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 0;
+  background: var(--surface-sunk);
+  color: var(--ink-3);
+  font: inherit;
+  font-family: var(--font-body);
+  font-size: 12px;
+  cursor: pointer;
+}
+.cp-diff-fold:hover {
+  color: var(--ink);
+}
+.cp-diff-stat {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+.cp-diff-stat [data-kind="add"] {
+  color: var(--success);
+}
+.cp-diff-stat [data-kind="del"] {
+  color: var(--danger);
+}
+.cp-icon-btn {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--ink-2);
+  font-size: 16px;
+  cursor: pointer;
+}
+.cp-icon-btn:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.cp-icon-btn[aria-pressed="true"] {
+  background: var(--hover);
+  color: var(--ink);
+}
+.cp-icon-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--action) 45%, transparent);
+  outline-offset: 1px;
+}
+/* A panel's header controls: icon buttons, a hairline, then Close. */
+.cp-panel-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+.cp-panel-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--line);
+}
+.cp-more-menu [data-danger] {
+  color: var(--danger);
+}
+.cp-more-menu [data-danger] svg.lucide {
+  color: var(--danger);
+}
+.cp-panel-body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.cp-panel-foot {
+  padding: 0 16px 16px;
+}
+.cp-panel .cp-column {
+  max-width: none;
+  padding: 16px 16px 8px;
+}
+.cp-panel .cp-composer {
+  max-width: none;
+}
+
+.cp-artifact-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 28px 32px 48px;
+}
+.cp-artifact-body[data-kind="sheet"],
+.cp-artifact-body[data-kind="code"] {
+  padding: 20px;
+}
+.cp-artifact-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 -16px;
+  padding: 12px 16px 0;
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+
+.cp-doc {
+  max-width: 68ch;
+  margin: 0 auto;
+  font-size: 15px;
+  line-height: 1.7;
+}
+.cp-doc h1 {
+  margin: 0 0 14px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+.cp-doc h2 {
+  margin: 28px 0 6px;
+  font-size: 17px;
+  font-weight: 650;
+}
+.cp-doc h3 {
+  margin: 20px 0 4px;
+  font-size: 15px;
+  font-weight: 650;
+}
+.cp-doc ul.chat-md-list {
+  padding-left: 1.25em;
+  list-style: disc;
+}
+.cp-doc ol.chat-md-list {
+  padding-left: 1.5em;
+  list-style: decimal;
+}
+.cp-doc .chat-md-list li + li {
+  margin-top: 4px;
+}
+
+.cp-code {
+  margin: 0;
+  overflow-x: auto;
+  padding: 12px 0;
+  border-radius: var(--r-lg);
+  background: var(--surface-sunk);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.cp-code-line {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+}
+.cp-code-gutter {
+  position: relative;
+  padding-right: 14px;
+  color: var(--ink-3);
+  text-align: right;
+  user-select: none;
+}
+.cp-code-gutter::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--line);
+}
+.cp-code-line code {
+  padding-left: 14px;
+  white-space: pre;
+}
+
+.cp-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--ink-3) 0%,
+    var(--ink-3) 40%,
+    var(--ink) 50%,
+    var(--ink-3) 60%,
+    var(--ink-3) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: cp-shimmer 1.8s linear infinite;
+}
+.cp-spin {
+  animation: cp-spin 900ms linear infinite;
+}
+
+@keyframes cp-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+@keyframes cp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes cp-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+@keyframes cp-breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+@keyframes cp-rise {
+  from {
+    opacity: 0;
+    transform: translate(var(--cp-rise-x, 0), 4px);
+  }
+}
+@keyframes cp-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+/* Reduced motion keeps only fades (DESIGN.md). */
+@media (prefers-reduced-motion: reduce) {
+  .cp-gen-glow {
+    animation: none;
+  }
+  .cp-gen-open img {
+    filter: none;
+    transform: none;
+    transition: opacity 200ms var(--ease-out);
+  }
+  .cp-viewer-figure img {
+    animation-name: cp-fade;
+  }
+  .cp-stack,
+  .cp-stack-card {
+    transition: none;
+  }
+  .cp-file-preview {
+    transform: none;
+    transition: opacity 120ms var(--ease-out);
+  }
+  .cp-shimmer {
+    animation: none;
+    background: none;
+    color: var(--ink-2);
+  }
+  .cp-spin,
+  .cp-jump,
+  .cp-plan-marker[data-status="active"]::after,
+  .cp-skeleton-lines span,
+  .cp-dots span {
+    animation: none;
+  }
+  .cp-panel {
+    animation-name: cp-fade;
+  }
+  .cp-tip[data-tip]::after,
+  .cp-tip:hover::after,
+  .cp-tip:focus-visible::after {
+    filter: none;
+    transform: translate(-50%, 0);
+  }
+  .cp-fold-caret,
+  .cp-meter span,
+  .cp-map-tick span,
+  .cp-tabs[data-dragging] .cp-tab,
+  .cp-tab-indicator {
+    transition: none;
+  }
+  .cp-map-preview {
+    animation-name: cp-fade;
+  }
+}
+@keyframes cp-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Phones and narrow windows: the panel covers the thread instead of
+   squeezing it. */
+@media (max-width: 960px) {
+  .cp-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cp-panel,
+  .cp-panel[data-variant="sheet"] {
+    position: absolute;
+    height: 100%;
+    margin: 0;
+    border-radius: 0;
+    inset: 0;
+    z-index: 30;
+    width: auto;
+    max-width: none;
+    border: 0;
+  }
+  .cp-resize {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  /* No gutter to sit in. */
+  .cp-map {
+    display: none;
+  }
+  .cp-column {
+    padding: 64px 16px 16px;
+  }
+  .cp-composer-dock {
+    padding: 0 12px 12px;
+  }
+  .cp-approval-actions .cp-btn--deny {
+    margin-left: 0;
+  }
+}
