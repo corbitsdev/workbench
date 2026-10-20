@@ -1,6 +1,6 @@
 # Agent session provisioning
 
-Notes on `@corbits/workflows`'s `launch/agent-session.ts`.
+Notes on `apps/hub/src/lazy-run-collector.ts`.
 
 ## Why this module exists
 

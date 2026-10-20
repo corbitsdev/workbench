@@ -1,6 +1,6 @@
 # Run outcome status
 
-Notes on `@corbits/workflows`'s `schedule/run-outcome.ts`: how a platform
+Notes on `apps/web/src/run-outcome.ts`: how a platform
 run's raw `status` column becomes what a surface should show.
 
 ## Why this exists
