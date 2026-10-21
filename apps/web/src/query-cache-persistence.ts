@@ -1,7 +1,7 @@
 // IndexedDB-backed persistence for the signed-in TanStack QueryClient cache.
-// Hydrates cached query entries on boot and writes successful query results
-// back to IndexedDB so switching benches or reloading the tab shows cached
-// tenant data immediately while background revalidation runs.
+// Hydrates cached query entries on boot as stale-while-revalidate (so active
+// queries render cached data immediately and still revalidate from the hub on
+// a page reload) and flushes successful query snapshots on a microtask.
 
 import { reportError } from "@corbits/error-sink";
 import type { QueryClient } from "@tanstack/react-query";
@@ -11,7 +11,6 @@ const DB_NAME = "workbench-query-cache-v1";
 const DB_VERSION = 1;
 const STORE_NAME = "queries";
 const DEFAULT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_DEBOUNCE_MS = 150;
 
 const PersistedQueryEntrySchema = type({
   queryHash: "string",
@@ -70,7 +69,10 @@ function runStoreRequest<T>(
 }
 
 /** Hydrates non-expired entries from IndexedDB into `queryClient` without
- * overwriting any query that already has fresher in-memory data. */
+ * overwriting any query that already has in-memory data or an in-flight fetch.
+ * Hydrated entries are immediately marked invalidated (`refetchType: "active"`)
+ * so mounted components render cached data right away while revalidating from
+ * the hub in the background (`stale-while-revalidate`). */
 export async function hydrateQueryClientFromIndexedDB(
   queryClient: QueryClient,
   options?: {
@@ -89,17 +91,29 @@ export async function hydrateQueryClientFromIndexedDB(
     const rawEntries = await runStoreRequest<unknown[]>(factory, "readonly", (store) =>
       store.getAll(),
     );
+    const hydratedKeys: (readonly unknown[])[] = [];
     for (const raw of rawEntries) {
       const entry = PersistedQueryEntrySchema(raw);
       if (entry instanceof type.errors) continue;
       if (entry.dataUpdatedAt < minUpdatedAt) continue;
 
       const existing = queryClient.getQueryState(entry.queryKey);
-      if (existing !== undefined && existing.dataUpdatedAt >= entry.dataUpdatedAt) {
+      if (
+        existing !== undefined &&
+        (existing.data !== undefined || existing.fetchStatus === "fetching")
+      ) {
         continue;
       }
       queryClient.setQueryData(entry.queryKey, entry.data, {
-        updatedAt: entry.dataUpdatedAt,
+        updatedAt: 0,
+      });
+      hydratedKeys.push(entry.queryKey);
+    }
+    for (const queryKey of hydratedKeys) {
+      void queryClient.invalidateQueries({
+        queryKey,
+        exact: true,
+        refetchType: "active",
       });
     }
   } catch (cause) {
@@ -107,8 +121,9 @@ export async function hydrateQueryClientFromIndexedDB(
   }
 }
 
-/** Subscribes to `queryClient`'s query cache and debounces writes of
- * successful query snapshots into IndexedDB. Returns an unsubscribe fn. */
+/** Subscribes to `queryClient`'s query cache and batches writes of
+ * non-invalidated successful query snapshots into IndexedDB (defaulting to a
+ * microtask so mutations that precede an immediate reload still flush). */
 export function attachQueryCachePersistence(
   queryClient: QueryClient,
   options?: {
@@ -120,13 +135,15 @@ export function attachQueryCachePersistence(
     options !== undefined && "idbFactory" in options ? options.idbFactory : resolveIdbFactory();
   if (factory === undefined) return () => undefined;
 
-  const debounceMs = options?.debounceMs ?? DEFAULT_DEBOUNCE_MS;
+  const debounceMs = options?.debounceMs ?? 0;
   const pendingWrites = new Map<string, PersistedQueryEntry>();
   const pendingDeletes = new Set<string>();
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let microtaskScheduled = false;
 
   const flush = () => {
     timer = null;
+    microtaskScheduled = false;
     const toWrite = [...pendingWrites.values()];
     const toDelete = [...pendingDeletes];
     pendingWrites.clear();
@@ -161,6 +178,12 @@ export function attachQueryCachePersistence(
   };
 
   const scheduleFlush = () => {
+    if (debounceMs <= 0) {
+      if (microtaskScheduled) return;
+      microtaskScheduled = true;
+      queueMicrotask(flush);
+      return;
+    }
     if (timer !== null) return;
     timer = setTimeout(flush, debounceMs);
   };
@@ -173,19 +196,32 @@ export function attachQueryCachePersistence(
       scheduleFlush();
       return;
     }
-    if (
-      (event.type === "updated" || event.type === "added") &&
-      query.state.status === "success" &&
-      query.state.data !== undefined
-    ) {
-      pendingDeletes.delete(query.queryHash);
-      pendingWrites.set(query.queryHash, {
-        queryHash: query.queryHash,
-        queryKey: [...query.queryKey],
-        data: query.state.data,
-        dataUpdatedAt: query.state.dataUpdatedAt,
-      });
-      scheduleFlush();
+    if (event.type === "updated" || event.type === "added") {
+      if (query.state.isInvalidated) {
+        pendingWrites.delete(query.queryHash);
+        // Only delete from IndexedDB when in-memory data was explicitly
+        // invalidated after a real fetch/set (`dataUpdatedAt > 0`), not when
+        // hydration itself seeded `updatedAt: 0`.
+        if (query.state.dataUpdatedAt > 0) {
+          pendingDeletes.add(query.queryHash);
+          scheduleFlush();
+        }
+        return;
+      }
+      if (
+        query.state.status === "success" &&
+        query.state.data !== undefined &&
+        query.state.dataUpdatedAt > 0
+      ) {
+        pendingDeletes.delete(query.queryHash);
+        pendingWrites.set(query.queryHash, {
+          queryHash: query.queryHash,
+          queryKey: [...query.queryKey],
+          data: query.state.data,
+          dataUpdatedAt: query.state.dataUpdatedAt,
+        });
+        scheduleFlush();
+      }
     }
   });
 
@@ -194,6 +230,7 @@ export function attachQueryCachePersistence(
       clearTimeout(timer);
       timer = null;
     }
+    microtaskScheduled = false;
     unsubscribe();
   };
 }

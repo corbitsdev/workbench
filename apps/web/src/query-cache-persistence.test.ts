@@ -1,6 +1,6 @@
 // Unit tests for IndexedDB-backed TanStack Query cache persistence (`query-cache-persistence.ts`).
-// Uses a lightweight fake IDBFactory so persistence, hydration, expiry, and
-// clear flows run deterministically without a browser DOM.
+// Uses a lightweight fake IDBFactory so persistence, hydration, stale-while-revalidate
+// invalidation, expiry, and clear flows run deterministically without a browser DOM.
 import { describe, expect, test } from "bun:test";
 import { QueryClient } from "@tanstack/react-query";
 
@@ -96,12 +96,11 @@ function createFakeIdb(): {
 }
 
 describe("query-cache-persistence", () => {
-  test("persists successful query data and hydrates it into a fresh QueryClient", async () => {
+  test("persists successful query data on microtask and hydrates it marked invalidated for background revalidation", async () => {
     const { factory, rows } = createFakeIdb();
     const writerClient = new QueryClient();
     const detach = attachQueryCachePersistence(writerClient, {
       idbFactory: factory,
-      debounceMs: 5,
     });
 
     const benchAKey = tenantKeys.skills("bench-a");
@@ -109,10 +108,12 @@ describe("query-cache-persistence", () => {
     writerClient.setQueryData(benchAKey, [{ assetId: "s1", name: "alpha" }]);
     writerClient.setQueryData(benchBKey, [{ assetId: "s2", name: "beta" }]);
 
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await new Promise((resolve) => setTimeout(resolve, 10));
     expect(rows.size).toBe(2);
 
-    const readerClient = new QueryClient();
+    const readerClient = new QueryClient({
+      defaultOptions: { queries: { staleTime: 30_000 } },
+    });
     await hydrateQueryClientFromIndexedDB(readerClient, { idbFactory: factory });
 
     expect(readerClient.getQueryData<unknown>(benchAKey)).toEqual([
@@ -121,11 +122,32 @@ describe("query-cache-persistence", () => {
     expect(readerClient.getQueryData<unknown>(benchBKey)).toEqual([
       { assetId: "s2", name: "beta" },
     ]);
+    // Hydrated entries are marked invalidated so a page reload still revalidates
+    // active queries against the hub despite the 30s staleTime.
+    expect(readerClient.getQueryState(benchAKey)?.isInvalidated).toBe(true);
+    expect(readerClient.getQueryState(benchBKey)?.isInvalidated).toBe(true);
 
     detach();
   });
 
-  test("skips expired entries during hydration and does not overwrite fresher in-memory data", async () => {
+  test("removes invalidated query entries from IndexedDB until fresh data arrives", async () => {
+    const { factory, rows } = createFakeIdb();
+    const client = new QueryClient();
+    const detach = attachQueryCachePersistence(client, { idbFactory: factory });
+
+    const key = tenantKeys.detail("bench-a");
+    client.setQueryData(key, { id: "bench-a", name: "Old Name" });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(rows.size).toBe(1);
+
+    await client.invalidateQueries({ queryKey: key });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(rows.size).toBe(0);
+
+    detach();
+  });
+
+  test("skips expired entries during hydration and does not overwrite existing in-memory data", async () => {
     const { factory, rows } = createFakeIdb();
     const key = tenantKeys.routines("bench-a");
     const expiredKey = tenantKeys.routines("bench-expired");
