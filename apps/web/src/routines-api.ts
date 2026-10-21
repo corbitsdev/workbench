@@ -1,6 +1,5 @@
-// The Routines page's seam to stock workflow deployments. See
-// docs/routines-scheduling.md for the schedule join and why run-now/
-// run-now goes through the stock trigger route.
+// The Routines page's seam to stock workflow deployments and `@corbits/cron`
+// schedules (see ARCHITECTURE.md § Agents, workflows, and scheduling).
 
 import { type } from "arktype";
 import { useQuery } from "@tanstack/react-query";

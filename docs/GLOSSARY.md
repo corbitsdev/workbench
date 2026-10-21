@@ -12,7 +12,7 @@ paths keep the platform's own names.
 | **User**      | principal      | An identity that can act in a workspace or workbench — human or agent. |
 | **Agent**     | principal (agent) | A named coworker principal, not a template. |
 | **Worker**    | —              | A workbench's own persistent agent, deployed on the `packages/worker` harness. Given a job it can't already do, it authors a new tool, skill, or workflow as code, deploys it with only the access it needs, and uses it. |
-| **Thread**    | mailbox thread | The ordered messages of one conversation, served by `@corbits/mailbox` (`GET /me/inbox/threads`, `POST /me/inbox/send`). |
+| **Thread**    | mailbox thread | The ordered messages of one conversation, served by `@corbits/mailbox` (`/api/tenants/:id/mailbox/me/inbox/...`). |
 | **Grant**     | grant          | Permission for a principal to act on a resource. |
 | **Approval**  | approval       | A human decision gating an external side effect. |
 | **Hub**       | hub            | The API and coordination service a workspace lives on. |

@@ -283,7 +283,7 @@ export function subscribeToInbox(tenantId: string, onChange: () => void): () => 
   };
 }
 
-// Workbenches: see docs/chat-mail-threading.md.
+// Workbenches: see ARCHITECTURE.md (§ Workbench mail).
 
 export type WorkbenchParticipant = {
   readonly id: string;
@@ -478,8 +478,8 @@ async function isTerminalRunBody(response: Response): Promise<boolean> {
   return !(TerminalRunBody(await response.json().catch(() => undefined)) instanceof type.errors);
 }
 
-// The one send seam for a workbench (see docs/chat-mail-threading.md for
-// the roster mechanism).
+// The one send seam for a workbench (see ARCHITECTURE.md § Workbench mail
+// for the roster mechanism).
 export async function sendToWorkbench(input: {
   readonly workbenchTenantId: string;
   readonly participants: readonly WorkbenchParticipant[];
