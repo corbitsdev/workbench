@@ -6,13 +6,13 @@ one origin. Apps stay generic — every product rule belongs in a package (see
 
 ## What it wires
 
-- Everything above the Corbits mount block in `src/server.ts` is upstream
-  Interchange's `server.ts`, providing `@intx/hub-api` (`createApp`),
-  `@intx/hub-sessions`, auth, and tenant middleware.
+- `src/server.ts` mirrors upstream Interchange's `server.ts`, providing
+  `@intx/hub-api` (`createApp`), `@intx/hub-sessions`, auth, and tenant
+  middleware, then calls `mountCorbits` (`src/corbits-mount.ts`).
 - Boot runs `migrateHub` (`src/migrate.ts`), applying `@intx/db` platform
   migrations and each mounted Corbits library's idempotent migration under a
   Postgres advisory lock.
-- The Corbits mount block in `src/server.ts` mounts:
+- `src/corbits-mount.ts` mounts the Corbits mount block:
   - `@corbits/artifacts` (`mountArtifacts` and `mountWorkflowArtifacts`)
   - Live workflow-run SSE stream routes (`src/run-stream.ts`)
   - `@corbits/agent-token` (`mountAgentTokens` and `createAgentTokenVerifier`)

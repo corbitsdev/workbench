@@ -9,7 +9,7 @@ handful of domain packages built on top.
 
 - **`apps/hub`** — the Interchange hub server. It mounts stock
   `@intx/hub-api` routes (auth, tenants, principals, grants, workflow
-  deploy/run) plus one composition block (`apps/hub/src/server.ts`) that adds
+  deploy/run) plus one composition block (`apps/hub/src/corbits-mount.ts`) that adds
   Corbits libraries: `@corbits/mailbox` (mail), `@corbits/memory` (recall),
   `@corbits/artifacts` (files), `@corbits/cron` (scheduling),
   `@corbits/webhooks` (inbound webhook ingress), `@corbits/mcp` (MCP catalog
