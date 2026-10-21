@@ -527,5 +527,5 @@ export function WorkbenchRoute({ path }: { readonly path: string }) {
       </PageShell>
     );
   }
-  return <Workbench workbenchTenantId={workbenchTenantId} />;
+  return <Workbench key={workbenchTenantId} workbenchTenantId={workbenchTenantId} />;
 }

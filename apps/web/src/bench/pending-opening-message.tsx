@@ -3,7 +3,7 @@
 // retry; it is only cleared once the send succeeds.
 
 import { Button } from "@corbits/react-ui";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { sendToWorkbench, type WorkbenchParticipant } from "@/chat/threads-api";
@@ -15,6 +15,58 @@ import "./pending-opening-message.css";
 
 const CAP_MS = 60_000;
 
+export async function dispatchOpeningMessage({
+  queryClient,
+  workbenchTenantId,
+  participants,
+  content,
+  send = sendToWorkbench,
+}: {
+  readonly queryClient: QueryClient;
+  readonly workbenchTenantId: string;
+  readonly participants: readonly WorkbenchParticipant[];
+  readonly content: string;
+  readonly send?: typeof sendToWorkbench;
+}): Promise<void> {
+  markTurnPending(queryClient, workbenchTenantId);
+  try {
+    await send({
+      workbenchTenantId,
+      participants,
+      content,
+    });
+  } catch (cause) {
+    queryClient.setQueryData(workbenchKeys.pendingTurn(workbenchTenantId), null);
+    throw cause;
+  }
+  clearOpeningMessage(workbenchTenantId);
+  await queryClient.invalidateQueries({ queryKey: workbenchKeys.scope(workbenchTenantId) });
+}
+
+export interface PendingOpeningMessageSession {
+  readonly workbenchTenantId: string;
+  readonly text: string | null;
+  readonly timedOut: boolean;
+}
+
+export function createPendingOpeningMessageSession(
+  workbenchTenantId: string,
+): PendingOpeningMessageSession {
+  return {
+    workbenchTenantId,
+    text: readOpeningMessage(workbenchTenantId),
+    timedOut: false,
+  };
+}
+
+export function syncPendingOpeningMessageSession(
+  session: PendingOpeningMessageSession,
+  workbenchTenantId: string,
+): PendingOpeningMessageSession {
+  if (session.workbenchTenantId === workbenchTenantId) return session;
+  return createPendingOpeningMessageSession(workbenchTenantId);
+}
+
 export function PendingOpeningMessage({
   workbenchTenantId,
   participants,
@@ -23,29 +75,49 @@ export function PendingOpeningMessage({
   readonly participants: readonly WorkbenchParticipant[];
 }) {
   const queryClient = useQueryClient();
-  const [text, setText] = useState(() => readOpeningMessage(workbenchTenantId));
-  const [timedOut, setTimedOut] = useState(false);
-  const attempted = useRef(false);
+  const [session, setSession] = useState(() =>
+    createPendingOpeningMessageSession(workbenchTenantId),
+  );
+  const current = syncPendingOpeningMessageSession(session, workbenchTenantId);
+  if (current !== session) {
+    setSession(current);
+  }
+  const attemptedTenantId = useRef<string | null>(null);
+  const text = current.text;
+  const timedOut = current.timedOut;
 
   useEffect(() => {
-    const timer = setTimeout(() => setTimedOut(true), CAP_MS);
+    const timer = setTimeout(
+      () =>
+        setSession((prev) =>
+          prev.workbenchTenantId === workbenchTenantId ? { ...prev, timedOut: true } : prev,
+        ),
+      CAP_MS,
+    );
     return () => clearTimeout(timer);
-  }, []);
+  }, [workbenchTenantId]);
 
   const send = useMutation({
-    mutationFn: (content: string) =>
-      sendToWorkbench({
-        workbenchTenantId,
-        participants,
+    mutationFn: ({
+      targetTenantId,
+      targetParticipants,
+      content,
+    }: {
+      readonly targetTenantId: string;
+      readonly targetParticipants: readonly WorkbenchParticipant[];
+      readonly content: string;
+    }) =>
+      dispatchOpeningMessage({
+        queryClient,
+        workbenchTenantId: targetTenantId,
+        participants: targetParticipants,
         content,
       }),
-    onMutate: () => markTurnPending(queryClient, workbenchTenantId),
-    onSuccess: () => {
-      clearOpeningMessage(workbenchTenantId);
-      setText(null);
-      void queryClient.invalidateQueries({ queryKey: workbenchKeys.scope(workbenchTenantId) });
+    onSuccess: (_data, variables) => {
+      setSession((prev) =>
+        prev.workbenchTenantId === variables.targetTenantId ? { ...prev, text: null } : prev,
+      );
     },
-    onError: () => queryClient.setQueryData(workbenchKeys.pendingTurn(workbenchTenantId), null),
   });
 
   const live = participants.some((p) => p.kind === "agent" && p.address.includes("@"));
@@ -54,9 +126,14 @@ export function PendingOpeningMessage({
   // warns), and StrictMode double-renders would double-send without the
   // ref guard.
   useEffect(() => {
-    if (text === null || !live || attempted.current || send.isPending) return;
-    attempted.current = true;
-    send.mutate(text);
+    if (text === null || !live || attemptedTenantId.current === workbenchTenantId || send.isPending)
+      return;
+    attemptedTenantId.current = workbenchTenantId;
+    send.mutate({
+      targetTenantId: workbenchTenantId,
+      targetParticipants: participants,
+      content: text,
+    });
   });
 
   if (text === null) return null;
@@ -76,12 +153,22 @@ export function PendingOpeningMessage({
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  if (live) send.mutate(text);
-                  else
+                  if (live) {
+                    send.mutate({
+                      targetTenantId: workbenchTenantId,
+                      targetParticipants: participants,
+                      content: text,
+                    });
+                  } else {
                     void queryClient.invalidateQueries({
                       queryKey: workbenchKeys.participants(workbenchTenantId),
                     });
-                  setTimedOut(false);
+                  }
+                  setSession((prev) =>
+                    prev.workbenchTenantId === workbenchTenantId
+                      ? { ...prev, timedOut: false }
+                      : prev,
+                  );
                 }}
               >
                 Retry

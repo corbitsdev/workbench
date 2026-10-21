@@ -96,7 +96,7 @@ export function NewWorkbenchPickerRoute() {
     create.mutate({ benchTenantId: selectedTenantId, openingMessage: text });
   }
 
-  const composerDisabled = selectedTenantId === null;
+  const composerDisabled = selectedTenantId === null || workbenches.isPending;
 
   return (
     <div className="page-frame">
