@@ -64,7 +64,6 @@ import {
   type SidecarProvisionerChooser,
   type WsHandle,
 } from "@intx/hub-sessions";
-import { withLazyRunCollector } from "./lazy-run-collector";
 import { generateKeyPair } from "@intx/crypto";
 import { timeWindowEvaluator } from "@intx/authz";
 import type { ConditionRegistry } from "@intx/types/authz";
@@ -109,10 +108,7 @@ import {
 } from "@corbits/xai-provider";
 import { createAgentTokenVerifier, mountAgentTokens } from "@corbits/agent-token";
 import { createCronTicker, createCronRoutes, createRunTriggerCronDeliver } from "@corbits/cron";
-import {
-  createHubMailboxAuthorizeSender,
-  createHubPersistMailWithSessionEnsure,
-} from "./mailbox-persist";
+import { createHubMailboxAuthorizeSender } from "./mailbox-persist";
 import { captureMailboxRequest, createMailboxDeliver } from "./mailbox-send";
 import { reportError } from "@corbits/error-sink";
 import {
@@ -344,27 +340,24 @@ export async function createHubServer({
     void pushCredentialReconcile(db, sidecarRouter, agentAddress, credentialCipher);
   };
 
-  const eventCollectors = withLazyRunCollector(
-    createEventCollectorRegistry({
-      db,
-      onTurnFinalized(agentAddress, turn) {
-        sidecarRouter.dispatchAgentEvent(agentAddress, {
-          type: "turn.committed",
-          data: {
-            turnId: turn.turnId,
-            status: turn.status,
-            text: turn.text,
-            hadReply: turn.hadReply,
-            hadError: turn.hadError,
-            errors: turn.errors,
-            toolCalls: turn.toolCalls,
-            toolErrors: turn.toolErrors,
-          },
-        });
-      },
-    }),
+  const eventCollectors = createEventCollectorRegistry({
     db,
-  );
+    onTurnFinalized(agentAddress, turn) {
+      sidecarRouter.dispatchAgentEvent(agentAddress, {
+        type: "turn.committed",
+        data: {
+          turnId: turn.turnId,
+          status: turn.status,
+          text: turn.text,
+          hadReply: turn.hadReply,
+          hadError: turn.hadError,
+          errors: turn.errors,
+          toolCalls: turn.toolCalls,
+          toolErrors: turn.toolErrors,
+        },
+      });
+    },
+  });
 
   createHubSessionOrchestrator({
     events: sidecarRouter.events,
@@ -621,26 +614,11 @@ export async function createHubServer({
   const corbitsDatabaseUrl = `postgres://${encodeURIComponent(process.env["DB_USER"] ?? "postgres")}:${encodeURIComponent(process.env["DB_PASSWORD"] ?? "postgres")}@${process.env["DB_HOST"] ?? "localhost"}:${String(Number(process.env["DB_PORT"] ?? 5432))}/${process.env["DB_NAME"] ?? "interchange"}`;
   const { db: mailboxDb } = createMailboxDb(corbitsDatabaseUrl);
   const mailboxBus = createInMemoryMailboxEventBus();
-  const eventCollectorsRef: { current?: typeof eventCollectors } = { current: eventCollectors };
-  const mailboxLookups = {
-    ...lookups,
-    persistMail: createMailboxPersist(mailboxDb, {
-      upstream: createHubPersistMailWithSessionEnsure(
-        db,
-        eventCollectorsRef,
-        createHubSessionLookups({
-          db,
-          agentRepoStore,
-          historyReceives: workflowHistoryReceives,
-        }).persistMail,
-      ),
-      authorizeSender: createHubMailboxAuthorizeSender(db),
-      bus: mailboxBus,
-    }),
-  };
-  // The sidecar router captured `lookups` before this wrapper existed; an
-  // agent's outbound mail must also land in principal inboxes.
-  lookups.persistMail = mailboxLookups.persistMail;
+  lookups.persistMail = createMailboxPersist(mailboxDb, {
+    upstream: async () => [],
+    authorizeSender: createHubMailboxAuthorizeSender(db),
+    bus: mailboxBus,
+  });
 
   const artifactContentStore = InlineContentStore;
 
@@ -752,7 +730,7 @@ export async function createHubServer({
         // before replying, so the canonical stamped form is lowercase.
         return `${principalRow.refId}@${tenantRow.domain}`.toLowerCase();
       },
-      deliver: createMailboxDeliver({ app, persistMail: mailboxLookups.persistMail }),
+      deliver: createMailboxDeliver({ app, persistMail: lookups.persistMail }),
     });
     app.route(`${TENANT_PREFIX}/mailbox`, mailboxApp);
   }

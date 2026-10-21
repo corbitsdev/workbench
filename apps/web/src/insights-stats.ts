@@ -2,7 +2,7 @@
 // routines). No new analytics backend — I1 is an honest live surface on
 // existing endpoints.
 
-import { runOutcomeStatus, withListingAbandoned } from "./run-outcome";
+import { runOutcomeStatus } from "./run-outcome";
 
 import { isAgentDeploySourceAssetName } from "./agent-deploy";
 import type { Approval } from "./api";
@@ -129,8 +129,8 @@ function runDurationMs(run: InsightsRun): number | null {
 }
 
 type Bucket = "ok" | "fail" | "other";
-function bucketOf(run: InsightsRun, now: number): Bucket {
-  const outcome = runOutcomeStatus(withListingAbandoned(run, now), now) ?? run.status;
+function bucketOf(run: InsightsRun): Bucket {
+  const outcome = runOutcomeStatus(run);
   if (outcome === "completed") return "ok";
   if (outcome === "failed" || outcome === "error") return "fail";
   return "other";
@@ -162,7 +162,7 @@ export function computeBenchInsights(
   let fail = 0;
   const groups = new Map<string, InsightsRun[]>();
   for (const run of inRange) {
-    const bucket = bucketOf(run, now);
+    const bucket = bucketOf(run);
     const midnight = new Date(run.createdAt);
     midnight.setHours(0, 0, 0, 0);
     // round, not floor: DST days are 23h or 25h long.
@@ -193,8 +193,8 @@ export function computeBenchInsights(
         name: newest[0] !== undefined ? runDisplayName(newest[0]) : key,
         definitionName: newest[0]?.definitionName ?? key,
         runs: rs.length,
-        ok: rs.filter((r) => bucketOf(r, now) === "ok").length,
-        fail: rs.filter((r) => bucketOf(r, now) === "fail").length,
+        ok: rs.filter((r) => bucketOf(r) === "ok").length,
+        fail: rs.filter((r) => bucketOf(r) === "fail").length,
         medianMs: medianMs(durations(rs)),
         lastRun: newest[0]?.createdAt ?? "",
       };
@@ -209,7 +209,7 @@ export function computeBenchInsights(
     days,
     workflows,
     failures: inRange
-      .filter((r) => bucketOf(r, now) === "fail")
+      .filter((r) => bucketOf(r) === "fail")
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, 5),
   };
