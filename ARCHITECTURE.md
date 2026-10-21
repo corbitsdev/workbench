@@ -9,15 +9,16 @@ handful of domain packages built on top.
 
 - **`apps/hub`** — the Interchange hub server. It mounts stock
   `@intx/hub-api` routes (auth, tenants, principals, grants, workflow
-  deploy/run) plus one composition block that adds Corbits libraries —
-  `@corbits/mailbox` (mail), `@corbits/memory` (recall), `@corbits/artifacts`
-  (files), `@corbits/cron` (scheduling), `@corbits/webhooks` (inbound
-  webhook ingress) — and the remaining in-repo packages: `workflows`
-  (author routes) and `agent-directory`. Credentials are stored through
-  Interchange's own stock credential routes; nothing in this repo wraps
-  or replaces them.
+  deploy/run) plus one composition block (`apps/hub/src/server.ts`) that adds
+  Corbits libraries: `@corbits/mailbox` (mail), `@corbits/memory` (recall),
+  `@corbits/artifacts` (files), `@corbits/cron` (scheduling),
+  `@corbits/webhooks` (inbound webhook ingress), `@corbits/mcp` (MCP catalog
+  discovery), `@corbits/agent-token` (run-scoped bearer tokens for deployed
+  agents), and `@corbits/oauth-core` (loopback OAuth login and token refresh
+  for Codex and xAI). Credentials are stored through Interchange's own stock
+  credential routes; nothing in this repo wraps or replaces them.
 - **`apps/sidecar`** — a copy of Interchange's own sidecar. It executes
-  workflow runs and agent turns on the hub's behalf; its few local deltas
+  workflow runs and agent turns on the hub's behalf; its local deltas
   are listed in [VENDORED.md](VENDORED.md) with kill conditions.
 - **`apps/web`** — the React client. On sign-in it converges its own
   tenant, workflow deployments, credentials, and grants over stock hub
