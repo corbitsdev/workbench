@@ -21,6 +21,4 @@ filter never matched anything (every addressed run self-anchors at
 creation), so that feed always came back empty.
 
 `InsightsRunSchema` adds `routineId`/`routineName` (absent on the native
-feed; callers fall back to `definitionId`/`definitionName`) and
-`turns`/`hasInFlightTurn`, this build's own in-flight-turn tracking, not an
-Interchange field — omitting them is not "no in-flight turn".
+feed; callers fall back to `definitionId`/`definitionName`).
