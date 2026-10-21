@@ -5,6 +5,7 @@
 
 import { type } from "arktype";
 
+import { apiRequest } from "../api-request";
 import { InferenceSettingsApiError, type FetchImpl } from "./api";
 
 const StartedLogin = type({ loginId: "string", authorizeUrl: "string" });
@@ -16,30 +17,9 @@ const LoginState = type({ status: "'pending'" })
   .or({ status: "'cancelled'" });
 export type LoginState = typeof LoginState.infer;
 
-async function parsed<T>(
-  response: Response,
-  schema: (data: unknown) => T | type.errors,
-  verb: string,
-): Promise<T> {
-  if (!response.ok) {
-    throw new InferenceSettingsApiError(
-      `The server answered ${String(response.status)} while ${verb}.`,
-      response.status,
-    );
-  }
-  const body: unknown = await response.json().catch(() => undefined);
-  const result = schema(body);
-  if (result instanceof type.errors) {
-    throw new InferenceSettingsApiError(
-      `Unexpected response shape while ${verb}: ${result.summary}`,
-    );
-  }
-  return result;
-}
-
 /** Starts a login for `provider`, filing the credential it will mint under
  * `providerId`/`credentialName`. Returns the URL to send the person to. */
-export async function startProviderLogin(
+export function startProviderLogin(
   tenantId: string,
   input: {
     readonly provider: string;
@@ -48,26 +28,31 @@ export async function startProviderLogin(
   },
   fetchImpl: FetchImpl = fetch,
 ): Promise<StartedLogin> {
-  return parsed(
-    await fetchImpl(`/api/tenants/${tenantId}/oauth-logins`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input),
-    }),
+  return apiRequest(
+    `/api/tenants/${tenantId}/oauth-logins`,
     StartedLogin,
     "starting the sign-in",
+    InferenceSettingsApiError,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+    fetchImpl,
   );
 }
 
-export async function readProviderLogin(
+export function readProviderLogin(
   tenantId: string,
   loginId: string,
   fetchImpl: FetchImpl = fetch,
 ): Promise<LoginState> {
-  return parsed(
-    await fetchImpl(`/api/tenants/${tenantId}/oauth-logins/${loginId}`),
+  return apiRequest(
+    `/api/tenants/${tenantId}/oauth-logins/${loginId}`,
     LoginState,
     "checking the sign-in",
+    InferenceSettingsApiError,
+    undefined,
+    fetchImpl,
   );
 }
 

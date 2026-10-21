@@ -2,12 +2,11 @@
 // this file carries no roster/detail data model of its own.
 
 import { WorkflowDefinitionResponse, WorkflowRunResponse, paginatedSchema } from "@intx/types";
-import { type } from "arktype";
-import type { ArkErrors } from "arktype";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { ApiQueryError } from "@/lib/api-query";
 import { deployAgentSource, type DeployedAgent, type NewAgentInput } from "./agent-deploy";
+import { apiRequest, type Validator } from "./api";
 import { workbenchKeys } from "./chat-path";
 import { tenantKeys } from "./query-client";
 
@@ -21,30 +20,8 @@ const InstancesPage = paginatedSchema(WorkflowRunResponse);
 // not a raised limit here.
 const PAGE_LIMIT = 100;
 
-type Validator<T> = (data: unknown) => T | ArkErrors;
-
-async function getJSON<T>(path: string, schema: Validator<T>): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(path, { headers: { accept: "application/json" } });
-  } catch (cause) {
-    throw new ApiQueryError(
-      cause instanceof Error ? cause.message : String(cause),
-      undefined,
-      path,
-    );
-  }
-  if (response.status === 401) {
-    throw new ApiQueryError("Not signed in.", 401, path);
-  }
-  if (!response.ok) {
-    throw new ApiQueryError(`The server answered ${response.status}.`, response.status, path);
-  }
-  const parsed = schema(await response.json().catch(() => undefined));
-  if (parsed instanceof type.errors) {
-    throw new ApiQueryError(`Unexpected response shape: ${parsed.summary}`, undefined, path);
-  }
-  return parsed;
+function getJSON<T>(path: string, schema: Validator<T>): Promise<T> {
+  return apiRequest(path, schema, undefined, ApiQueryError);
 }
 
 export function listAgentDefinitions(tenantId: string): Promise<readonly AgentDefinition[]> {

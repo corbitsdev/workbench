@@ -1,55 +1,37 @@
 // Workbench settings and bench membership listings aren't reimplemented
 // here — they come straight from `@/chat` and `@/bench`.
 
-import { type } from "arktype";
-import type { ArkErrors } from "arktype";
 import { TenantResponse, UserProfile } from "@intx/types";
-import { UnauthenticatedError } from "@/lib/api-query";
+import { ApiQueryError } from "@/lib/api-query";
+import { apiRequest, type Validator } from "./api-request";
 
 export type Bench = typeof TenantResponse.infer;
 export type Account = typeof UserProfile.infer;
 
-export class SettingsApiError extends Error {
-  constructor(
-    message: string,
-    readonly status?: number,
-  ) {
-    super(message);
+export class SettingsApiError extends ApiQueryError {
+  constructor(message: string, status?: number, path?: string) {
+    super(message, status, path);
+    this.name = "SettingsApiError";
   }
 }
 
-type Validator<T> = (data: unknown) => T | ArkErrors;
-
-async function request<T>(path: string, schema: Validator<T>, init?: RequestInit): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(path, {
-      ...init,
-      headers: { "content-type": "application/json", ...init?.headers },
-    });
-  } catch (cause) {
-    throw new SettingsApiError(cause instanceof Error ? cause.message : String(cause));
-  }
-  if (response.status === 401) {
-    throw new UnauthenticatedError();
-  }
-  if (!response.ok) {
-    throw new SettingsApiError(`The hub answered ${response.status} for ${path}.`, response.status);
-  }
-  const body: unknown = await response.json().catch(() => undefined);
-  const parsed = schema(body);
-  if (parsed instanceof type.errors) {
-    throw new SettingsApiError(`Unexpected response shape from ${path}: ${parsed.summary}`);
-  }
-  return parsed;
+function request<T>(
+  path: string,
+  schema: Validator<T>,
+  verb: string,
+  init?: RequestInit,
+): Promise<T> {
+  return apiRequest(path, schema, verb, SettingsApiError, init, fetch, {
+    throwUnauthenticatedOn401: true,
+  });
 }
 
 export function getAccount(): Promise<Account> {
-  return request("/api/me", UserProfile);
+  return request("/api/me", UserProfile, "loading your account");
 }
 
 export function renameBench(tenantId: string, name: string): Promise<Bench> {
-  return request(`/api/tenants/${tenantId}`, TenantResponse, {
+  return request(`/api/tenants/${tenantId}`, TenantResponse, "renaming this bench", {
     method: "PATCH",
     body: JSON.stringify({ name }),
   });

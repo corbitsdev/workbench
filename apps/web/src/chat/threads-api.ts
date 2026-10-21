@@ -6,6 +6,8 @@ import { decodeMail } from "@intx/mime";
 import { WorkflowDeploymentResponse } from "@intx/types";
 import { reportError } from "@corbits/error-sink";
 
+import { ApiQueryError } from "@/lib/api-query";
+import { apiRequest, type Validator } from "../api";
 import { agentSlugFromSourceAssetName } from "../agent-deploy";
 import { listTopLevelRuns } from "../agents-api";
 import { WORKER_SOURCE_CONFIG } from "../worker-source";
@@ -21,12 +23,9 @@ import { hasRedeployFailed } from "./redeploy-failures";
 import { mentionedAgents } from "./mentions";
 import { appendRoster } from "./workbench-roster";
 
-export class ChatApiError extends Error {
-  constructor(
-    message: string,
-    readonly status?: number,
-  ) {
-    super(message);
+export class ChatApiError extends ApiQueryError {
+  constructor(message: string, status?: number, path?: string) {
+    super(message, status, path);
     this.name = "ChatApiError";
   }
 }
@@ -187,21 +186,8 @@ const InboxPage = type({
   messages: type({ uid: "number", envelope: Envelope, raw: "string" }).array(),
 });
 
-async function getJson<T>(path: string, schema: (value: unknown) => T | type.errors): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(path, { headers: { accept: "application/json" } });
-  } catch (cause) {
-    throw new ChatApiError(cause instanceof Error ? cause.message : String(cause));
-  }
-  if (!response.ok) {
-    throw new ChatApiError(`The server answered ${String(response.status)}.`, response.status);
-  }
-  const parsed = schema(await response.json().catch(() => undefined));
-  if (parsed instanceof type.errors) {
-    throw new ChatApiError(`Unexpected response shape from ${path}: ${parsed.summary}`);
-  }
-  return parsed;
+function getJson<T>(path: string, schema: Validator<T>): Promise<T> {
+  return apiRequest(path, schema, undefined, ChatApiError);
 }
 
 /** Base64 to text as UTF-8. `atob` alone yields one char per byte, which

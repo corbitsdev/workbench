@@ -106,12 +106,6 @@ export function BenchProvider({ children }: { readonly children: ReactNode }) {
       selectedTenantId: resolved?.tenantId ?? null,
       selectedPrincipalId: resolved?.principalId ?? null,
       selectTenant: (tenantId: string) => {
-        const previous = stored;
-        if (previous !== null && previous !== tenantId) {
-          // Drop the left-behind bench's cache entirely — do not invalidate
-          // (which would refetch for a bench the user is no longer on).
-          queryClient.removeQueries({ queryKey: tenantKeys.all(previous) });
-        }
         writeStoredTenantId(tenantId);
         setStored(tenantId);
       },

@@ -14,6 +14,7 @@ import { getPath, navigateTo, subscribeToPath } from "./router-store";
 import { ONBOARDING_PATH } from "./routes";
 import { fetchSession, signOut } from "./session";
 import type { SessionState, SessionUser } from "./session";
+import { clearPersistedQueryCache } from "./query-cache-persistence";
 import { setThemeStorageKey } from "./theme-store";
 
 const log = getLogger("web.session");
@@ -71,6 +72,7 @@ export function Root() {
 
   const handleSignOut = useCallback(() => {
     setSession({ kind: "signed-out" });
+    void clearPersistedQueryCache();
     toast("Signed out. If you were on a shared computer, close the browser to be sure.");
     void signOut().then((ok) => {
       if (ok) return;

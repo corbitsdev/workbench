@@ -29,7 +29,6 @@
 // (bring-your-own-key), then the model/provider/offering copies that
 // reference it — never the ancestor's credential.
 
-import { type } from "arktype";
 import { reportError } from "@corbits/error-sink";
 import {
   CreateCredential,
@@ -48,114 +47,41 @@ import {
   UpdateModelProvider,
   paginatedSchema,
 } from "@intx/types";
+import { ApiQueryError } from "@/lib/api-query";
+import {
+  apiRequest,
+  requestVoid as sharedRequestVoid,
+  type FetchImpl,
+  type Validator,
+} from "../api-request";
 
 export type { ModelInfo, ModelOfferingInfo } from "@intx/types";
+export type { FetchImpl };
 
-export class InferenceSettingsApiError extends Error {
-  constructor(
-    message: string,
-    readonly status?: number,
-  ) {
-    super(message);
+export class InferenceSettingsApiError extends ApiQueryError {
+  constructor(message: string, status?: number, path?: string) {
+    super(message, status, path);
+    this.name = "InferenceSettingsApiError";
   }
 }
 
-type Validator<T> = (data: unknown) => T | type.errors;
-
-// Every call below takes an optional trailing `fetchImpl`, defaulting to
-// the global `fetch` the browser (`InferenceSection`) already relies on.
-// It exists so a server-side caller — `@corbits/config-profiles`' apply
-// route, composing a profile's writes out of these exact functions — can
-// pass a `fetch` bound to the hub's own base URL and the acting
-// principal's session cookie, rather than this module growing a second,
-// duplicated write path for the server-side case.
-// Exported (not `typeof fetch`) so a bound wrapper — which never carries
-// `fetch`'s own static `preconnect` member — satisfies the type too.
-// `string | URL | Request`, not DOM's `RequestInfo | URL` alias, so this
-// type resolves the same whether or not a consuming package's tsconfig
-// carries `"lib": ["DOM"]` — see `@corbits/config-profiles`' own
-// `index.ts` module doc for why a server-only package deliberately never
-// adds that lib.
-export type FetchImpl = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
-
-async function request<T>(
+function request<T>(
   path: string,
   schema: Validator<T>,
   verb: string,
   init?: RequestInit,
   fetchImpl: FetchImpl = fetch,
 ): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetchImpl(path, {
-      ...init,
-      headers: { "content-type": "application/json", ...init?.headers },
-    });
-  } catch (cause) {
-    throw new InferenceSettingsApiError(cause instanceof Error ? cause.message : String(cause));
-  }
-  if (!response.ok) {
-    const body: unknown = await response.json().catch(() => undefined);
-    const envelope = type({
-      error: { code: "string", userMessage: "string", refId: "string" },
-    })(body);
-    throw new InferenceSettingsApiError(
-      envelope instanceof type.errors
-        ? `The server answered ${response.status} while ${verb}.`
-        : envelope.error.userMessage,
-      response.status,
-    );
-  }
-  const body: unknown = await response.json().catch(() => undefined);
-  const parsed = schema(body);
-  if (parsed instanceof type.errors) {
-    throw new InferenceSettingsApiError(
-      `Unexpected response shape while ${verb}: ${parsed.summary}`,
-    );
-  }
-  return parsed;
+  return apiRequest(path, schema, verb, InferenceSettingsApiError, init, fetchImpl);
 }
 
-/** For a route whose success response is `204 No Content` — nothing to
- * validate against a schema, so this is the one place a call is allowed
- * to end without a parsed body, rather than every `request<T>` caller
- * having to accept an unsound `undefined as T`. */
-async function requestVoid(
+function requestVoid(
   path: string,
   verb: string,
   init?: RequestInit,
   fetchImpl: FetchImpl = fetch,
 ): Promise<void> {
-  let response: Response;
-  try {
-    response = await fetchImpl(path, {
-      ...init,
-      headers: { "content-type": "application/json", ...init?.headers },
-    });
-  } catch (cause) {
-    throw new InferenceSettingsApiError(cause instanceof Error ? cause.message : String(cause));
-  }
-  if (!response.ok) {
-    const body: unknown = await response.json().catch(() => undefined);
-    const envelope = type({
-      error: { code: "string", userMessage: "string", refId: "string" },
-    })(body);
-    throw new InferenceSettingsApiError(
-      envelope instanceof type.errors
-        ? `The server answered ${response.status} while ${verb}.`
-        : envelope.error.userMessage,
-      response.status,
-    );
-  }
-  // A void route answers `204 No Content` by contract. Any other 2xx (e.g. a
-  // 200/201-with-body the route drifted into returning where 204 is expected)
-  // is a contract mismatch and must fail loudly.
-  if (response.status !== 204) {
-    throw new InferenceSettingsApiError(
-      `The server answered ${response.status} while ${verb}; expected 204 No Content.`,
-      response.status,
-    );
-  }
+  return sharedRequestVoid(path, verb, InferenceSettingsApiError, init, fetchImpl);
 }
 
 /** The tenant's resolved catalog — every model visible after inheritance,

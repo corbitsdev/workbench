@@ -12,11 +12,14 @@ import {
 } from "@intx/types";
 import { useQuery } from "@tanstack/react-query";
 import { type } from "arktype";
-import type { ArkErrors } from "arktype";
 
 import type { APIQuery } from "@/lib/api-query";
-import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@/lib/api-query";
+import { ApiQueryError, toAPIQuery } from "@/lib/api-query";
 import { pathToQueryKey } from "./query-client";
+import { apiRequest, requestVoid, type Validator } from "./settings/api-request";
+
+export { apiRequest, requestVoid };
+export type { Validator };
 
 export const ProfileSchema = UserProfile;
 export const PrincipalsSchema = paginatedSchema(PrincipalSummary);
@@ -83,30 +86,15 @@ export type ArtifactCounts = typeof ArtifactCountsSchema.infer;
 type Paginated<T> = { data: T[]; nextCursor: string | null };
 export type PrincipalsPage = Paginated<Principal>;
 
-/** An arktype schema, seen as the validating call every `Type` provides. */
-type Validator<T> = (data: unknown) => T | ArkErrors;
-
 /** The key and fetcher `useAPIQuery` runs, for callers that batch reads with
  * `useQueries` and must share the same cache entry. */
 export function apiQueryOptions<T>(path: string, schema: Validator<T>) {
   return {
     queryKey: pathToQueryKey(path),
-    queryFn: async (): Promise<T> => {
-      const response = await fetch(path, {
-        headers: { accept: "application/json" },
-      });
-      if (response.status === 401) {
-        throw new UnauthenticatedError();
-      }
-      if (!response.ok) {
-        throw new ApiQueryError(`The server answered ${response.status}.`, response.status, path);
-      }
-      const parsed = schema(await response.json());
-      if (parsed instanceof type.errors) {
-        throw new ApiQueryError(`Unexpected response shape: ${parsed.summary}`, undefined, path);
-      }
-      return parsed;
-    },
+    queryFn: (): Promise<T> =>
+      apiRequest(path, schema, undefined, ApiQueryError, undefined, fetch, {
+        throwUnauthenticatedOn401: true,
+      }),
   };
 }
 
@@ -127,29 +115,11 @@ export function useAPIQuery<T>(
 }
 
 // Loud on a non-2xx status or a shape mismatch, never a silent fallback.
-async function postJSON<T>(path: string, schema: Validator<T>, body: unknown): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(path, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-  } catch (cause) {
-    throw new ApiQueryError(
-      cause instanceof Error ? cause.message : String(cause),
-      undefined,
-      path,
-    );
-  }
-  if (!response.ok) {
-    throw new ApiQueryError(`The server answered ${response.status}.`, response.status, path);
-  }
-  const parsed = schema(await response.json());
-  if (parsed instanceof type.errors) {
-    throw new ApiQueryError(`Unexpected response shape: ${parsed.summary}`, undefined, path);
-  }
-  return parsed;
+function postJSON<T>(path: string, schema: Validator<T>, body: unknown): Promise<T> {
+  return apiRequest(path, schema, undefined, ApiQueryError, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 /** Approves a pending approval. Scope "always" is the stock standing
@@ -178,22 +148,16 @@ export function rejectApproval(
 
 // The only place `parentId` comes from — a bench is a top-level tenant,
 // so a raw-id/name heuristic can never tell it apart from a workbench.
-export async function fetchTenantDetail(tenantId: string): Promise<TenantDetail> {
-  const response = await fetch(`/api/tenants/${encodeURIComponent(tenantId)}`, {
-    headers: { accept: "application/json" },
-  });
-  if (!response.ok) {
-    throw new ApiQueryError(
-      `The server answered ${response.status}.`,
-      response.status,
-      `tenant ${tenantId}`,
-    );
-  }
-  const parsed = TenantDetailSchema(await response.json());
-  if (parsed instanceof type.errors) {
-    throw new ApiQueryError(`Unexpected tenant response shape: ${parsed.summary}`);
-  }
-  return parsed;
+export function fetchTenantDetail(tenantId: string): Promise<TenantDetail> {
+  return apiRequest(
+    `/api/tenants/${encodeURIComponent(tenantId)}`,
+    TenantDetailSchema,
+    "loading tenant detail",
+    ApiQueryError,
+    undefined,
+    fetch,
+    { throwUnauthenticatedOn401: true },
+  );
 }
 
 // The server answers 415 for a non-HTML artifact.
@@ -207,20 +171,14 @@ export async function fetchArtifactDetail(
   tenantId: string,
   artifactId: string,
 ): Promise<ArtifactDetail> {
-  const response = await fetch(
+  const parsed = await apiRequest(
     `/api/tenants/${tenantId}/artifacts/${encodeURIComponent(artifactId)}`,
-    { headers: { accept: "application/json" } },
+    ArtifactDetailSchema,
+    "loading artifact detail",
+    ApiQueryError,
+    undefined,
+    fetch,
+    { throwUnauthenticatedOn401: true },
   );
-  if (!response.ok) {
-    throw new ApiQueryError(
-      `The server answered ${response.status}.`,
-      response.status,
-      `artifact ${artifactId}`,
-    );
-  }
-  const parsed = ArtifactDetailSchema(await response.json());
-  if (parsed instanceof type.errors) {
-    throw new ApiQueryError(`Unexpected artifact response shape: ${parsed.summary}`);
-  }
   return parsed.artifact;
 }

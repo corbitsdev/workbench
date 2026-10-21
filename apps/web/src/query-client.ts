@@ -1,11 +1,16 @@
 // One QueryClient for the signed-in shell: shared cache for /api/me and
-// tenant-scoped reads, so navigating between pages reuses data and a bench
-// switch can drop the previous bench's tenant keys in a single call.
+// tenant-scoped reads, persisted to IndexedDB so navigating between pages or
+// switching benches reuses cached data immediately while revalidating.
 
 import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
 
 import { ApiQueryError, UnauthenticatedError } from "@/lib/api-query";
 import { workbenchesQueryKey } from "@/chat/workbench-tenants";
+import {
+  attachQueryCachePersistence,
+  clearPersistedQueryCache,
+  hydrateQueryClientFromIndexedDB,
+} from "./query-cache-persistence";
 
 // A 404 is a stable answer, not a transient failure, so retrying it three
 // times only delays an honest quiet no-op.
@@ -26,24 +31,32 @@ export function isAuthInvalidError(error: unknown): boolean {
 // while the rest of the shell keeps rendering. Caller must make
 // `onAuthInvalid` idempotent.
 export function createAppQueryClient(onAuthInvalid: () => void = () => undefined): QueryClient {
-  return new QueryClient({
+  const handleAuthInvalid = () => {
+    void clearPersistedQueryCache();
+    onAuthInvalid();
+  };
+  const client = new QueryClient({
     queryCache: new QueryCache({
       onError: (error) => {
-        if (isAuthInvalidError(error)) onAuthInvalid();
+        if (isAuthInvalidError(error)) handleAuthInvalid();
       },
     }),
     mutationCache: new MutationCache({
       onError: (error) => {
-        if (isAuthInvalidError(error)) onAuthInvalid();
+        if (isAuthInvalidError(error)) handleAuthInvalid();
       },
     }),
     defaultOptions: {
       queries: {
         staleTime: 30_000,
+        gcTime: 24 * 60 * 60 * 1000,
         retry: shouldRetryQuery,
       },
     },
   });
+  void hydrateQueryClientFromIndexedDB(client);
+  attachQueryCachePersistence(client);
+  return client;
 }
 
 /** Stable identity-scoped keys — survive a bench switch. */
