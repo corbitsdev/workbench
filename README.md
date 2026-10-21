@@ -32,6 +32,7 @@ local [Ollama](https://ollama.com) works with no key, see
 | ------------- | ---------------------------------------------------------------- |
 | `apps/`       | `hub` (API), `web` (React client), `sidecar` (execution host)    |
 | `packages/`   | Corbits libraries, and `worker`, the default agent harness       |
+| `workflows/`  | Deployable workflow packages                                     |
 | `vendor/intx` | Hand-copied Interchange packages, see [VENDORED.md](VENDORED.md) |
 
 ## Develop
@@ -41,9 +42,15 @@ bun run check      # typecheck, lint, fmt:check, test
 bun run test:e2e   # end-to-end suites, need DATABASE_URL
 ```
 
-Conventions live in [AGENTS.md](AGENTS.md).
+## Read next
+
+- [PRODUCT.md](PRODUCT.md): what a workbench, its worker, tools, and skills are.
+- [ARCHITECTURE.md](ARCHITECTURE.md) and [IMPLEMENTATION.md](IMPLEMENTATION.md): how the hub, sidecar, and web client are built.
+- [docs/local-dev.md](docs/local-dev.md): running locally with Ollama, memory embeddings, and OAuth providers.
+- [docs/GLOSSARY.md](docs/GLOSSARY.md): product-term to platform-term mapping.
+- [CONTRIBUTING.md](CONTRIBUTING.md), [AGENTS.md](AGENTS.md), and [DESIGN.md](DESIGN.md): contributing, code rules, and the visual design system.
 
 ## License
 
 The application is GPLv2 with the [AI Exception](GPLv2-AI-Exception.md);
-see [LICENSE.md](LICENSE.md). Libraries under `packages/`\nare LGPL-2.1.
+see [LICENSE.md](LICENSE.md). Libraries under `packages/` are LGPL-2.1. Contributions require the [CLA](CLA.md); see [CONTRIBUTING.md](CONTRIBUTING.md). Report security issues per [SECURITY.md](SECURITY.md).

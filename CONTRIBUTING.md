@@ -2,45 +2,35 @@
 
 Thanks for your interest in Corbits Workbench.
 
-> **`vendor/intx` is read-only vendored code.** Never open a PR that
-> changes anything under `vendor/intx` — it is hand-copied, ledgered
-> `@intx/*` source, not code this repo owns. See [VENDORED.md](VENDORED.md)
-> for the ledger and how to propose a change upstream instead.
+> **`vendor/intx` is vendored code.** Do not open a PR that changes anything
+> under `vendor/intx` unless it adds a ledgered upstream delta with a kill date.
+> See [VENDORED.md](VENDORED.md) for the ledger and propose changes upstream at
+> [faremeter/interchange](https://github.com/faremeter/interchange).
 
 ## Before you start
 
 - Contributions are accepted under the terms of the
   [Contributor License Agreement](CLA.md) and the project license: the
-  application ([GPLv2 with AI Exception](LICENSE.md)), or LGPL-2.1
-  for contributions to a library under `packages/` or `workflows/`.
-- Read [AGENTS.md](AGENTS.md) — the ground rules there apply to human and
-  agent contributors alike.
+  application ([GPLv2 with AI Exception](LICENSE.md)), or LGPL-2.1 for
+  contributions to a library under `packages/` or `workflows/`.
+- [docs/local-dev.md](docs/local-dev.md) covers running the stack locally.
+- [AGENTS.md](AGENTS.md), and the `AGENTS.md` files under `apps/`, hold the
+  architecture and code rules every change follows, whether a person or a
+  coding agent writes it.
 
 ## The short version
 
-1. `bun install` (or `bun run hooks:install`) sets a repo-local pre-push
-   hook. That hook is the local stand-in for CI's jobs: typecheck, lint
-   (oxlint + `oxfmt --check`), structural checks, and unit tests. Skip
-   the hook with `git push --no-verify` or `SKIP_WORKBENCH_HOOKS=1`.
-   Typecheck and
-   tests narrow to the packages your change touches; a change under
-   `package.json`, `bun.lock`, a shared tsconfig, `scripts/`, or
-   `.github/` falls back to checking every package instead, which takes
-   much longer — that's expected for those paths, not a hang.
-2. `bun run check` — everything must be green before and after your
-   change.
-3. Tests first: add failing tests, then the implementation, then docs.
-4. One logical change per commit; write messages for a public audience.
-5. Never commit secrets. `.env.example` is the only tracked env file.
-6. Never vendor code without a ledger row and kill date in
+1. `bun run check` (typecheck, lint, format check, unit tests) must be green
+   before and after your change.
+2. Pull request titles and every commit subject must follow Conventional
+   Commits (`feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `chore`, `ci`,
+   `build`, `style`, `revert`).
+3. Tests first: `test(scope): add tests for X`, then the implementation
+   (`feat(scope): ...` or `fix(scope): ...`), then docs (`docs(scope): ...`).
+   One logical change per commit; write messages for a public audience.
+4. Never commit secrets. `.env.example` is the only tracked env file.
+5. Never vendor code without a ledger row and kill date in
    [VENDORED.md](VENDORED.md).
-7. A package that owns its own product tables ships one idempotent,
-   literal-SQL migration, applied by the hub itself at boot.
-8. Security issues go through [SECURITY.md](SECURITY.md), never a public
-   issue.
-9. Changed a publishable `workflows/*` or `packages/*-tools` package's
-   `src/`? Bump its `package.json` version — the tool-package-freshness
-   check enforces this. Nothing publishes to npm from this monorepo; a
-   package moves to its own repository before it can be published.
-
-This document will grow as the project does.
+6. Each package that owns product tables ships one idempotent SQL migration,
+   applied by the hub at boot.
+7. Security issues go through [SECURITY.md](SECURITY.md), never a public issue.
