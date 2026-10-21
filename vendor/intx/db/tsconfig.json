@@ -19,9 +19,6 @@
       "path": "../authz/tsconfig.src.json"
     },
     {
-      "path": "../hub-common/tsconfig.src.json"
-    },
-    {
       "path": "../types/tsconfig.src.json"
     }
   ]

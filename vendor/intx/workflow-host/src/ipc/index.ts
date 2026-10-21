@@ -158,7 +158,6 @@ export {
   type EventPayload,
   type EventChannelReceiverOpts,
   type FrameReader,
-  type ReceivedEvent,
 } from "./event-channel";
 export {
   createEventChannelSender,

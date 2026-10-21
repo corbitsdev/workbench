@@ -17,16 +17,10 @@
       "path": "../../vendor/intx/harness/tsconfig.src.json"
     },
     {
-      "path": "../../vendor/intx/hub-agent/tsconfig.src.json"
-    },
-    {
       "path": "../../vendor/intx/hub-sessions/tsconfig.src.json"
     },
     {
       "path": "../../vendor/intx/inference/tsconfig.src.json"
-    },
-    {
-      "path": "../../vendor/intx/mail-memory/tsconfig.src.json"
     },
     {
       "path": "../../vendor/intx/types/tsconfig.src.json"

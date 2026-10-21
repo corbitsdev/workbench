@@ -887,8 +887,8 @@ export async function runWorkflowChild(
       ...(opts.mailboxCallBridge !== undefined
         ? { mailboxCallBridge: opts.mailboxCallBridge }
         : {}),
-      onEvent: (event, childRunId) => {
-        void eventSender.send(event, childRunId).catch((cause) => {
+      onEvent: (event) => {
+        void eventSender.send(event).catch((cause) => {
           logger.error`event-channel send failed during resume run ${run.runId}: ${String(cause)}`;
         });
       },
@@ -1176,8 +1176,8 @@ async function handleControlPayload(
         ...(ctx.mailboxCallBridge !== undefined
           ? { mailboxCallBridge: ctx.mailboxCallBridge }
           : {}),
-        onEvent: (event, childRunId) => {
-          void ctx.eventSender.send(event, childRunId).catch((cause) => {
+        onEvent: (event) => {
+          void ctx.eventSender.send(event).catch((cause) => {
             logger.error`event-channel send failed during run ${payload.data.runId}: ${String(cause)}`;
           });
         },
@@ -1674,7 +1674,7 @@ function buildRuntimeEnv(args: {
   sourcesRef: SourcesSnapshotRef;
   credentialWiring: CredentialWiring;
   mailboxCallBridge?: ChildMailboxCallBridge;
-  onEvent: (event: EventPayload, childRunId?: string) => void;
+  onEvent: (event: EventPayload) => void;
   upstreamSender: ControlChannelSender;
 }): WorkflowRuntimeEnv {
   const signalChannel = createWorkflowHostSignalChannel({
@@ -1738,9 +1738,7 @@ function buildRuntimeEnv(args: {
       : (spawnInput) =>
           hostSuspendable(
             spawnInput,
-            (event) => {
-              args.onEvent(event, spawnInput.childRunId);
-            },
+            args.onEvent,
             args.credentialWiring.materialRef,
           );
   // Same adaptation for the terminal childWorkflow seam: inject THIS run's event

@@ -22,7 +22,7 @@
     "@corbits/mcp": "^0.3.0",
     "@corbits/react-ui": "0.3.0",
     "@corbits/worker": "workspace:*",
-    "@intx/mime": "workspace:*",
+    "@intx/mime": "0.5.0",
     "@intx/types": "workspace:*",
     "@isomorphic-git/lightning-fs": "4.7.0",
     "@radix-ui/react-dialog": "^1.1.15",
@@ -39,6 +39,7 @@
     "react-joyride": "^2.9.3"
   },
   "devDependencies": {
+    "@intx/hub-common": "0.5.0",
     "@intx/inference": "workspace:*",
     "@types/bun": "catalog:",
     "@types/react": "^19.2.2",

@@ -589,7 +589,6 @@ export async function createHubServer({
     assetService,
     repoStore: agentRepoStore.repoStore,
     maxTarballBytes: hubMaxTarballBytes,
-    workflowRunAuthenticator: createWorkflowRunAuthenticator({ db }),
     sidecarWsHandler: upgradeWebSocket((_c) => {
       let handle: WsHandle;
       return {

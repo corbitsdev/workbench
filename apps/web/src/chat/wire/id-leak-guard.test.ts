@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { generateId } from "../../../../../vendor/intx/hub-common/src/ids";
+import { generateId } from "@intx/hub-common";
 import { assertNoLeakedInternalId } from "./id-leak-guard";
 
 const KINDS: Parameters<typeof generateId>[0][] = [

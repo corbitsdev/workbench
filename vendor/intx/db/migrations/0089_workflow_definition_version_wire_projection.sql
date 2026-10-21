@@ -1,1 +1,0 @@
-ALTER TABLE "workflow_definition_version" ADD COLUMN "wire_projection" jsonb;

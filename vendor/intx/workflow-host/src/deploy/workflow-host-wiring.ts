@@ -1026,7 +1026,6 @@ export function createSidecarDeployRouter<
     generation: number,
     event: InferenceEvent,
     sessionId: string | undefined,
-    childRunId?: string,
   ) => void;
   /**
    * Callback the supervisor invokes for every control-plane suspension a
@@ -1305,7 +1304,6 @@ export function createSidecarDeployRouter<
       _generation: number,
       _event: InferenceEvent,
       _sessionId: string | undefined,
-      _childRunId?: string,
     ): void => {
       /* no-op default: tests and production-without-a-publisher
          deployments do not consume events. */
@@ -2092,13 +2090,12 @@ export function createSidecarDeployRouter<
         stepOrder: [...credentialStepIds],
         definitionHash,
         warmKeep,
-        onInferenceEvent: (event, childRunId) => {
+        onInferenceEvent: (event) => {
           publishInferenceEvent(
             spec.agentAddress,
             spec.generation,
             event,
             spec.sessionId,
-            childRunId,
           );
         },
       };

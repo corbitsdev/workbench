@@ -100,11 +100,7 @@ import {
 } from "../ipc/control-sender";
 import { generateChannelId, generateHmacKey } from "../ipc/crypto";
 import { receiveControlChannel } from "../ipc/control-receiver";
-import {
-  receiveEventChannel,
-  type EventPayload,
-  type ReceivedEvent,
-} from "../ipc/event-channel";
+import { receiveEventChannel, type EventPayload } from "../ipc/event-channel";
 import type {
   ControlPayload,
   OutboundMessagePayload,
@@ -383,7 +379,7 @@ export type SpawnOpts = {
    * the child publishes. Mirrors the existing `agent.event` event
    * sink the host exposes; the supervisor is the in-host translator.
    */
-  onInferenceEvent: (event: EventPayload, childRunId?: string) => void;
+  onInferenceEvent: (event: EventPayload) => void;
 };
 
 export type SpawnResult = {
@@ -2799,7 +2795,7 @@ export function createWorkflowSupervisor(
     hmacKey: Uint8Array;
     ipcKeypair: { privateKey: Uint8Array; publicKey: Uint8Array };
     handle: SubprocessHandle;
-    onInferenceEvent: (event: EventPayload, childRunId?: string) => void;
+    onInferenceEvent: (event: EventPayload) => void;
   }): Promise<{
     wiring: ChildWiring;
     readyPromise: Promise<{ childPid: number }>;
@@ -5066,7 +5062,7 @@ type ActiveState = {
   controlSender: ControlChannelSender;
   channelId: string;
   eventPump: Promise<void>;
-  onInferenceEvent: (event: EventPayload, childRunId?: string) => void;
+  onInferenceEvent: (event: EventPayload) => void;
   mailUnsubscribe: (() => void) | null;
   credentialsSnapshot: CredentialsSnapshot | null;
   /**
@@ -5139,7 +5135,7 @@ type SpawnContext = {
   definitionHash: string;
   /** Warm-keep flag carried on respawn env (unchanged across recycle). */
   warmKeep: boolean;
-  onInferenceEvent: (event: EventPayload, childRunId?: string) => void;
+  onInferenceEvent: (event: EventPayload) => void;
   spawnedAt: number;
 };
 
@@ -5189,11 +5185,11 @@ function defaultNow(): number {
  * to the supervisor's shutdown path.
  */
 async function pumpEvents(
-  iter: AsyncGenerator<ReceivedEvent, void, void>,
-  onInferenceEvent: (event: EventPayload, childRunId?: string) => void,
+  iter: AsyncGenerator<EventPayload, void, void>,
+  onInferenceEvent: (event: EventPayload) => void,
 ): Promise<void> {
-  for await (const received of iter) {
-    onInferenceEvent(received.event, received.childRunId);
+  for await (const event of iter) {
+    onInferenceEvent(event);
   }
 }
 

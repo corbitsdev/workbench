@@ -20,7 +20,7 @@
     "@intx/types": "workspace:*"
   },
   "devDependencies": {
-    "@intx/mime": "workspace:*",
+    "@intx/mime": "0.5.0",
     "@types/bun": "catalog:",
     "arktype": "catalog:",
     "typescript": "catalog:"

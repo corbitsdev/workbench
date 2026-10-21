@@ -94,11 +94,7 @@ import {
 } from "../ipc/control-sender";
 import { generateChannelId, generateHmacKey } from "../ipc/crypto";
 import { receiveControlChannel } from "../ipc/control-receiver";
-import {
-  receiveEventChannel,
-  type EventPayload,
-  type ReceivedEvent,
-} from "../ipc/event-channel";
+import { receiveEventChannel, type EventPayload } from "../ipc/event-channel";
 import type { ControlPayload } from "../ipc/control-payloads";
 
 import {
@@ -194,7 +190,7 @@ export interface RecycleContext {
    */
   readonly warmKeep: boolean;
   /** Forward target for InferenceEvents the new child publishes. */
-  readonly onInferenceEvent: (event: EventPayload, childRunId?: string) => void;
+  readonly onInferenceEvent: (event: EventPayload) => void;
   /** Live child wiring on entry; replaced before return. */
   readonly current: ChildWiring;
   /** Supervisor-side drain primitive; sends the existing drain mail. */
@@ -581,11 +577,11 @@ async function waitForReady(
 }
 
 async function pumpEvents(
-  iter: AsyncGenerator<ReceivedEvent, void, void>,
-  onInferenceEvent: (event: EventPayload, childRunId?: string) => void,
+  iter: AsyncGenerator<EventPayload, void, void>,
+  onInferenceEvent: (event: EventPayload) => void,
 ): Promise<void> {
-  for await (const received of iter) {
-    onInferenceEvent(received.event, received.childRunId);
+  for await (const event of iter) {
+    onInferenceEvent(event);
   }
 }
 

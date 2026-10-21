@@ -1,4 +1,0 @@
-Source: https://github.com/faremeter/interchange (packages/hub-agent)
-Commit: 0a4eb59b4276e6912082c9e3259b69ce4447869f (origin/main, v0.5.0)
-License: LGPL-2.1-only (see vendor/intx/LICENSE)
-Local modifications: exports map repointed from the upstream intx-src condition to direct TypeScript source resolution (types/default -> ./src/...); dist references removed. Upstream test files are not vendored (they import the unvendored @intx/inference-testing and @intx/test-harness test packages). CL-6396: SessionEventSink and createSidecarOrchestrator's dispatchEvent/publishWorkflowInferenceEvent take an optional childRunId, and createHubLink's sendEvent stamps it on agent.event so overlapping turns close the right occurrence row. Retired at this pin: the CL-7508 oauthLoginExecutor seam (OAuth loopback login runs in-process on the hub via @corbits/oauth-core/hub).

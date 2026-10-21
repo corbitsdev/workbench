@@ -41,9 +41,3 @@ export {
   type CreateApprovalRoutesDeps,
   type ReadRunLifecycles,
 } from "./routes/approvals";
-export {
-  createWorkflowRunDeployAuth,
-  type CreateWorkflowRunDeployAuthDeps,
-  type WorkflowRunAuthenticator,
-  type WorkflowRunDeployScope,
-} from "./middleware/workflow-run-deploy-auth";

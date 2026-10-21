@@ -799,7 +799,7 @@ function usableAddrs(raw: string[]): string[] {
  * which is not wired with a reader -- still delivers; a part that needs bytes
  * with no reader is refused loudly rather than silently dropped.
  */
-export async function buildInboundMessageFromMail(
+async function buildInboundMessageFromMail(
   mail: Mail,
   mailPartReader: MailPartReader | undefined,
 ): Promise<InboundMessage> {
