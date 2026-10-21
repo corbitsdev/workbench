@@ -57,11 +57,11 @@
   align-items: center;
   gap: 10px;
 }
-.drawer-now b,
-.drawer-now span {
+.drawer-now > div b,
+.drawer-now > div span {
   display: block;
 }
-.drawer-now span {
+.drawer-now > div span {
   font-size: 12px;
   color: var(--ink-3);
 }
