@@ -5,7 +5,7 @@
 
 import { type } from "arktype";
 
-import { apiRequest } from "../api-request";
+import { apiRequest } from "../../api";
 import { InferenceSettingsApiError, type FetchImpl } from "./api";
 
 const StartedLogin = type({ loginId: "string", authorizeUrl: "string" });

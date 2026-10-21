@@ -10,7 +10,7 @@ import {
   type UpdatablePrincipalStatus,
 } from "@intx/types";
 import { ApiQueryError } from "@/lib/api-query";
-import { apiRequest, requestVoid as sharedRequestVoid, type Validator } from "./api-request";
+import { apiRequest, requestVoid as sharedRequestVoid, type Validator } from "../api";
 
 export type Principal = typeof PrincipalResponse.infer;
 export type Role = typeof RoleResponse.infer;

@@ -3,7 +3,7 @@
 
 import { TenantResponse, UserProfile } from "@intx/types";
 import { ApiQueryError } from "@/lib/api-query";
-import { apiRequest, type Validator } from "./api-request";
+import { apiRequest, type Validator } from "../api";
 
 export type Bench = typeof TenantResponse.infer;
 export type Account = typeof UserProfile.infer;

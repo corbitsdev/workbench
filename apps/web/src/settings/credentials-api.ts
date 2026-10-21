@@ -11,7 +11,7 @@ import {
 export { credentialTypes } from "@intx/types";
 
 import { ApiQueryError } from "@/lib/api-query";
-import { apiRequest, requestVoid, type Validator } from "./api-request";
+import { apiRequest, requestVoid, type Validator } from "../api";
 
 export type Credential = typeof CredentialResponse.infer;
 export type Provider = typeof ProviderResponse.infer;

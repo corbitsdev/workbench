@@ -1,14 +1,17 @@
-// Unit tests for the unified fetch + ArkType client request layer (`apiRequest`,
-// `requestVoid`, `apiQueryOptions`, and the shared `ApiQueryError` subclass
-// hierarchy across settings, tenancy, credentials, inference, and chat seams).
 import { afterEach, describe, expect, test } from "bun:test";
 import { type } from "arktype";
 
 import { ApiQueryError, UnauthenticatedError } from "@/lib/api-query";
-import { apiQueryOptions, fetchArtifactDetail, fetchTenantDetail } from "./api";
+import {
+  apiQueryOptions,
+  apiRequest,
+  fetchArtifactDetail,
+  fetchTenantDetail,
+  readErrorEnvelope,
+  requestVoid,
+} from "./api";
 import { ChatApiError } from "./chat/threads-api";
 import { shouldRetryQuery, isAuthInvalidError } from "./query-client";
-import { apiRequest, readErrorEnvelope, requestVoid } from "./settings/api-request";
 import { SettingsApiError, getAccount } from "./settings/api";
 import { CredentialsApiError, deleteCredential } from "./settings/credentials-api";
 import { InferenceSettingsApiError, deleteOwnOffering } from "./settings/inference/api";
@@ -139,7 +142,7 @@ describe("apiRequest and requestVoid", () => {
     expect((error as SettingsApiError).message).toContain("Unexpected response shape");
   });
 
-  test("requestVoid resolves on 204 and rejects on 200 or network error", async () => {
+  test("requestVoid resolves only on 204 and rejects 200/201 or network failures", async () => {
     await expect(
       requestVoid(
         "/api/items/1",
@@ -150,16 +153,31 @@ describe("apiRequest and requestVoid", () => {
       ),
     ).resolves.toBeUndefined();
 
-    const drift = await requestVoid(
+    for (const status of [200, 201]) {
+      const drift = await requestVoid(
+        "/api/items/1",
+        "deleting item",
+        TenancyApiError,
+        { method: "DELETE" },
+        stubFetch(status, { ok: true }),
+      ).catch((cause: unknown) => cause);
+      expect(drift).toBeInstanceOf(TenancyApiError);
+      expect(drift).toBeInstanceOf(ApiQueryError);
+      expect((drift as TenancyApiError).status).toBe(status);
+      expect((drift as TenancyApiError).message).toContain("204");
+    }
+
+    const networkErr = await requestVoid(
       "/api/items/1",
       "deleting item",
-      CredentialsApiError,
+      TenancyApiError,
       { method: "DELETE" },
-      stubFetch(200, { ok: true }),
+      (async () => {
+        throw new TypeError("fetch failed");
+      }) as unknown as typeof fetch,
     ).catch((cause: unknown) => cause);
-    expect(drift).toBeInstanceOf(CredentialsApiError);
-    expect(drift).toBeInstanceOf(ApiQueryError);
-    expect((drift as CredentialsApiError).status).toBe(200);
+    expect(networkErr).toBeInstanceOf(TenancyApiError);
+    expect((networkErr as TenancyApiError).status).toBeUndefined();
   });
 
   test("apiQueryOptions maps 401 to UnauthenticatedError and non-ok to ApiQueryError", async () => {
@@ -181,15 +199,21 @@ describe("apiRequest and requestVoid", () => {
     await expect(fetchTenantDetail("t1")).rejects.toBeInstanceOf(UnauthenticatedError);
     await expect(fetchArtifactDetail("t1", "a1")).rejects.toBeInstanceOf(UnauthenticatedError);
 
+    const inf401 = await deleteOwnOffering(
+      "t1",
+      "o1",
+      stubFetch(401, {
+        error: { code: "unauthorized", userMessage: "Sign in again", refId: "r" },
+      }),
+    ).catch((cause: unknown) => cause);
+    expect(inf401).toBeInstanceOf(InferenceSettingsApiError);
+    expect(inf401).toBeInstanceOf(ApiQueryError);
+    expect((inf401 as InferenceSettingsApiError).status).toBe(401);
+    expect((inf401 as InferenceSettingsApiError).message).toBe("Sign in again");
+
     globalThis.fetch = stubFetch(500, {});
     const credErr = await deleteCredential("t1", "c1").catch((cause: unknown) => cause);
     expect(credErr).toBeInstanceOf(CredentialsApiError);
     expect(credErr).toBeInstanceOf(ApiQueryError);
-
-    const infErr = await deleteOwnOffering("t1", "o1", stubFetch(500, {})).catch(
-      (cause: unknown) => cause,
-    );
-    expect(infErr).toBeInstanceOf(InferenceSettingsApiError);
-    expect(infErr).toBeInstanceOf(ApiQueryError);
   });
 });

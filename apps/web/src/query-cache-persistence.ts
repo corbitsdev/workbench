@@ -1,7 +1,6 @@
-// IndexedDB-backed persistence for the signed-in TanStack QueryClient cache.
-// Hydrates cached query entries on boot as stale-while-revalidate (so active
-// queries render cached data immediately and still revalidate from the hub on
-// a page reload) and flushes successful query snapshots on a microtask.
+// Hydrates cached query entries on boot as stale-while-revalidate so active
+// queries render cached data immediately while still revalidating against the
+// hub on a page reload, and flushes successful snapshots on a microtask.
 
 import { reportError } from "@corbits/error-sink";
 import type { QueryClient } from "@tanstack/react-query";
@@ -68,11 +67,9 @@ function runStoreRequest<T>(
   );
 }
 
-/** Hydrates non-expired entries from IndexedDB into `queryClient` without
- * overwriting any query that already has in-memory data or an in-flight fetch.
- * Hydrated entries are immediately marked invalidated (`refetchType: "active"`)
- * so mounted components render cached data right away while revalidating from
- * the hub in the background (`stale-while-revalidate`). */
+// Hydrated entries get `updatedAt: 0` + `invalidateQueries` so TanStack Query's
+// 30s `staleTime` never suppresses a fresh fetch on reload, and any query that
+// already started fetching before IndexedDB opened is left untouched.
 export async function hydrateQueryClientFromIndexedDB(
   queryClient: QueryClient,
   options?: {
@@ -121,9 +118,6 @@ export async function hydrateQueryClientFromIndexedDB(
   }
 }
 
-/** Subscribes to `queryClient`'s query cache and batches writes of
- * non-invalidated successful query snapshots into IndexedDB (defaulting to a
- * microtask so mutations that precede an immediate reload still flush). */
 export function attachQueryCachePersistence(
   queryClient: QueryClient,
   options?: {
@@ -199,9 +193,8 @@ export function attachQueryCachePersistence(
     if (event.type === "updated" || event.type === "added") {
       if (query.state.isInvalidated) {
         pendingWrites.delete(query.queryHash);
-        // Only delete from IndexedDB when in-memory data was explicitly
-        // invalidated after a real fetch/set (`dataUpdatedAt > 0`), not when
-        // hydration itself seeded `updatedAt: 0`.
+        // Only evict when live data (`dataUpdatedAt > 0`) was invalidated, not
+        // when hydration itself seeded `updatedAt: 0`.
         if (query.state.dataUpdatedAt > 0) {
           pendingDeletes.add(query.queryHash);
           scheduleFlush();
@@ -235,7 +228,6 @@ export function attachQueryCachePersistence(
   };
 }
 
-/** Clears all persisted query entries from IndexedDB (e.g. on sign-out). */
 export async function clearPersistedQueryCache(idbFactory?: IDBFactory | undefined): Promise<void> {
   const factory = arguments.length > 0 ? idbFactory : resolveIdbFactory();
   if (factory === undefined) return;

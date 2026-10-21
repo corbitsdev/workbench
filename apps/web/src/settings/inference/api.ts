@@ -53,7 +53,7 @@ import {
   requestVoid as sharedRequestVoid,
   type FetchImpl,
   type Validator,
-} from "../api-request";
+} from "../../api";
 
 export type { ModelInfo, ModelOfferingInfo } from "@intx/types";
 export type { FetchImpl };
