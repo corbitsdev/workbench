@@ -33,7 +33,7 @@ async function platformSchemaPresent(
   return rows[0]?.present != null;
 }
 
-function databaseUrlFrom(config: HubMigrateConfig): string {
+export function databaseUrlFrom(config: HubMigrateConfig): string {
   return (
     `postgres://${encodeURIComponent(config.user)}:${encodeURIComponent(config.password)}` +
     `@${config.host}:${String(config.port)}/${config.database}`
