@@ -8,6 +8,8 @@
 // efficient but JSON is simpler to debug and inspect.
 
 import { type } from "arktype";
+import { CredentialDelivery } from "./credential-delivery";
+import { RepoId } from "./repo";
 import { GrantWalkSnapshot } from "./grant-snapshot";
 import { ApprovalItem } from "./grants";
 import { WireGrantRule } from "./grant-wire";
@@ -39,17 +41,59 @@ import { WorkflowDefinitionSource } from "./workflow-sources";
 // and routes through the existing invalid-frame drop+log path; no handler change
 // is needed.
 
-// A sidecar's reported agent addresses. The register/reconnect handler already
-// gates each reported address against the allocation's single minted workflow
-// address, so the legitimate count is ~1; this is a generous absurdity backstop.
-export const MAX_AGENT_ADDRESSES_FRAME = 512;
+export const DEFAULT_SIDECAR_ACTIVE_DEPLOYMENTS = 128;
+export const DEFAULT_SIDECAR_RETAINED_DEPLOYMENTS = 256;
+// Bounds inventory processing independently of an operator's capacity settings.
+export const MAX_SIDECAR_INCARNATIONS = 2_048;
+
+export const SidecarCapacity = type({
+  maxActiveDeployments: "number.integer >= 1",
+  maxRetainedDeployments: "number.integer >= 0",
+}).narrow(
+  (capacity, ctx) =>
+    capacity.maxActiveDeployments + capacity.maxRetainedDeployments <=
+      MAX_SIDECAR_INCARNATIONS ||
+    ctx.mustBe(
+      `at most ${String(MAX_SIDECAR_INCARNATIONS)} deployments combined`,
+    ),
+);
+export type SidecarCapacity = typeof SidecarCapacity.infer;
+
+export const DEFAULT_SIDECAR_CAPACITY: SidecarCapacity = {
+  maxActiveDeployments: DEFAULT_SIDECAR_ACTIVE_DEPLOYMENTS,
+  maxRetainedDeployments: DEFAULT_SIDECAR_RETAINED_DEPLOYMENTS,
+};
+
+// Bounds on what a sidecar reports about a deployment it holds. The Hub keeps
+// a reported stop until it fails the deployment, and stores a deploy error on
+// each of the deployment's runs, so these, not the frame-size limit, bound
+// what one sidecar can make it hold. A deployment address is a mail address
+// of at most 320 characters, and its history has a few refs.
+export const MAX_DEPLOYMENT_ADDRESS_LENGTH = 320;
+export const MAX_DEPLOYMENT_ERROR_LENGTH = 4096;
+export const MAX_REF_TIPS_FRAME = 16;
+export const MAX_REF_TIP_ENTRY_LENGTH = 255;
+
+/**
+ * Fits an error to the non-empty, bounded string accepted in sidecar reports.
+ */
+export function fitDeploymentError(error: string): string {
+  if (error.length === 0) return "Deployment failed without an error message";
+  if (error.length <= MAX_DEPLOYMENT_ERROR_LENGTH) return error;
+  // A cut between the two halves of a surrogate pair would leave a code
+  // unit the Hub stores as a replacement character.
+  let end = MAX_DEPLOYMENT_ERROR_LENGTH - 3;
+  const last = error.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${error.slice(0, end)}...`;
+}
 
 // A sidecar's reported cached sender addresses. This MUST stay well above the
 // `MAX_RESYNC_SENDER_ADDRESSES` handler cap (currently 2048 in the hub-sessions
 // sidecar-handler): that cap drives a graceful "resync the first N, log the
 // overflow" degrade rather than dropping the frame, so a schema ceiling at or
 // below it would turn the degrade into a hard reconnect outage -- the whole
-// register frame would fail this parse and drop, and the sidecar could not
+// hello frame would fail this parse and drop, and the sidecar could not
 // reconnect. The `@intx/types` package must not import from `@intx/hub-sessions`,
 // so the coupling is a documented invariant guarded by a test in that package.
 export const MAX_CACHED_SENDER_ADDRESSES_FRAME = 65536;
@@ -96,102 +140,183 @@ export const MAX_MAIL_OUTBOUND_BODY_BYTES = 44 * 1024 * 1024;
 const FRAME_OVERHEAD_BYTES = 20 * 1024 * 1024;
 
 // The ceiling wired as the hub sidecar websocket's `maxPayloadLength`. Bun
-// closes the connection on a RECEIVED message larger than this, so it must clear
-// the largest legit received frame -- the `mail.outbound` frame, whose
-// rawMessage is bounded by `MAX_MAIL_OUTBOUND_BODY_BYTES`, plus framing
-// overhead. maxPayloadLength gates incoming messages only; it does NOT limit
+// closes the connection on a RECEIVED message larger than this. It clears a
+// `mail.outbound` body at its byte limit plus framing overhead; all other
+// inbound frames, including complete deployment inventories, must also fit.
+// maxPayloadLength gates incoming messages only; it does NOT limit
 // what the hub sends, so the hub->sidecar inline-asset deploy does not factor
 // into this number.
 export const MAX_SIDECAR_FRAME_BYTES =
   MAX_MAIL_OUTBOUND_BODY_BYTES + FRAME_OVERHEAD_BYTES;
 
 // ---------------------------------------------------------------------------
+// Deployment incarnations
+// ---------------------------------------------------------------------------
+//
+// One connection can carry several deployments, and an allocation's
+// generation advances while its sidecar may still hold or send for the earlier
+// one, as when the Hub releases a deployment its sidecar keeps running. An
+// incarnation is a deployment address plus the allocation generation that owns
+// it. Every frame
+// that concerns one deployment names its incarnation, except
+// `connector.state.changed` and replies matched to their request by an id, so
+// neither end infers it from the socket, the order of frames, or their timing,
+// and each end drops or refuses a frame for an incarnation it does not hold.
+
+/** An allocation generation. An allocation's generations only increase. */
+export const Generation = type("number.integer >= 0");
+export type Generation = typeof Generation.infer;
+
+/**
+ * The incarnation a deployment frame belongs to. `run.grants` and
+ * `signal.deliver` payloads are also validated and persisted away from the
+ * wire, where no generation applies yet, so their schemas leave it out and the
+ * frame unions below add this stamp to them.
+ */
+export const IncarnationStamp = type({ generation: Generation });
+export type IncarnationStamp = typeof IncarnationStamp.infer;
+
+/**
+ * What a sidecar is doing with an incarnation it holds. A `stopped` one no
+ * longer runs, and its local state is kept for inspection until the Hub
+ * undeploys it.
+ */
+export const IncarnationState = type.enumerated(
+  "deploying",
+  "live",
+  "stopped",
+  "tearing-down",
+);
+export type IncarnationState = typeof IncarnationState.infer;
+
+export const DeploymentRetention = type.enumerated("kept", "refused");
+export type DeploymentRetention = typeof DeploymentRetention.infer;
+
+export const HostedIncarnation = type({
+  address: type("string").atMostLength(MAX_DEPLOYMENT_ADDRESS_LENGTH),
+  generation: Generation,
+  state: IncarnationState,
+  "retention?": DeploymentRetention,
+  // Why a stopped incarnation stopped when the Hub did not stop it: its
+  // workflow child ended itself, or the sidecar could not restore it. The Hub
+  // fails such a deployment.
+  "error?": type("string > 0").atMostLength(MAX_DEPLOYMENT_ERROR_LENGTH),
+}).narrow(
+  (incarnation, ctx) =>
+    incarnation.retention === undefined ||
+    incarnation.state === "stopped" ||
+    incarnation.state === "tearing-down" ||
+    ctx.mustBe("stopped before deciding retention"),
+);
+export type HostedIncarnation = typeof HostedIncarnation.infer;
+
+// ---------------------------------------------------------------------------
 // Sidecar → Hub
 // ---------------------------------------------------------------------------
 
 /**
- * Sent on first connect when the sidecar has no existing agents in its data
- * directory. Identifies the sidecar and declares it ready to receive
- * agent.deploy frames.
+ * The first frame on every connection. Authenticates the sidecar and reports
+ * every incarnation it holds, whether still deploying, live, stopped, or
+ * tearing down, so the Hub reconciles against what the sidecar actually runs:
+ * it routes current live work, keeps current stopped and retained copies
+ * unrouted, and stops terminal live copies after `welcome`, retaining them
+ * only while their policy allows it. Release cleanup bindings authenticate
+ * without routes and leave removal to allocation reconciliation. The Hub
+ * undeploys other unwanted copies. The sidecar sends nothing that must be
+ * delivered until `welcome`.
  */
-export const RegisterFrame = type({
-  type: "'register'",
+export const HelloFrame = type({
+  type: "'hello'",
   sidecarId: "string",
   token: "string",
-  agentAddresses: type("string")
-    .array()
-    .atMostLength(MAX_AGENT_ADDRESSES_FRAME),
+  capacity: SidecarCapacity,
+  // A sidecar holds one incarnation of an address, so a list that names one
+  // twice does not say which of them it holds.
+  incarnations: HostedIncarnation.array()
+    .atMostLength(MAX_SIDECAR_INCARNATIONS)
+    .narrow(
+      (incarnations, ctx) =>
+        new Set(incarnations.map((incarnation) => incarnation.address)).size ===
+          incarnations.length ||
+        ctx.mustBe("a list that names each address once"),
+    ),
   // The rotatable (non-run) sender addresses this sidecar holds cached keys
   // for. The hub re-resolves each current key and re-pushes it on a
   // `sender.key.refresh`, so a user-principal rotation that landed while the
-  // sidecar was disconnected reaches its cache. Additive-optional and omitted
-  // when empty: a sidecar with no cached senders (or a pre-upgrade one) sends
-  // no field, and the hub treats absence as "nothing to refresh".
+  // sidecar was disconnected reaches its cache. Omitted when empty, and the
+  // hub treats absence as "nothing to refresh".
   "cachedSenderAddresses?": type("string")
     .array()
     .atMostLength(MAX_CACHED_SENDER_ADDRESSES_FRAME),
+}).narrow(({ incarnations, capacity }, ctx) => {
+  const retained = incarnations.filter(
+    (incarnation) => incarnation.retention === "kept",
+  ).length;
+  return (
+    (retained <= capacity.maxRetainedDeployments &&
+      incarnations.length - retained <= capacity.maxActiveDeployments) ||
+    ctx.mustBe("within the advertised active and retained deployment limits")
+  );
 });
-export type RegisterFrame = typeof RegisterFrame.infer;
-
-/**
- * Sent on connect after a provisioned sidecar restores its deployment.
- * The bearer token binds the connection to one allocation generation, so the
- * Hub accepts only that allocation's workflow address.
- */
-export const ReconnectFrame = type({
-  type: "'reconnect'",
-  sidecarId: "string",
-  token: "string",
-  agentAddresses: type("string")
-    .array()
-    .atMostLength(MAX_AGENT_ADDRESSES_FRAME),
-  // The rotatable (non-run) sender addresses this sidecar holds cached keys
-  // for; see `RegisterFrame`. Carried on both frames because the register vs
-  // reconnect choice turns on workflow-address presence, not sender-cache
-  // presence -- a sidecar that restored no workflow substrate still reports its
-  // cached senders on a register frame. Additive-optional, omitted when empty.
-  "cachedSenderAddresses?": type("string")
-    .array()
-    .atMostLength(MAX_CACHED_SENDER_ADDRESSES_FRAME),
-});
-export type ReconnectFrame = typeof ReconnectFrame.infer;
+export type HelloFrame = typeof HelloFrame.infer;
 
 /**
  * Acknowledges a successful agent deployment. Includes the agent's Ed25519
  * public key (hex-encoded) for published identity and content provenance.
- * Reconnect authority comes from the allocation credential.
+ * Echoes the request id and incarnation of the `agent.deploy` it answers.
  */
 export const AgentDeployAckFrame = type({
   type: "'agent.deploy.ack'",
+  requestId: "string",
   agentAddress: "string",
+  generation: Generation,
   publicKey: "string",
 });
 export type AgentDeployAckFrame = typeof AgentDeployAckFrame.infer;
 
-/**
- * Reports a failed agent deployment.
- */
-export const AgentErrorFrame = type({
-  type: "'agent.error'",
-  agentAddress: "string",
-  error: "string",
+/** Capacity refusal starts nothing; a general failure may leave deployment state. */
+export const DeploymentError = type({
+  code: "'capacity_full' | 'deployment_failed'",
+  message: type("string").atMostLength(MAX_DEPLOYMENT_ERROR_LENGTH),
 });
-export type AgentErrorFrame = typeof AgentErrorFrame.infer;
+export type DeploymentError = typeof DeploymentError.infer;
+
+export class DeploymentRejectedError extends Error {
+  constructor(
+    readonly code: "capacity_full",
+    message: string,
+  ) {
+    super(message);
+    this.name = "DeploymentRejectedError";
+  }
+}
+
+/** Reports that the `agent.deploy` with this request id failed. */
+export const AgentDeployErrorFrame = type({
+  type: "'agent.deploy.error'",
+  requestId: "string",
+  agentAddress: "string",
+  generation: Generation,
+  error: DeploymentError,
+});
+export type AgentDeployErrorFrame = typeof AgentDeployErrorFrame.infer;
 
 /**
  * A message from a local agent. When `delivered` is absent or false the hub
  * should route the message to its recipients. When `delivered` is true the
- * message was already delivered locally and is forwarded for audit/projection
+ * message already went out and this copy is forwarded for audit/projection
  * only — the hub must not re-route it.
  *
  * Structured metadata (senderAddress, messageId, to, cc) is available for
  * audit and projection purposes without parsing the raw MIME bytes.
+ * `generation` names the sender's incarnation.
  */
 export const MailOutboundFrame = type({
   type: "'mail.outbound'",
   rawMessage: "string",
   recipients: type("string").array().atMostLength(MAX_MAIL_ADDRESSES_FRAME),
   senderAddress: "string",
+  generation: Generation,
   "sessionId?": "string",
   "messageId?": "string",
   "to?": type("string").array().atMostLength(MAX_MAIL_ADDRESSES_FRAME),
@@ -207,6 +332,7 @@ export type MailOutboundFrame = typeof MailOutboundFrame.infer;
 export const AgentEventFrame = type({
   type: "'agent.event'",
   agentAddress: "string",
+  generation: Generation,
   sessionId: "string",
   event: InferenceEvent,
   "childRunId?": "string",
@@ -259,15 +385,27 @@ export const SessionErrorFrame = type({
 export type SessionErrorFrame = typeof SessionErrorFrame.infer;
 
 /**
- * Acknowledges that an agent has been fully undeployed: the deployment's
- * workflow child stopped, state pushed (best-effort), and directory deleted.
+ * Acknowledges that the sidecar no longer holds the incarnation an
+ * `agent.undeploy` named and that its teardown, if it ran one, succeeded.
+ * Echoes the request id and incarnation.
  */
 export const AgentUndeployAckFrame = type({
   type: "'agent.undeploy.ack'",
+  requestId: "string",
   agentAddress: "string",
-  statePushed: "boolean",
+  generation: Generation,
 });
 export type AgentUndeployAckFrame = typeof AgentUndeployAckFrame.infer;
+
+/** Reports that the `agent.undeploy` with this request id failed. */
+export const AgentUndeployErrorFrame = type({
+  type: "'agent.undeploy.error'",
+  requestId: "string",
+  agentAddress: "string",
+  generation: Generation,
+  error: type("string").atMostLength(MAX_DEPLOYMENT_ERROR_LENGTH),
+});
+export type AgentUndeployErrorFrame = typeof AgentUndeployErrorFrame.infer;
 
 /**
  * Registers a control-signal correlation as a workflow agent step suspends.
@@ -288,6 +426,7 @@ export const SignalCorrelationRegisterFrame = type({
   runId: "string",
   anchorRunId: "string",
   agentAddress: "string",
+  generation: Generation,
   kind: SignalKind,
   // Approver-facing snapshot of the suspended tool call, size-capped at this
   // trust boundary. Required: the ask rail is the only producer of this frame
@@ -349,6 +488,7 @@ export type SignalCorrelationRegisterAckFrame =
 export const MailInboundFrame = type({
   type: "'mail.inbound'",
   agentAddress: "string",
+  generation: Generation,
   rawMessage: "string",
   authenticatedSender: "string",
   "messageId?": "string",
@@ -368,6 +508,7 @@ export type MailInboundFrame = typeof MailInboundFrame.infer;
 export const MailInboundAckFrame = type({
   type: "'mail.inbound.ack'",
   agentAddress: "string",
+  generation: Generation,
   messageId: "string",
 });
 export type MailInboundAckFrame = typeof MailInboundAckFrame.infer;
@@ -396,6 +537,9 @@ export const SignalDeliverFrame = type({
   signalName: "string",
   signalId: "string",
   payload: "unknown",
+  // Addresses one onTrigger relay park. Absent, the delivery stays
+  // name-FIFO and does not complete a correlated park.
+  "correlationId?": "string > 0",
 });
 export type SignalDeliverFrame = typeof SignalDeliverFrame.infer;
 
@@ -511,6 +655,7 @@ export type SenderKeyEvictFrame = typeof SenderKeyEvictFrame.infer;
 export const DrainDeliverFrame = type({
   type: "'drain.deliver'",
   agentAddress: "string",
+  generation: Generation,
   deadlineMs: "number",
 });
 export type DrainDeliverFrame = typeof DrainDeliverFrame.infer;
@@ -525,42 +670,6 @@ import {
 // its inferred type.
 export { WorkflowStep } from "./wire-workflow";
 export { WorkflowProjectionDefinition, WorkflowProjectionWithSources };
-
-/**
- * The decrypted credential material and per-handle binding descriptors
- * delivered to a running agent so its tools can use provider-backed
- * credentials. Secrets are decrypted hub-side and ride this payload on the
- * live channel ONLY -- the deploy frame at launch, a `credentials.update`
- * frame on rotation, and the child's in-memory cell. They are NEVER written to
- * disk (they do not ride the git-committed grants file) and NEVER copied into
- * any snapshot, event, or state -- redaction is by construction, mirroring how
- * an `InferenceSource`'s `apiKey` stays off every egress type.
- *
- * `materials` is keyed by `credentialId` (a credential can back several handles,
- * so its secret is stored once); `bindings` maps each declared tool handle to
- * the credential that backs it and the consumer identity allowed to use it.
- */
-export const CredentialMaterialEntry = type({
-  credentialId: "string",
-  providerKey: "string",
-  origin: "string",
-  secret: "string",
-});
-export type CredentialMaterialEntry = typeof CredentialMaterialEntry.infer;
-
-export const CredentialBindingDescriptor = type({
-  handle: "string",
-  credentialId: "string",
-  consumer: "string",
-});
-export type CredentialBindingDescriptor =
-  typeof CredentialBindingDescriptor.infer;
-
-export const CredentialDelivery = type({
-  bindings: CredentialBindingDescriptor.array(),
-  materials: CredentialMaterialEntry.array(),
-});
-export type CredentialDelivery = typeof CredentialDelivery.infer;
 
 /**
  * The source-ref pin: where a code-sourced (npm) workflow definition's bytes
@@ -666,11 +775,12 @@ export const AgentDeployWorkflow = type({
   // re-verified closure. Optional: only a deploy that carries an inline onTrigger
   // section or childWorkflow child populates it.
   "referencedDefinitions?": WorkflowProjectionWithSources.array(),
-  // Initial credential material for the deployment's tools, decrypted hub-side
-  // and delivered on the deploy frame so it is resident before any step runs
-  // (closing the race where a tool resolves a credential before a push lands).
-  // Run-global: a credential's secret is stored once, keyed by credentialId.
-  // Optional -- a deploy whose definition binds no credentials omits it.
+  // Initial credential material for the deployment's binding consumers and
+  // inference sources, decrypted hub-side and delivered on the deploy frame so
+  // it is resident before any step runs (closing the race where a tool resolves
+  // a credential before a push lands). Run-global: a credential's secret is
+  // stored once, keyed by credentialId. Optional -- a deploy whose definition
+  // binds no credentials omits it.
   "credentials?": CredentialDelivery,
   // The source-ref pin (`source` + frozen `closure`) the sidecar re-materializes
   // and evaluates the pinned code from. Required: source-ref is the only deploy
@@ -700,10 +810,16 @@ export type AgentDeployWorkflow = typeof AgentDeployWorkflow.infer;
  *     after every step is provisioned) spawns the child.
  * A frame carrying neither is rejected -- there is no in-process
  * fall-through. `workflow` and `provisionStep` are mutually exclusive.
+ *
+ * The sidecar answers with `agent.deploy.ack` or `agent.deploy.error`
+ * carrying the same `requestId`. A deploy of an address the sidecar already
+ * holds an incarnation of is refused.
  */
 export const AgentDeployFrame = type({
   type: "'agent.deploy'",
+  requestId: "string",
   agentAddress: "string",
+  generation: Generation,
   agentId: "string",
   config: HarnessConfig,
   hubPublicKey: "string",
@@ -713,16 +829,103 @@ export const AgentDeployFrame = type({
 export type AgentDeployFrame = typeof AgentDeployFrame.infer;
 
 /**
- * Remove an agent from this sidecar. The sidecar shuts the deployment's
- * supervisor down, pushes state to the hub (best-effort), deletes the agent
- * directory, and responds with agent.undeploy.ack.
+ * Remove a deployment incarnation from this sidecar. The sidecar shuts the
+ * deployment's supervisor down, deletes the local state its teardown covers,
+ * and responds with `agent.undeploy.ack` or `agent.undeploy.error` carrying
+ * the same `requestId`. Every incarnation of the address up to `generation`
+ * goes. For one the sidecar does not hold, it still runs that teardown, and
+ * answers with an error if that fails.
  */
 export const AgentUndeployFrame = type({
   type: "'agent.undeploy'",
+  requestId: "string",
   agentAddress: "string",
+  generation: Generation,
   reason: "string",
 });
 export type AgentUndeployFrame = typeof AgentUndeployFrame.infer;
+
+/**
+ * Cancel a workflow, stop its process, or transfer a terminal copy into the
+ * retained pool. Retention reports kept/refused only after its decision is
+ * durable. The sidecar refuses a command for another generation.
+ */
+export const WorkflowControlFrame = type({
+  type: "'workflow.control'",
+  requestId: "string",
+  agentAddress: "string",
+  generation: Generation,
+  runId: "string",
+  action: "'cancel' | 'stop' | 'retain'",
+  reason: "string",
+});
+export type WorkflowControlFrame = typeof WorkflowControlFrame.infer;
+
+export const WORKFLOW_CONTROL_INITIALIZING_ERROR = "workflow_initializing";
+
+/** The tip of each authoritative workflow-run ref, `null` for an absent ref. */
+export const WorkflowRunRefTips = type({
+  "[string]": type("string").atMostLength(MAX_REF_TIP_ENTRY_LENGTH).or("null"),
+}).narrow(
+  (tips, ctx) =>
+    (Object.keys(tips).length <= MAX_REF_TIPS_FRAME &&
+      Object.keys(tips).every(
+        (ref) => ref.length <= MAX_REF_TIP_ENTRY_LENGTH,
+      )) ||
+    ctx.mustBe(
+      `at most ${String(MAX_REF_TIPS_FRAME)} refs whose names have at most ${String(MAX_REF_TIP_ENTRY_LENGTH)} characters`,
+    ),
+);
+export type WorkflowRunRefTips = typeof WorkflowRunRefTips.infer;
+
+export const WorkflowControlAckFrame = type({
+  type: "'workflow.control.ack'",
+  requestId: "string",
+  "error?": "string",
+  "retention?": DeploymentRetention,
+  /**
+   * A stopped worker's ref tips, read after its child exited. The Hub
+   * confirms a live stop only once it holds the same tips. Retain follows
+   * the existing terminal-history cutoff instead of importing later commits.
+   */
+  "refTips?": WorkflowRunRefTips,
+});
+export type WorkflowControlAckFrame = typeof WorkflowControlAckFrame.infer;
+
+/**
+ * Reports a deployment that stopped though the Hub did not stop it: its
+ * workflow child ended itself, or the sidecar could not restore it. Sent when
+ * it happens and again after every `welcome` while the sidecar holds it, with
+ * the tips of its history branches, so the Hub can wait for that history
+ * before it fails the deployment. The tips are left out when the sidecar
+ * could not read them.
+ */
+export const DeploymentStoppedFrame = type({
+  type: "'deployment.stopped'",
+  agentAddress: type("string").atMostLength(MAX_DEPLOYMENT_ADDRESS_LENGTH),
+  generation: Generation,
+  error: type("string > 0").atMostLength(MAX_DEPLOYMENT_ERROR_LENGTH),
+  "refTips?": WorkflowRunRefTips,
+});
+export type DeploymentStoppedFrame = typeof DeploymentStoppedFrame.infer;
+
+/**
+ * The Hub's answer to `hello`, sent once it has reconciled the reported
+ * incarnations. `routed` lists the incarnations it routes on this connection;
+ * it has already asked the sidecar to undeploy every other one reported, but
+ * for the ones it keeps unrouted: stopped ones, live ones whose run ended
+ * (including Hub cancellations or failures), and copies under a cleanup
+ * binding whose removal belongs to the allocation reconciler. From here on
+ * the sidecar may send what must be delivered, and it re-drives what it owes
+ * the Hub for each routed incarnation.
+ */
+export const WelcomeFrame = type({
+  type: "'welcome'",
+  routed: type({ address: "string", generation: Generation })
+    .array()
+    .atMostLength(MAX_SIDECAR_INCARNATIONS),
+});
+export type WelcomeFrame = typeof WelcomeFrame.infer;
 
 /**
  * Keepalive pong sent by the hub in response to a ping frame.
@@ -744,6 +947,7 @@ export const SourcesUpdateFrame = type({
   type: "'sources.update'",
   requestId: "string",
   agentAddress: "string",
+  generation: Generation,
   sources: InferenceSource.array().atLeastLength(1),
   defaultSource: "string",
 });
@@ -764,6 +968,7 @@ export const CredentialsUpdateFrame = type({
   type: "'credentials.update'",
   requestId: "string",
   agentAddress: "string",
+  generation: Generation,
   delivery: CredentialDelivery,
   "revoke?": type("string")
     .array()
@@ -796,49 +1001,14 @@ export type CredentialsUpdateFrame = typeof CredentialsUpdateFrame.infer;
 //     `repoId` to name a non-agent source while `agentAddress` continues
 //     to address the destination agent.
 //
+// `repo.pack.push` and `repo.pack.done` also carry the generation of the
+// incarnation the transfer belongs to. The ack and reject answer one transfer
+// on the connection that carried it, and transfer ids are never reused, so
+// they need no generation.
+//
 // Flow control: deferred. Agent deploy trees are small enough that the sender
 // can push all chunks without windowing. If this becomes a problem, a credit-
 // based mechanism can be added later.
-
-/**
- * Tag identifying a kind of repository in the hub's kind-keyed RepoStore.
- * Lives in `@intx/types` because the wire-level pack frames reference it;
- * the substrate package re-exports it for handler authors.
- */
-export const RepoKind = type.enumerated(
-  "agent-state",
-  "skill",
-  "package-registry",
-  "workflow",
-  "workflow-run",
-);
-export type RepoKind = typeof RepoKind.infer;
-
-/**
- * Operations a principal may invoke against a repo in the RepoStore.
- * Lives in `@intx/types` so storage layers (e.g. `@intx/db`) can validate
- * persisted action vocabularies without depending on the substrate
- * package. The substrate re-exports it for handler authors.
- */
-export const RepoAction = type.enumerated(
-  "init",
-  "writeTree",
-  "receivePack",
-  "createPack",
-  "resolveRef",
-);
-export type RepoAction = typeof RepoAction.infer;
-
-/**
- * Hub-side identity of a repository in the RepoStore. Pack frames carry
- * this alongside `agentAddress` so the hub can map a pack back to the
- * originating repo independently of which sidecar/agent it is destined for.
- */
-export const RepoId = type({
-  kind: RepoKind,
-  id: "string",
-});
-export type RepoId = typeof RepoId.infer;
 
 /**
  * A chunk of git pack data. The sender splits the packfile into chunks of at
@@ -850,6 +1020,7 @@ export type RepoId = typeof RepoId.infer;
 export const PackPushFrame = type({
   type: "'repo.pack.push'",
   agentAddress: "string",
+  generation: Generation,
   repoId: RepoId,
   transferId: "string",
   seq: "number",
@@ -870,6 +1041,7 @@ export type PackPushFrame = typeof PackPushFrame.infer;
 export const PackDoneFrame = type({
   type: "'repo.pack.done'",
   agentAddress: "string",
+  generation: Generation,
   repoId: RepoId,
   transferId: "string",
   ref: "string",
@@ -1032,18 +1204,6 @@ export const DeployApplyErrorCategory = type.enumerated(
 );
 export type DeployApplyErrorCategory = typeof DeployApplyErrorCategory.infer;
 
-/**
- * Hub requests the sidecar to push its current agent state. The sidecar
- * responds by sending pack.push frames followed by pack.done using the
- * same transferId.
- */
-export const SyncRequestFrame = type({
-  type: "'sync.request'",
-  agentAddress: "string",
-  transferId: "string",
-});
-export type SyncRequestFrame = typeof SyncRequestFrame.infer;
-
 // ---------------------------------------------------------------------------
 // Workflow probe (bidirectional)
 // ---------------------------------------------------------------------------
@@ -1133,79 +1293,14 @@ export const WorkflowProbeErrorFrame = type({
 export type WorkflowProbeErrorFrame = typeof WorkflowProbeErrorFrame.infer;
 
 // ---------------------------------------------------------------------------
-// Sidecar-hosted OAuth loopback login (CL-7508)
-// ---------------------------------------------------------------------------
-
-/** Tokens a sidecar-hosted loopback login staged. The PKCE verifier never
- * crosses the wire — it lives only in the sidecar's login service and dies
- * with the callback server. */
-export const OAuthLoginTokens = type({
-  access: "string",
-  "refresh?": "string",
-  /** Epoch ms the access token expires; absent when the issuer stated no
-   * lifetime (stored non-due, never a short artificial timer). */
-  "expiresAt?": "number",
-  /** The issuer's id_token when it issues one (xai-oauth retains it). */
-  "idToken?": "string",
-  /** id_token-derived account label (codex: `chatgpt_account_id`), the
-   * value `accountIdFromIdToken` decodes; threaded into credential
-   * metadata hub-side. */
-  "accountId?": "string",
-});
-export type OAuthLoginTokens = typeof OAuthLoginTokens.infer;
-
-/** Outcome arms a `oauth.login.result` frame may carry. A login sends
- * `started` once its callback server is bound and the authorize URL is
- * ready for the web UI to navigate; exactly one terminal arm (`completed`
- * or `error`) follows. */
-export const OAuthLoginOutcome = type({
-  status: "'started'",
-  authorizeUrl: "string",
-})
-  .or({ status: "'completed'", tokens: OAuthLoginTokens })
-  .or({ status: "'error'", message: "string" });
-export type OAuthLoginOutcome = typeof OAuthLoginOutcome.infer;
-
-/** Hub → sidecar: run the named connector's loopback PKCE login on the
- * machine this sidecar runs on. The connector must pin a fixed loopback
- * redirect (`codex` → localhost:1455, `xai-oauth` → 127.0.0.1:1456); the
- * hub never hosts a listener for these flows. */
-export const OAuthLoginStartFrame = type({
-  type: "'oauth.login.start'",
-  requestId: "string",
-  connectorId: "'codex' | 'xai-oauth'",
-});
-export type OAuthLoginStartFrame = typeof OAuthLoginStartFrame.infer;
-
-/** Sidecar → hub: the staged progress / terminal outcome of the login the
- * hub requested with the same `requestId`. */
-export const OAuthLoginResultFrame = type({
-  type: "'oauth.login.result'",
-  requestId: "string",
-  outcome: OAuthLoginOutcome,
-});
-export type OAuthLoginResultFrame = typeof OAuthLoginResultFrame.infer;
-
-/** Hub → sidecar: tear the staged login with this `requestId` down and
- * close its pinned-port callback listener. The hub sends it when it gives
- * up on a login (whole-login timeout) so an abandoned bind does not wedge
- * every retry of the connector until the sidecar restarts. */
-export const OAuthLoginCancelFrame = type({
-  type: "'oauth.login.cancel'",
-  requestId: "string",
-});
-export type OAuthLoginCancelFrame = typeof OAuthLoginCancelFrame.infer;
-
-// ---------------------------------------------------------------------------
 // Discriminated frame unions
 // ---------------------------------------------------------------------------
 
 /** All frame types the sidecar sends to the hub. */
 export const SidecarFrame = type.or(
-  RegisterFrame,
-  ReconnectFrame,
+  HelloFrame,
   AgentDeployAckFrame,
-  AgentErrorFrame,
+  AgentDeployErrorFrame,
   MailOutboundFrame,
   AgentEventFrame,
   ConnectorStateChangedFrame,
@@ -1213,6 +1308,7 @@ export const SidecarFrame = type.or(
   SessionAckFrame,
   SessionErrorFrame,
   AgentUndeployAckFrame,
+  AgentUndeployErrorFrame,
   SignalCorrelationRegisterFrame,
   PackPushFrame,
   PackDoneFrame,
@@ -1221,7 +1317,8 @@ export const SidecarFrame = type.or(
   MailInboundAckFrame,
   WorkflowProbeResultFrame,
   WorkflowProbeErrorFrame,
-  OAuthLoginResultFrame,
+  WorkflowControlAckFrame,
+  DeploymentStoppedFrame,
 );
 export type SidecarFrame = typeof SidecarFrame.infer;
 
@@ -1230,6 +1327,7 @@ export const HubFrame = type.or(
   MailInboundFrame,
   AgentDeployFrame,
   AgentUndeployFrame,
+  WelcomeFrame,
   PongFrame,
   SourcesUpdateFrame,
   CredentialsUpdateFrame,
@@ -1237,16 +1335,14 @@ export const HubFrame = type.or(
   PackDoneFrame,
   PackAckFrame,
   PackRejectFrame,
-  SyncRequestFrame,
-  SignalDeliverFrame,
-  RunGrantsFrame,
+  SignalDeliverFrame.and(IncarnationStamp),
+  RunGrantsFrame.and(IncarnationStamp),
   SenderKeyRefreshFrame,
   SenderKeyEvictFrame,
   SignalCorrelationRegisterAckFrame,
   DrainDeliverFrame,
   WorkflowProbeRequestFrame,
-  OAuthLoginStartFrame,
-  OAuthLoginCancelFrame,
+  WorkflowControlFrame,
 );
 export type HubFrame = typeof HubFrame.infer;
 

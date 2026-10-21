@@ -1,10 +1,15 @@
 // Hub-side websocket handler for sidecar connections.
 //
-// Accepts websocket upgrades, processes register frames, maintains a routing
+// Accepts websocket upgrades, processes hello frames, maintains a routing
 // table of agentAddress → sidecar connection, and dispatches frames between
 // sidecars and the hub's internal systems.
 
 import { getLogger } from "@intx/log";
+import {
+  WorkflowRunNotExecutableError,
+  type SidecarInventory,
+  type WorkflowRunExecutionTarget,
+} from "@intx/db";
 import { chunkPack, createPackReceiver } from "@intx/pack-transport";
 import {
   base64Decode,
@@ -16,30 +21,45 @@ import type { GrantWalkSnapshot } from "@intx/types";
 import { deriveWorkflowRunRepoId } from "@intx/workflow-deploy";
 import { type } from "arktype";
 import {
+  DeploymentRejectedError,
   MAX_MAIL_OUTBOUND_BODY_BYTES,
   SidecarFrame,
+  WORKFLOW_CONTROL_INITIALIZING_ERROR,
   type AgentDeployAckFrame,
+  type AgentDeployErrorFrame,
   type AgentDeployFrame,
+  type AgentUndeployAckFrame,
+  type AgentUndeployErrorFrame,
+  type DeploymentStoppedFrame,
+  type DeploymentRetention,
+  type HostedIncarnation,
+  type SidecarCapacity,
   type PackAckFrame,
   type HubFrame,
+  type MailInboundFrame,
   type PackPushFrame,
   type PackDoneFrame,
   type PackRejectFrame,
-  type RepoId,
   type RunGrantsFrame,
+  type WorkflowControlFrame,
+  type WorkflowControlAckFrame,
+  type WorkflowRunRefTips,
   type SignalCorrelationRegisterFrame,
-  type CredentialDelivery,
   type WorkflowSourceAssetMount,
   type WorkflowProjectionDefinition,
-  type OAuthLoginTokens,
-  type OAuthLoginResultFrame,
 } from "@intx/types/sidecar";
+import { RepoId } from "@intx/types/repo";
+import type { CredentialDelivery } from "@intx/types/credential-delivery";
 import type {
   ConnectorThreadState,
   HarnessConfig,
   InferenceSource,
 } from "@intx/types/runtime";
-import type { SidecarCredentialIdentity } from "../sidecar-allocation/contracts";
+import type {
+  SidecarCredentialIdentity,
+  SidecarCredentials,
+  SidecarIdentityUse,
+} from "../sidecar-allocation/contracts";
 import type { ToolPackageManifest } from "@intx/types/tool-packages";
 import type { WorkflowDefinitionSource } from "@intx/types/workflow-sources";
 import {
@@ -53,6 +73,7 @@ import {
   type PendingEntry,
   type WsHandle,
 } from "./pending-tracker";
+import { workflowRunRepoIdForAddress } from "../workflow-run-kind";
 
 const logger = getLogger(["hub", "ws", "sidecar"]);
 
@@ -99,56 +120,165 @@ export class SidecarIdentityValidationError extends Error {
   }
 }
 
+/**
+ * This Hub holds no current connection for the allocation generation, or the
+ * connection closed before the worker answered. The worker may be healthy
+ * behind another connection, so callers must retry rather than escalate.
+ */
+export class WorkflowControlUnreachableError extends Error {
+  constructor(message: string, cause?: unknown) {
+    super(message, { cause });
+    this.name = "WorkflowControlUnreachableError";
+  }
+}
+
+/** A connected worker is still deploying and cannot process control yet. */
+export class WorkflowControlInitializingError extends Error {
+  constructor() {
+    super("Workflow deployment is still being initialized");
+    this.name = "WorkflowControlInitializingError";
+  }
+}
+
+/**
+ * The worker acknowledged the control command, but the Hub could not process
+ * the acknowledgement in time. The worker answered, so this never counts as
+ * the worker failing to comply.
+ */
+export class WorkflowControlUnconfirmedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WorkflowControlUnconfirmedError";
+  }
+}
+
+/** A live worker connection did not answer the control command in time. */
+export class WorkflowControlTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WorkflowControlTimeoutError";
+  }
+}
+
+/** A live worker answered the control command with an error. */
+export class WorkflowControlRejectedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WorkflowControlRejectedError";
+  }
+}
+
+/**
+ * The worker stopped, but the Hub does not hold the history it reported. The
+ * stop stays unconfirmed and unfenced, so that history can still land.
+ */
+export class WorkflowControlHistoryPendingError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(`Workflow history has not reached the Hub: ${message}`, options);
+    this.name = "WorkflowControlHistoryPendingError";
+  }
+}
+
 export type SidecarConnection = {
   sidecarId: string;
-  identity: SidecarAuthIdentity;
-  agentAddresses: Set<string>;
-  // Workflow-substrate deployment run addresses (`run_<hex>@domain`) this
-  // connection hosts. Kept separate from the legacy `agentAddresses` set so
-  // workflow route teardown and recovery remain explicit. `handleClose` cleans
-  // both sets out of `addressIndex`.
-  workflowAddresses: Set<string>;
+  capacity: SidecarCapacity;
+  /**
+   * The probe and allocation generations this sidecar currently hosts, keyed
+   * by allocation id. A provisioner may place several on one sidecar; each
+   * keeps its own generation fence.
+   */
+  bindings: Map<string, SidecarAuthIdentity>;
+  // Allocated deployment routes (including first deploy and reconnect) and
+  // transient step routes, each mapped to the allocation that owns it, so one
+  // allocation's routes can leave a connection that stays open for the
+  // others. `handleClose` cleans them out of `addressIndex`.
+  workflowAddresses: Map<string, string>;
+  // Deploy frames the worker has not answered, by request id to their
+  // address, kept past the Hub's own deploy timeout. The worker handles an
+  // address's frames in order, so a control frame sent behind one of these
+  // for its address cannot start until the worker answers it.
+  unansweredDeploys: Map<string, string>;
+  /**
+   * Undeploys sent on this connection that the sidecar has not answered yet,
+   * by address. The copy one removes can still be sending under the address
+   * until then, so a deploy of the address waits for the answer.
+   */
+  undeploying: Map<string, UndeployInFlight>;
   send(frame: HubFrame): void;
 };
 
+type UndeployInFlight = {
+  /** The latest undeploy of the address sent on the connection. */
+  requestId: string;
+  answered: Promise<void>;
+  settle(): void;
+};
+
+/** The allocation that owns a workflow address routed on this connection. */
+function owningAllocation(
+  conn: SidecarConnection,
+  address: string,
+): Extract<SidecarAuthIdentity, { kind: "allocated" }> | undefined {
+  const allocationId = conn.workflowAddresses.get(address);
+  const binding =
+    allocationId === undefined ? undefined : conn.bindings.get(allocationId);
+  return binding?.kind === "allocated" ? binding : undefined;
+}
+
 /**
- * Whether this connection owns `address` for routing/lifecycle purposes.
- * The legacy and workflow sets remain physically distinct, but ownership
- * readers -- pack-transfer authorization,
- * in-flight cancellation, disconnect teardown -- must see the union, or a
- * reconnected workflow deployment (which lives only in `workflowAddresses`)
- * is silently treated as unowned even though its mail routes.
+ * The allocation this connection hosts whose deployment address is
+ * `address`, whether or not the address is routed.
  */
-function connOwnsAddress(conn: SidecarConnection, address: string): boolean {
-  return (
-    conn.agentAddresses.has(address) || conn.workflowAddresses.has(address)
+function deploymentBinding(
+  conn: SidecarConnection,
+  address: string,
+): Extract<SidecarAuthIdentity, { kind: "allocated" }> | undefined {
+  return allocationBindings(conn).find(
+    (binding) => binding.workflowRunAddress === address,
   );
 }
 
 /**
- * Bind pack writes to the repository implied by the authenticated address.
- * An allocated credential is narrower still: it may only write its one
- * deployment's workflow-run repository and never a standalone agent-state
- * repository.
+ * Whether a sidecar frame names the incarnation this connection routes for
+ * its address. A sidecar can still be draining a generation the Hub has
+ * fenced, so a frame naming any other generation is never credited to the
+ * routed one.
+ */
+function namesRoutedIncarnation(
+  conn: SidecarConnection,
+  frame: { agentAddress: string; generation: number },
+): boolean {
+  return (
+    owningAllocation(conn, frame.agentAddress)?.generation === frame.generation
+  );
+}
+
+/**
+ * Bind pack writes to the repository implied by the authenticated
+ * incarnation: an allocation may only write its own deployment's workflow-run
+ * repository, never a standalone agent-state repository, and only as the
+ * generation this connection hosts. It authorizes the write even when the
+ * address is not routed: a stopped worker is not routed, but its stop is
+ * confirmed only once its remaining history reaches the Hub.
  */
 function connCanPushRepo(
   conn: SidecarConnection,
-  agentAddress: string,
-  repoId: RepoId,
+  frame: { agentAddress: string; generation: number; repoId: RepoId },
 ): boolean {
-  if (conn.identity.kind !== "allocated") return false;
-  if (agentAddress !== conn.identity.workflowRunAddress) {
-    return false;
-  }
+  const binding = deploymentBinding(conn, frame.agentAddress);
+  if (binding?.generation !== frame.generation) return false;
   return (
-    repoId.kind === "workflow-run" &&
-    repoId.id === deriveWorkflowRunRepoId(agentAddress)
+    frame.repoId.kind === "workflow-run" &&
+    frame.repoId.id === deriveWorkflowRunRepoId(frame.agentAddress)
   );
 }
 
-/** The deduped set of every address this connection owns (session + workflow). */
-function ownedAddresses(conn: SidecarConnection): Set<string> {
-  return new Set([...conn.agentAddresses, ...conn.workflowAddresses]);
+function allocationBindings(
+  conn: SidecarConnection,
+): Extract<SidecarAuthIdentity, { kind: "allocated" }>[] {
+  return [...conn.bindings.values()].flatMap((binding) =>
+    binding.kind === "allocated" ? [binding] : [],
+  );
 }
 
 export type SendPackOptions = {
@@ -211,29 +341,6 @@ export type SenderDeploySettledOutcome =
   | { recorded: string }
   | { failed: string };
 
-/** The terminal arms of a sidecar-hosted loopback login. */
-export type OAuthLoginFinalOutcome =
-  | { status: "completed"; tokens: OAuthLoginTokens }
-  | { status: "error"; message: string };
-
-/** The typed gate outcome: no sidecar passed the locality gate. The caller
- * must surface "connect requires a local sidecar" — the hub never hosts a
- * loopback listener for these flows and never falls back. */
-export type OAuthLoginGateOutcome = { status: "gate"; message: string };
-
-export type OAuthLoginRequestOutcome =
-  | OAuthLoginGateOutcome
-  | { status: "error"; message: string }
-  | {
-      status: "started";
-      requestId: string;
-      authorizeUrl: string;
-      completed: Promise<OAuthLoginFinalOutcome>;
-    };
-
-/** Default whole-login timeout: a human completes the consent page. */
-export const DEFAULT_OAUTH_LOGIN_TIMEOUT_MS = 5 * 60_000;
-
 export type AllocatedSenderDeployAttempt = AllocatedSidecarTarget & {
   readonly leaseId: string;
 };
@@ -253,21 +360,14 @@ export type SidecarRouter = {
       stepGrants: RunGrantsFrame["stepGrants"];
       senderIdentities?: RunGrantsFrame["senderIdentities"];
     },
-  ): boolean;
+  ): Promise<boolean>;
   /**
-   * Deliver a run's authorization grants to the sidecar hosting the named
-   * deployment-level mail address, ahead of the trigger mail that starts the
-   * run. Routes through the same per-address channel as `routeMail`: over the
-   * live connection when the deployment is connected, and into the disconnect
-   * queue when the deployment dropped in the window before its first
-   * reconnect (while its address is still on `agentAddresses`) -- so grants
-   * are queued for a disconnected deployment exactly when the trigger mail is,
-   * and ride the same reconnect flush. After an authenticated reconnect the
-   * address moves to `workflowAddresses`, which carries no queue (that
-   * generation's in-flight state is reconstructed sidecar-locally); a
-   * `run.grants` then has no queue to ride and this returns `false`. Returns
-   * `false` whenever the address is unroutable; the caller keeps any stable-run
-   * grant reservation so a later first-delivery attempt reuses it.
+   * Update a run's authorization grants independently of mail. For a trigger,
+   * pass `runGrants` to `routeMail` so both frames share one admission decision.
+   * Sends on the live connection, stamped with the incarnation the Hub routes
+   * for the address, and returns `false` whenever the address is unroutable;
+   * the caller keeps any stable-run grant reservation so a later
+   * first-delivery attempt reuses it.
    *
    * `senderIdentities` co-delivers the run's authorized senders' resolved keys
    * on the same barrier as the grant, so a recipient that caches from this
@@ -328,7 +428,6 @@ export type SidecarRouter = {
     delivery: CredentialDelivery,
     revoke?: string[],
   ): Promise<void>;
-  sendSyncRequest(agentAddress: string): void;
   /**
    * Deliver a workflow-run signal to the sidecar that hosts the named
    * deployment-level mail address. The sidecar's hub-link routes the
@@ -349,7 +448,8 @@ export type SidecarRouter = {
     signalName: string;
     signalId: string;
     payload: unknown;
-  }): void;
+    correlationId?: string;
+  }): Promise<void>;
   /**
    * Deliver a workflow-host drain control payload to the sidecar that
    * hosts the named deployment-level mail address. The sidecar's
@@ -375,34 +475,16 @@ export type SidecarRouter = {
   getConnectedSidecars(): string[];
   getRoutableAddresses(): string[];
 
-  /**
-   * Start a sidecar-hosted loopback OAuth login (CL-7508) on the first
-   * connected sidecar that passes the router's locality gate. Resolves the
-   * typed gate outcome when no connected sidecar is local — never a
-   * hub-hosted fallback. On a gated-through sidecar the returned promise
-   * resolves once the sidecar reports `started` (callback server bound,
-   * authorize URL ready for the web UI to navigate); `completed` settles
-   * with the terminal outcome (tokens or a message — including bind
-   * failures like a pinned port already in use, which arrive as the
-   * error arm) or with the whole-login timeout.
-   */
-  requestOAuthLogin(args: {
-    connectorId: "codex" | "xai-oauth";
-  }): Promise<OAuthLoginRequestOutcome>;
-
   /** Typed event emitter for the receiver-dispatch surface. See
    * `sidecar-events.ts` for the event map and emission semantics. */
   events: SidecarEventEmitter;
 };
 
 /**
- * A verified sidecar-connection identity resolved by an authenticator from
- * the credentials a sidecar presents on the WebSocket handshake. The
- * `sidecarId` is the connection's own trusted id; it is not the untrusted
- * `sidecarId` claimed on the register/reconnect frame, and it carries no
- * tenant scope. Modeled as a discriminated union so a future non-sidecar
- * principal (e.g. an operator user) can be added as an additional arm
- * without changing existing consumers.
+ * One probe or allocation generation a sidecar hosts, as
+ * `resolveSidecarBindings` reads it for the sidecar the WebSocket handshake
+ * authenticated. The `sidecarId` is that authenticated id, not the untrusted
+ * `sidecarId` claimed on the hello frame.
  */
 export type SidecarAuthIdentity = SidecarCredentialIdentity;
 
@@ -411,9 +493,60 @@ export type AllocatedSidecarTarget = {
   readonly generation: number;
 };
 
+type WorkflowControlCommand = Omit<
+  WorkflowControlFrame,
+  "type" | "requestId" | "generation" | "action"
+> & { action: "cancel" | "stop" };
+
 export type SidecarAllocationRouter = {
-  /** Advance the in-memory trust boundary before provisioning a generation. */
-  fenceAllocation(allocationId: string, generation: number): void;
+  /** Opaque identity of the currently attached cleanup connection. */
+  getCleanupConnection(target: AllocatedSidecarTarget): object | undefined;
+  /**
+   * Confirm cleanup of a releasing allocation. An expected connection token
+   * prevents sending on a different socket after asynchronous validation.
+   * Notify the owner when sent so its own timeout can distinguish preparation
+   * failures from attempted undeploys.
+   */
+  undeployAllocation(
+    target: AllocatedSidecarTarget,
+    timeoutMs: number,
+    signal: AbortSignal,
+    expectedConnection: object,
+    onSent: () => void,
+  ): Promise<void>;
+  sendWorkflowControl(
+    target: AllocatedSidecarTarget,
+    command: WorkflowControlCommand,
+    timeoutMs: number,
+  ): Promise<void>;
+  /** Concurrent callers share the existing request and its deadline. */
+  retainAllocation(
+    target: AllocatedSidecarTarget,
+    timeoutMs: number,
+  ): Promise<DeploymentRetention>;
+  getAllocationRetention(
+    target: AllocatedSidecarTarget,
+  ): DeploymentRetention | undefined;
+  /** Copies awaiting retention or history finality; the lifecycle checks run status. */
+  getRetentionCandidates(): readonly (AllocatedSidecarTarget & {
+    readonly sidecarId: string;
+  })[];
+  /** Undefined until the current connection's complete inventory is known. */
+  getSidecarInventory(sidecarId: string): SidecarInventory | undefined;
+  /** Wait outside placement transactions; the caller's signal bounds the wait. */
+  waitForSidecarInventory(
+    sidecarId: string,
+    signal: AbortSignal,
+  ): Promise<void>;
+  /**
+   * Advance the trust boundary after persisting a generation. `cleanup` keeps
+   * its control binding while the reconciler owns the acknowledged teardown.
+   */
+  fenceAllocation(
+    allocationId: string,
+    generation: number,
+    options?: { cleanup?: { sidecarId: string } },
+  ): void;
   /**
    * Remove an exact generation's fence after its durable owner becomes
    * terminal. Durable identity validation rejects later stale reconnects.
@@ -424,11 +557,14 @@ export type SidecarAllocationRouter = {
    * Throws `SidecarIdentityValidationError` when readiness cannot be
    * determined; only confirmed absence surfaces as a connection timeout.
    * `onValidation` observes notification lookups that may outlive this wait.
+   * Cancellation removes a parked waiter and discards pending validation
+   * results.
    */
   waitForAllocatedSidecar(
     target: AllocatedSidecarTarget,
     timeoutMs: number,
     onValidation?: (validation: Promise<boolean>) => void,
+    signal?: AbortSignal,
   ): Promise<void>;
   /**
    * Check exact allocated readiness without parking a reconciliation worker.
@@ -436,15 +572,55 @@ export type SidecarAllocationRouter = {
    * `false` means the worker is confirmed absent or stale.
    */
   isAllocatedSidecarReady(target: AllocatedSidecarTarget): Promise<boolean>;
-  /** Check for an active supervisor, throwing when identity validation fails. */
+  /**
+   * Whether a connection already holds the allocation's binding at this
+   * generation, without validating it. A probe binding the allocation adopted
+   * is not that binding: only a sync or a registration attaches the allocation
+   * over it.
+   */
+  holdsAllocatedBinding(target: AllocatedSidecarTarget): boolean;
+  /**
+   * Whether the generation's current connection routes its deployment. Throws
+   * when the generation has no current connection or identity validation
+   * fails: a sidecar that is only cut off may still hold the deployment.
+   */
   isAllocatedWorkflowActive(target: AllocatedSidecarTarget): Promise<boolean>;
+  /**
+   * Why the generation's sidecar reported its deployment stopped though the
+   * Hub did not stop it, or undefined when it reported no such stop. The
+   * report outlives the connection that carried it.
+   */
+  reportedDeploymentFailure(target: AllocatedSidecarTarget): string | undefined;
+  /**
+   * For a stop `reportedDeploymentFailure` reports, how much of the history
+   * the stopped copy reported the Hub holds: `unreceived` describes the first
+   * ref whose reported tip the Hub does not hold, or is null once it holds
+   * them all, and `reportedAt` is when the stop was first reported.
+   */
+  stoppedDeploymentHistory(
+    target: AllocatedSidecarTarget,
+  ): Promise<{ unreceived: string | null; reportedAt: Date } | undefined>;
   /** Probe a workflow on the exact provisioned allocation generation. */
   sendProbeToAllocation(
     target: AllocatedSidecarTarget,
     args: SendProbeArgs,
   ): Promise<WorkflowProbeResult>;
-  /** Close an exact provisioned connection before changing its durable owner. */
-  disconnectAllocation(target: AllocatedSidecarTarget): void;
+  /**
+   * Remove an exact generation from its sidecar's connection before changing
+   * its durable owner. The sidecar is told to undeploy an allocation's
+   * deployment, and the socket stays open while the sidecar hosts other
+   * bindings.
+   */
+  detachAllocation(target: AllocatedSidecarTarget): void;
+  /**
+   * Bring a connected sidecar's bindings up to date with the database after
+   * a probe or allocation was placed on it, or left it, while it stayed
+   * connected. A sidecar that is registering, or not connected, picks its
+   * bindings up when its registration completes. The promise can settle
+   * before a binding attaches, so callers wait for its readiness instead.
+   * Cancellation prevents queued work or a pending binding read from attaching.
+   */
+  syncSidecar(sidecarId: string, signal?: AbortSignal): Promise<void>;
   sendAgentDeployToAllocation(
     target: AllocatedSidecarTarget,
     agentAddress: string,
@@ -512,62 +688,61 @@ export type SidecarAllocationRouter = {
       signalName: string;
       signalId: string;
       payload: unknown;
+      correlationId?: string;
     },
     signal?: AbortSignal,
   ): Promise<void>;
 };
 
 /**
- * Resolves the credentials a sidecar presents on the handshake to a
- * verified identity, or `null` when the credentials are not recognized.
- * The claimed `sidecarId` is an unauthenticated hint; the authenticator
- * derives the trusted identity from the `token` and the returned
- * `sidecarId` is what the router keys connection state off of.
+ * Resolves the credentials a sidecar presents on the handshake to the
+ * verified sidecar, or `null` when they are not recognized. A sidecar that
+ * hosts nothing current still resolves and stays connected, idle, after its
+ * handshake undeploys what it reports. A retired one resolves marked
+ * `retired`, and its handshake undeploys what it reports and closes. The
+ * claimed `sidecarId` is an unauthenticated hint; the authenticator derives
+ * the trusted identity from the `token` and the returned `sidecarId` is what
+ * the router keys connection state off of. What the sidecar hosts is read through
+ * `resolveSidecarBindings` once the handshake has claimed the sidecar.
  */
 export type SidecarAuthenticator = (claim: {
   sidecarId: string;
   token: string;
-}) => Promise<SidecarAuthIdentity | null>;
+}) => Promise<SidecarCredentials | null>;
 
 export type SidecarRouterConfig = {
   requestTimeoutMs?: number;
-  /**
-   * Sidecar-hosted OAuth loopback login policy (CL-7508). The locality gate
-   * decides whether a connected sidecar may host a loopback login: a remote
-   * sidecar's `localhost:1455`/`127.0.0.1:1456` callback opens on the wrong
-   * machine, so the hub host supplies the predicate that separates a local
-   * sidecar (same host as the user's browser) from a provisioned remote one.
-   * Absent means no sidecar is ever local and every login request resolves
-   * the typed gate outcome — the hub never falls back to hosting the
-   * listener itself.
-   */
-  oauthLogin?: {
-    isLocalSidecar: (
-      identity: SidecarAuthIdentity,
-    ) => boolean | Promise<boolean>;
-    /** Whole-login timeout (bind → authorize → callback → exchange).
-     * Defaults to 5 minutes — a human completes the consent page. */
-    timeoutMs?: number;
-  };
   /** Hex-encoded 32-byte Ed25519 public key for signing deploy commits.
    * Included in agent.deploy frames so sidecars can verify pack signatures. */
   hubPublicKey?: string;
-  /** Resolves each register/reconnect handshake to a verified sidecar
+  /** Resolves each hello handshake to a verified sidecar
    * identity. Required: without it a connection could route on an
    * unverified frame claim. Return null to reject the handshake. */
   authenticateSidecar: SidecarAuthenticator;
   /** Revalidate durable identity at registration and routing boundaries. */
   validateSidecarIdentity: (
     identity: SidecarAuthIdentity,
-    use: "registration" | "readiness" | "routing",
+    use: SidecarIdentityUse,
   ) => Promise<boolean>;
+  /** Lock current allocation/lifecycle state while the synchronous send runs. */
+  withExecutableWorkflowRun: (
+    target: WorkflowRunExecutionTarget,
+    send: () => boolean,
+    signal?: AbortSignal,
+  ) => Promise<boolean>;
+  /** The bindings a sidecar currently hosts, for `syncSidecar`. */
+  resolveSidecarBindings: (
+    sidecarId: string,
+  ) => Promise<readonly SidecarAuthIdentity[]>;
   /** Timeout for a `sendProbe` round-trip. A probe materializes a workflow's
    * dependency closure and evaluates it on the sidecar, so it can run longer
    * than a routine `sendRequest`; it gets its own timeout rather than sharing
    * the request timeout. */
   probeTimeoutMs?: number;
-  disconnectQueueMaxSize?: number;
-  disconnectQueueTTLMs?: number;
+  /** How long un-acknowledged mail, and mail awaiting its sender's key or its
+   * recipient's credential resolution, is held for a delivery before the Hub
+   * gives up on it. */
+  mailHoldTTLMs?: number;
   pingTimeoutMs?: number;
   /** Interval between redelivery attempts of a connected-window `mail.inbound`
    * the sidecar has not yet acknowledged with `mail.inbound.ack`. */
@@ -592,6 +767,8 @@ export type SidecarRouterConfig = {
    * typically by flipping a flag.
    */
   scheduleTimeout?: (handler: () => void, ms: number) => () => void;
+  /** When a sidecar's stop report is first heard. Defaults to the wall clock. */
+  now?: () => Date;
   /** Maximum redelivery attempts before the hub stops retrying an un-acked
    * connected-window `mail.inbound`. Bounds the retry so a sidecar that never
    * acks does not accumulate an unbounded timer per delivery. */
@@ -610,11 +787,20 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 // evaluates it on the sidecar, so it runs longer than a routine request; its
 // default timeout is correspondingly wider than DEFAULT_REQUEST_TIMEOUT_MS.
 export const DEFAULT_PROBE_TIMEOUT_MS = 60_000;
-const DEFAULT_DISCONNECT_QUEUE_MAX_SIZE = 100;
-const DEFAULT_DISCONNECT_QUEUE_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_MAIL_HOLD_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_PING_TIMEOUT_MS = 60_000;
 const DEFAULT_MAIL_ACK_RETRY_INTERVAL_MS = 10_000;
 const DEFAULT_MAIL_ACK_MAX_RETRIES = 5;
+const INCARNATION_VALIDATION_CONCURRENCY = 8;
+// A longer `setTimeout` fires at once, and a disconnect limit can be longer.
+const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
+
+const MalformedPackDone = type({
+  type: "'repo.pack.done'",
+  transferId: "string > 0",
+  agentAddress: "string > 0",
+  repoId: RepoId,
+});
 
 // The hub re-resolves and re-pushes a key for each rotatable sender a sidecar
 // reports on (re)connect. A legitimate sidecar caches keys for tens, maybe low
@@ -638,8 +824,9 @@ export function createSidecarRouter(
     hubPublicKey: hubPublicKeyHex,
     authenticateSidecar,
     validateSidecarIdentity,
-    disconnectQueueMaxSize = DEFAULT_DISCONNECT_QUEUE_MAX_SIZE,
-    disconnectQueueTTLMs = DEFAULT_DISCONNECT_QUEUE_TTL_MS,
+    withExecutableWorkflowRun,
+    resolveSidecarBindings,
+    mailHoldTTLMs = DEFAULT_MAIL_HOLD_TTL_MS,
     pingTimeoutMs = DEFAULT_PING_TIMEOUT_MS,
     mailAckRetryIntervalMs = DEFAULT_MAIL_ACK_RETRY_INTERVAL_MS,
     scheduleTimeout = (handler: () => void, ms: number) => {
@@ -649,6 +836,7 @@ export function createSidecarRouter(
       };
     },
     mailAckMaxRetries = DEFAULT_MAIL_ACK_MAX_RETRIES,
+    now = () => new Date(),
     lookups = {},
   } = config;
 
@@ -656,8 +844,72 @@ export function createSidecarRouter(
   // host code subscribes via `router.events`.
   const events = createSidecarEmitter();
 
+  async function withAllocationWorkAdmission(
+    ws: WsHandle,
+    binding: Extract<SidecarAuthIdentity, { kind: "allocated" }>,
+    send: () => boolean,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    return withExecutableWorkflowRun(
+      binding,
+      () => {
+        signal?.throwIfAborted();
+        if (
+          allocationFences.get(binding.allocationId)?.generation !==
+            binding.generation ||
+          allocatedConnections.get(binding.allocationId)?.ws !== ws ||
+          !connections.has(ws)
+        )
+          throw new Error(
+            `Workflow connection changed for allocation ${binding.allocationId}`,
+          );
+        return send();
+      },
+      signal,
+    );
+  }
+
+  async function withWorkflowWorkAdmission(
+    ws: WsHandle,
+    conn: SidecarConnection,
+    agentAddress: string,
+    send: () => boolean,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    const binding = owningAllocation(conn, agentAddress);
+    const changed = () =>
+      new Error(
+        `Workflow connection changed before delivery to ${agentAddress}`,
+      );
+    if (binding === undefined) throw changed();
+    return withAllocationWorkAdmission(
+      ws,
+      binding,
+      () => {
+        if (
+          addressIndex.get(agentAddress) !== ws ||
+          conn.workflowAddresses.get(agentAddress) !== binding.allocationId
+        )
+          throw changed();
+        return send();
+      },
+      signal,
+    );
+  }
+
   // ws handle → registered connection
   const connections = new Map<WsHandle, SidecarConnection>();
+  // sidecar id → its current socket
+  const sidecarSockets = new Map<string, WsHandle>();
+  // sidecar id → the socket whose handshake is registering it. The previous
+  // socket keeps serving until that registration takes over, but syncs for
+  // the sidecar queue behind the registration instead.
+  const sidecarClaims = new Map<string, WsHandle>();
+  // A handshake still authenticating when its socket closes must not
+  // register the socket afterwards.
+  const closedSockets = new WeakSet<WsHandle>();
+  // Sockets whose sidecar was sent `welcome`, and so is registered.
+  const welcomedSockets = new WeakSet<WsHandle>();
   const allocatedConnections = new Map<
     string,
     {
@@ -665,7 +917,34 @@ export function createSidecarRouter(
       identity: SidecarAuthIdentity;
     }
   >();
-  const allocationFences = new Map<string, number>();
+  const allocationFences = new Map<
+    string,
+    { generation: number; cleanup: { sidecarId: string } | undefined }
+  >();
+  // allocationId -> generation whose worker acknowledged a workflow stop. Its
+  // later workflow-run packs are refused, including after a reconnect.
+  const stoppedAllocations = new Map<string, number>();
+  const connectionRetention = new WeakMap<
+    WsHandle,
+    Map<string, { generation: number; retention: DeploymentRetention }>
+  >();
+  const retainingAllocations = new Map<
+    string,
+    { ws: WsHandle; generation: number; result: Promise<DeploymentRetention> }
+  >();
+  // allocationId -> the stop a sidecar reported for that generation's
+  // deployment though the Hub did not stop it. It outlives the connection that
+  // carried it, until the allocation's fence moves past that generation.
+  const reportedStops = new Map<
+    string,
+    {
+      generation: number;
+      address: string;
+      error: string;
+      reportedAt: Date;
+      refTips?: WorkflowRunRefTips;
+    }
+  >();
   type AllocationWaiter = {
     generation: number;
     resolve(): void;
@@ -676,15 +955,27 @@ export function createSidecarRouter(
     onValidation?: (validation: Promise<boolean>) => void;
   };
   const allocationWaiters = new Map<string, Set<AllocationWaiter>>();
+  const inventoryWaiters = new Map<string, Set<() => void>>();
   // agentAddress → ws handle (routing table)
   const addressIndex = new Map<string, WsHandle>();
   // requestId → pending promise (resolved by session.ack, rejected by
-  // session.error). `PendingTracker` owns the register/timeout/settle/sweep
-  // lifecycle shared by all five pending round-trips below; each entry's
-  // resolve/reject closures carry the per-round-trip cleanup.
-  const pendingRequests = new PendingTracker<string>();
-  // agentAddress → pending deploy promise (matched by agent.deploy.ack/agent.error)
-  const pendingDeploys = new PendingTracker<string, string>();
+  // session.error), carrying the target address so an allocation leaving a
+  // shared connection rejects only its own requests. `PendingTracker` owns the
+  // register/timeout/settle/sweep lifecycle shared by all five pending
+  // round-trips below; each entry's resolve/reject closures carry the
+  // per-round-trip cleanup.
+  const pendingRequests = new PendingTracker<string, void, string>();
+  // agentAddress → the deploy in flight for it, answered by the
+  // agent.deploy.ack or agent.deploy.error carrying its request id and
+  // generation. One deploy per address is in flight at a time; a reply that
+  // names another request answers a deploy the Hub already gave up on.
+  type PendingDeploy = { requestId: string; generation: number };
+  const pendingDeploys = new PendingTracker<
+    string,
+    string,
+    PendingDeploy,
+    DeploymentRejectedError
+  >();
   // Run addresses whose ALLOCATED deploy is mid-flight -- key-record has been
   // started but not yet committed. pendingDeploys clears at the deploy ack, but an
   // allocated run's key is recorded LATER by session-service's anchor-key update,
@@ -695,12 +986,6 @@ export function createSidecarRouter(
     string,
     AllocatedSenderDeployAttempt
   >();
-  // agentAddress → queued frames for disconnected agents awaiting reconnect
-  type DisconnectedAgent = {
-    queue: HubFrame[];
-    timer: ReturnType<typeof setTimeout>;
-  };
-  const disconnectedAgents = new Map<string, DisconnectedAgent>();
   // agentAddress → messageId → connected-window mail awaiting a
   // `mail.inbound.ack`. A `mail.inbound` delivered over a LIVE connection with
   // a hub-minted messageId is tracked here and redelivered -- identical bytes,
@@ -713,7 +998,7 @@ export function createSidecarRouter(
   type PendingMailEntry = {
     agentAddress: string;
     messageId: string;
-    frame: HubFrame;
+    frame: MailInboundFrame;
     attempts: number;
     /**
      * Disarms this entry's redelivery retry. Safe to call more than once:
@@ -723,6 +1008,13 @@ export function createSidecarRouter(
      * its spent canceller is still on it.
      */
     cancelRetry: () => void;
+    /**
+     * The retry loop that owns the entry's redelivery, replaced when a
+     * redelivery rearms the retry. Cancelling a timer cannot stop a retry
+     * already awaiting its replay, so a retry whose loop was replaced neither
+     * sends nor rearms.
+     */
+    retryLoop: symbol;
     // When this mail triggers a workflow run, the run's already-materialized
     // grants ride alongside it. Redelivery replays this snapshot as a
     // `run.grants` frame AHEAD of the mail so the redelivered trigger lands on
@@ -736,8 +1028,15 @@ export function createSidecarRouter(
       stepGrants: RunGrantsFrame["stepGrants"];
       senderIdentities?: RunGrantsFrame["senderIdentities"];
     };
-    /** Present for a durable trigger pinned to a provisioned allocation. */
-    allocatedTarget?: AllocatedSidecarTarget;
+    /** The incarnation the mail was delivered to, which alone may ack it. */
+    allocatedTarget: AllocatedSidecarTarget;
+    /**
+     * Whether a durable dispatch row stands behind the mail. The row delivers
+     * it again to whichever generation replaces the one it went to, so the
+     * entry covers only that generation. Mail with no row behind it follows
+     * the deployment to the generation routed next instead.
+     */
+    dispatchBacked: boolean;
   };
   const pendingMail = new Map<string, Map<string, PendingMailEntry>>();
   // agentAddress → retention TTL timer for un-acked pending mail held across a
@@ -754,8 +1053,7 @@ export function createSidecarRouter(
   // unknown sender. Each entry holds what a re-drive of `handleMailOutbound`
   // needs -- the raw message and its recipients -- plus a per-entry TTL timer.
   // This is a SIBLING of `pendingMail`, keyed by SENDER: it means "the SENDER's
-  // key is missing," the opposite axis from the recipient-keyed disconnect queue
-  // (`disconnectedAgents`), which means "the RECIPIENT socket is gone." Here the
+  // key is missing," not that the recipient is unreachable. Here the
   // recipient is live; only the sender's key is absent. `noteSenderDeploySettled`
   // drives an entry to delivery once the key lands or to
   // `mail.outbound.undelivered` when the deploy fails; the TTL backstops the case
@@ -767,6 +1065,33 @@ export function createSidecarRouter(
     timer: ReturnType<typeof setTimeout>;
   };
   const deferredSenderMail = new Map<string, Set<DeferredSenderMailEntry>>();
+  // Recipient address → mail held because that deployment has not recorded
+  // credential resolution. A sibling of `deferredSenderMail`: keyed by the
+  // RECIPIENT. A recorded settle re-drives with the sender key bound when
+  // the mail was accepted, not the recipient's key. `rejected` is the
+  // wrong outcome here -- it drops the mail.
+  type DeferredRecipientResolutionMailEntry = {
+    recipient: string;
+    authenticatedSender: string;
+    rawMessage: string;
+    recipients: string[];
+    // The sender key bound for this message before the hold. Null means
+    // that resolve found no key. A redrive passes this value so a later
+    // key cannot replace it; omitting it would resolve again.
+    recordedSenderKey: string | null;
+    // Armed when the attempt finishes parked with no wake. Null while the
+    // attempt is in flight, and after the hold is claimed.
+    cancelTimer: (() => void) | null;
+    // True until the attempt that parked this entry finishes. A settle during
+    // that await records `wake` and does not re-drive yet: the attempt may
+    // still route, and a re-drive beside it would deliver the mail twice.
+    inflight: boolean;
+    wake: SenderDeploySettledOutcome | null;
+  };
+  const deferredRecipientResolutionMail = new Map<
+    string,
+    Set<DeferredRecipientResolutionMailEntry>
+  >();
   // agentAddress → set of subscriber callbacks for agent events
   const agentSubscribers = new Map<string, Set<(event: unknown) => void>>();
   // agentAddress → cached connector-thread state, populated by
@@ -781,8 +1106,8 @@ export function createSidecarRouter(
   // Per-ws serialization chain for QUEUE-class frames (see `frameBypassesQueue`
   // for the split and the invariant behind it). A frame that establishes or
   // reads routing waits for earlier queued frames on the same ws to complete,
-  // so it observes their finished effects -- most importantly an async
-  // register's routing write, which would otherwise land after a following
+  // so it observes their finished effects -- most importantly a hello's
+  // routing write, which would otherwise land after a following
   // connector.state.changed / mail / pack frame and silently drop it. It holds
   // a single in-flight promise per ws (replaced each queued frame), cleared on
   // close.
@@ -791,41 +1116,43 @@ export function createSidecarRouter(
   // transferId → pending pack transfer (resolved by repo.pack.ack, rejected
   // by repo.pack.reject). The entry carries the send-site agentAddress and
   // repoId so an ack/reject is honored only when it comes from the
-  // connection that owns the transfer for the same repo.
+  // connection that owns the transfer for the same repo. Transfer ids are
+  // random, so an answer to a transfer from before a Hub restart never
+  // matches a new one.
   type PackTransferMeta = { agentAddress: string; repoId: RepoId };
   const pendingPacks = new PendingTracker<string, void, PackTransferMeta>();
-  let packCounter = 0;
 
-  // agentAddress → pending undeploy (resolved by agent.undeploy.ack)
-  const pendingUndeploys = new PendingTracker<string>();
+  // agentAddress → the undeploy a caller awaits for it, answered by the
+  // agent.undeploy.ack or agent.undeploy.error carrying its request id.
+  const pendingUndeploys = new PendingTracker<
+    string,
+    void,
+    { requestId: string; generation: number; target?: AllocatedSidecarTarget }
+  >(scheduleTimeout);
+  const pendingWorkflowControls = new PendingTracker<
+    string,
+    DeploymentRetention | undefined,
+    AllocatedSidecarTarget &
+      Pick<WorkflowControlFrame, "agentAddress" | "action" | "runId"> & {
+        terminal: boolean;
+        fail(error: Error): void;
+        received(): void;
+      }
+  >(scheduleTimeout);
 
   // requestId → pending workflow probe (resolved by workflow.probe.result,
   // rejected by workflow.probe.error). Result-carrying, unlike the other
   // trackers (which resolve void): a probe returns the sidecar's inert
-  // projection + grant set + wire hash. Keyed on requestId alone -- the
-  // probe runs in the sidecar's pre-deploy state and enters no address map,
-  // so `handleClose`'s ws-keyed sweep is its ONLY disconnect cleanup.
-  const pendingProbes = new PendingTracker<string, WorkflowProbeResult>();
-
-  // Sidecar-hosted loopback logins (CL-7508). Keyed on requestId alone — the
-  // login is tenant-level, not address-scoped — so, like probes, the
-  // connection close sweep is the only disconnect cleanup. A login settles in
-  // two phases: the `started` arm resolves the request promise (the hub
-  // returns the authorize URL to the web UI), and exactly one terminal arm
-  // settles `completed`. An error arm that arrives before any `started`
-  // (e.g. the pinned callback port was already bound) resolves the request
-  // promise as an error and tears the entry down — the hub never waits on a
-  // login that failed to start.
-  type PendingOAuthLogin = {
-    ws: WsHandle;
-    conn: SidecarConnection;
-    requestSettled: boolean;
-    resolveRequest(outcome: OAuthLoginRequestOutcome): void;
-    resolveFinal(outcome: OAuthLoginFinalOutcome): void;
-    completed: Promise<OAuthLoginFinalOutcome>;
-    timer: ReturnType<typeof setTimeout>;
-  };
-  const pendingOAuthLogins = new Map<string, PendingOAuthLogin>();
+  // projection + grant set + wire hash. The probe runs in the sidecar's
+  // pre-deploy state and enters no address map, so each entry carries its
+  // probe id: the ws-keyed sweeps -- the whole connection closing, or that
+  // probe leaving a connection other bindings keep open -- are its only
+  // disconnect cleanup.
+  const pendingProbes = new PendingTracker<
+    string,
+    WorkflowProbeResult,
+    string
+  >();
 
   // Receives agent-state packs pushed from sidecars. The wire frames
   // (`repo.pack.push` / `repo.pack.done`) are shared with the
@@ -839,46 +1166,6 @@ export function createSidecarRouter(
 
   let requestCounter = 0;
 
-  // Surface disconnect-queue mail that is being dropped rather than delivered.
-  // Every dropped frame reaches the same channel routing failures already use
-  // (`mail.outbound.undelivered`, logged by the orchestrator), plus a warn that
-  // names the recipient and the drop count so a size-cap eviction or a TTL
-  // expiry of a still-full queue is visible instead of silent. A queued frame
-  // is always a `mail.inbound` carrying the sender's rawMessage; a frame of any
-  // other shape has no rawMessage to relay and is surfaced by the warn alone.
-  function surfaceDroppedFrames(
-    agentAddress: string,
-    frames: HubFrame[],
-    reason: string,
-  ): void {
-    if (frames.length === 0) return;
-    logger.warn`Dropping ${String(frames.length)} queued message(s) for ${agentAddress}: ${reason}`;
-    for (const frame of frames) {
-      if (frame.type !== "mail.inbound") continue;
-      events.emit("mail.outbound.undelivered", {
-        rawMessage: frame.rawMessage,
-        recipients: [agentAddress],
-      });
-    }
-  }
-
-  function enqueueForDisconnected(
-    agentAddress: string,
-    frame: HubFrame,
-  ): boolean {
-    const entry = disconnectedAgents.get(agentAddress);
-    if (entry === undefined) return false;
-
-    if (entry.queue.length >= disconnectQueueMaxSize) {
-      const evicted = entry.queue.shift();
-      if (evicted !== undefined) {
-        surfaceDroppedFrames(agentAddress, [evicted], "disconnect queue full");
-      }
-    }
-    entry.queue.push(frame);
-    return true;
-  }
-
   // Arm a redelivery-retry timer for a tracked pending mail. Wraps the async
   // `retryPendingMail` so a rejection -- a socket write that throws once the
   // sidecar is gone -- is logged rather than floating out of the timer as an
@@ -886,11 +1173,14 @@ export function createSidecarRouter(
   function scheduleMailRetry(
     agentAddress: string,
     messageId: string,
+    retryLoop: symbol,
   ): () => void {
     return scheduleTimeout(() => {
-      void retryPendingMail(agentAddress, messageId).catch((err: unknown) => {
-        logger.warn`Redelivery retry for mail ${messageId} to ${agentAddress} failed: ${err instanceof Error ? err.message : String(err)}`;
-      });
+      void retryPendingMail(agentAddress, messageId, retryLoop).catch(
+        (err: unknown) => {
+          logger.warn`Redelivery retry for mail ${messageId} to ${agentAddress} failed: ${err instanceof Error ? err.message : String(err)}`;
+        },
+      );
     }, mailAckRetryIntervalMs);
   }
 
@@ -901,13 +1191,14 @@ export function createSidecarRouter(
   function trackPendingMail(
     agentAddress: string,
     messageId: string,
-    frame: HubFrame,
+    frame: MailInboundFrame,
+    allocatedTarget: AllocatedSidecarTarget,
+    dispatchBacked: boolean,
     runGrants?: {
       runId: string;
       stepGrants: RunGrantsFrame["stepGrants"];
       senderIdentities?: RunGrantsFrame["senderIdentities"];
     },
-    allocatedTarget?: AllocatedSidecarTarget,
   ): void {
     let byId = pendingMail.get(agentAddress);
     if (byId === undefined) {
@@ -916,15 +1207,67 @@ export function createSidecarRouter(
     }
     const existing = byId.get(messageId);
     if (existing !== undefined) existing.cancelRetry();
+    const retryLoop = Symbol("mail-retry");
     byId.set(messageId, {
       agentAddress,
       messageId,
       frame,
       attempts: 0,
-      cancelRetry: scheduleMailRetry(agentAddress, messageId),
+      cancelRetry: scheduleMailRetry(agentAddress, messageId, retryLoop),
+      retryLoop,
+      allocatedTarget,
+      dispatchBacked,
       ...(runGrants !== undefined ? { runGrants } : {}),
-      ...(allocatedTarget !== undefined ? { allocatedTarget } : {}),
     });
+  }
+
+  // A pending mail the Hub stops redelivering. Mail a dispatch row stands
+  // behind is left to the row: it delivers the mail again once the deployment
+  // is next ready, unless the deployment ended, which abandons the row. Any
+  // other mail is surfaced as undelivered.
+  function abandonPendingMail(entry: PendingMailEntry, reason: string): void {
+    if (entry.dispatchBacked) {
+      logger.warn`Stopped redelivering mail ${entry.messageId} to ${entry.agentAddress} and left it to its dispatch row: ${reason}`;
+      return;
+    }
+    events.emit("mail.outbound.undelivered", {
+      rawMessage: entry.frame.rawMessage,
+      recipients: [entry.agentAddress],
+    });
+    logger.warn`Dropping un-acked mail ${entry.messageId} for ${entry.agentAddress}: ${reason}`;
+  }
+
+  // A pending mail whose generation no longer holds its address. Mail a
+  // dispatch row stands behind is left to the row, which delivers it to the
+  // generation routed now. Any other mail follows the deployment there,
+  // restamped for that generation, or is surfaced as undelivered when no
+  // generation holds the address. Returns whether the entry is still pending.
+  function followRoutedGeneration(
+    byId: Map<string, PendingMailEntry>,
+    entry: PendingMailEntry,
+    routed: Extract<SidecarAuthIdentity, { kind: "allocated" }> | undefined,
+  ): boolean {
+    if (entry.dispatchBacked) {
+      entry.cancelRetry();
+      deletePendingMail(byId, entry.agentAddress, entry.messageId);
+      logger.info`Leaving mail ${entry.messageId} for ${entry.agentAddress} to its dispatch row: generation ${String(entry.allocatedTarget.generation)} no longer holds the address`;
+      return false;
+    }
+    if (routed === undefined) {
+      entry.cancelRetry();
+      deletePendingMail(byId, entry.agentAddress, entry.messageId);
+      abandonPendingMail(
+        entry,
+        "no generation of it is routed to redeliver to",
+      );
+      return false;
+    }
+    entry.allocatedTarget = {
+      allocationId: routed.allocationId,
+      generation: routed.generation,
+    };
+    entry.frame = { ...entry.frame, generation: routed.generation };
+    return true;
   }
 
   // Resolve the frame that must precede a redelivery of a trigger mail on the
@@ -953,15 +1296,11 @@ export function createSidecarRouter(
   async function resolveReplayLeadFrame(
     entry: PendingMailEntry,
   ): Promise<HubFrame | undefined> {
-    const authenticatedSender =
-      entry.frame.type === "mail.inbound"
-        ? entry.frame.authenticatedSender
-        : undefined;
-    const senderIsRun =
-      authenticatedSender !== undefined && isRunAddress(authenticatedSender);
+    const authenticatedSender = entry.frame.authenticatedSender;
+    const senderIsRun = isRunAddress(authenticatedSender);
 
     if (entry.runGrants === undefined) {
-      if (authenticatedSender === undefined || !senderIsRun) return undefined;
+      if (!senderIsRun) return undefined;
       const key = await reresolveRunSenderKey(authenticatedSender);
       if (key === null) return undefined;
       return {
@@ -972,17 +1311,14 @@ export function createSidecarRouter(
     }
 
     let senderIdentities = entry.runGrants.senderIdentities;
-    if (
-      senderIdentities === undefined &&
-      authenticatedSender !== undefined &&
-      senderIsRun
-    ) {
+    if (senderIdentities === undefined && senderIsRun) {
       const key = await reresolveRunSenderKey(authenticatedSender);
       senderIdentities = senderIdentitiesFromKey(authenticatedSender, key);
     }
     return {
       type: "run.grants",
       agentAddress: entry.agentAddress,
+      generation: entry.frame.generation,
       runId: entry.runGrants.runId,
       stepGrants: entry.runGrants.stepGrants,
       ...(senderIdentities !== undefined ? { senderIdentities } : {}),
@@ -1018,37 +1354,85 @@ export function createSidecarRouter(
   // key) and then the mail itself over `conn`. Awaits the resolve FIRST, then
   // sends the lead frame and the mail back-to-back with NO await between them,
   // so the co-delivered key always precedes the mail on the FIFO socket.
-  // Returns whether the mail was (re)sent, so the caller re-arms the retry timer
-  // only for an entry it actually redelivered.
+  // Returns whether the mail was sent and arms its retry inside admission,
+  // before an acknowledgement can remove the pending entry. A retry passes its
+  // loop, and sends nothing once a redelivery has replaced that loop; a
+  // redelivery passes none and starts the entry's one retry loop afresh.
   async function replaySendPendingMail(
     conn: SidecarConnection,
     entry: PendingMailEntry,
+    retryLoop: symbol | undefined,
   ): Promise<boolean> {
     const lead = await resolveReplayLeadFrame(entry);
     // The resolve above may have awaited real I/O; during that gap a queued
     // `mail.inbound.ack` can advance and run `resolvePendingMail` (delete +
-    // clearTimeout) on this entry. The window is opened by the timer-macrotask
-    // retry path, NOT by any bypass: `mail.inbound.ack` is a QUEUED frame
-    // (frameBypassesQueue returns false for it). It can interleave because the
-    // retry runs as an independent setTimeout macrotask (retryPendingMail), so
-    // the owning ws's message chain is free to advance the ack during the
-    // resolve await. On the reconnect/redeliver path the ack cannot interleave
-    // at all -- it queues behind the still-running reconnect handler on the
-    // same ws -- so here this guard is pure defense-in-depth. Re-confirm it is
-    // still the tracked entry before sending, or a post-ack redelivery would
-    // arm a retry timer on a detached entry.
+    // clearTimeout) on this entry. `mail.inbound.ack` is a QUEUED frame
+    // (frameBypassesQueue returns false for it), so it interleaves only with a
+    // replay that runs off the owning ws's message chain: the retry, an
+    // independent setTimeout macrotask (retryPendingMail). On the hello's
+    // redelivery the ack cannot interleave -- it queues behind the
+    // still-running registration on the same ws. Re-confirm it is still the
+    // tracked entry before sending, or a post-ack redelivery would arm a retry
+    // timer on a detached entry.
     if (pendingMail.get(entry.agentAddress)?.get(entry.messageId) !== entry) {
       return false;
     }
+    if (retryLoop !== undefined && entry.retryLoop !== retryLoop) return false;
     // The same gap can span a disconnect or a takeover that moves the address
     // off `conn`. Sending on the stale conn would write to a dead socket and
     // re-arm a retry that later drops a still-retained entry. Skip so the entry
     // survives for the reconnect redelivery.
     const ws = addressIndex.get(entry.agentAddress);
     if (ws === undefined || connections.get(ws) !== conn) return false;
-    if (lead !== undefined) conn.send(lead);
-    conn.send(entry.frame);
-    return true;
+    const stillOwned = (): boolean =>
+      pendingMail.get(entry.agentAddress)?.get(entry.messageId) === entry &&
+      (retryLoop === undefined || entry.retryLoop === retryLoop);
+    // Mail tracked since the address was routed here still has its retry
+    // armed, and a retry of it may still be awaiting its replay; one retry
+    // loop per entry, so a redelivery replaces the loop.
+    const rearm = (attempts: number): void => {
+      entry.cancelRetry();
+      entry.attempts = attempts;
+      if (retryLoop === undefined) entry.retryLoop = Symbol("mail-retry");
+      entry.cancelRetry = scheduleMailRetry(
+        entry.agentAddress,
+        entry.messageId,
+        entry.retryLoop,
+      );
+    };
+    try {
+      return await withWorkflowWorkAdmission(
+        ws,
+        conn,
+        entry.agentAddress,
+        () => {
+          if (!stillOwned()) return false;
+          if (lead !== undefined) conn.send(lead);
+          conn.send(entry.frame);
+          // Arm before releasing the database locks: an ack may arrive while
+          // the transaction finishes and must be able to cancel this timer.
+          rearm(retryLoop === undefined ? 0 : entry.attempts + 1);
+          return true;
+        },
+      );
+    } catch (error) {
+      if (error instanceof WorkflowRunNotExecutableError) {
+        logger.warn`Dropping un-acked mail ${entry.messageId} for ${entry.agentAddress}: its workflow run can no longer execute`;
+        resolvePendingMail(
+          entry.agentAddress,
+          entry.messageId,
+          entry.allocatedTarget.generation,
+        );
+      } else {
+        // A transient database or socket failure must leave replay retryable,
+        // including during the registration handler's reconnect replay.
+        if (stillOwned() && addressIndex.has(entry.agentAddress)) {
+          rearm(entry.attempts + 1);
+        }
+        logger.warn`Mail replay failed for ${entry.agentAddress}: ${error instanceof Error ? error.message : String(error)}`;
+      }
+      return false;
+    }
   }
 
   function deletePendingMail(
@@ -1072,26 +1456,23 @@ export function createSidecarRouter(
   async function retryPendingMail(
     agentAddress: string,
     messageId: string,
+    retryLoop: symbol,
   ): Promise<void> {
     const byId = pendingMail.get(agentAddress);
     if (byId === undefined) return;
     const entry = byId.get(messageId);
-    if (entry === undefined) return;
+    if (entry?.retryLoop !== retryLoop) return;
 
     if (entry.attempts >= mailAckMaxRetries) {
       // The sidecar never acked within the retry budget. The ack is withheld
       // precisely because the sidecar's durable inbox write failed, so the
-      // mail was NOT delivered: surface it as undelivered so the host can relay
-      // it onto an external transport, then drop the pending entry so its timer
-      // does not leak.
-      if (entry.frame.type === "mail.inbound") {
-        events.emit("mail.outbound.undelivered", {
-          rawMessage: entry.frame.rawMessage,
-          recipients: [agentAddress],
-        });
-      }
+      // mail was NOT delivered. Drop the pending entry so its timer does not
+      // leak.
       deletePendingMail(byId, agentAddress, messageId);
-      logger.warn`Gave up redelivering mail ${messageId} to ${agentAddress} after ${String(entry.attempts)} un-acked attempt(s)`;
+      abandonPendingMail(
+        entry,
+        `no acknowledgement after ${String(entry.attempts)} redelivery attempt(s)`,
+      );
       return;
     }
 
@@ -1099,34 +1480,36 @@ export function createSidecarRouter(
     // moved the address to a new connection since the original delivery.
     const ws = addressIndex.get(agentAddress);
     const conn = ws !== undefined ? connections.get(ws) : undefined;
-    const allocated =
-      entry.allocatedTarget === undefined
-        ? undefined
-        : allocatedConnections.get(entry.allocatedTarget.allocationId);
+    if (conn === undefined) {
+      followRoutedGeneration(byId, entry, undefined);
+      return;
+    }
+    const allocated = allocatedConnections.get(
+      entry.allocatedTarget.allocationId,
+    );
     const targetStillOwnsAddress =
-      entry.allocatedTarget === undefined ||
-      (allocated !== undefined &&
-        allocated.identity.generation === entry.allocatedTarget.generation &&
-        allocated.ws === ws);
-    if (conn === undefined || !targetStillOwnsAddress) {
-      // No live connection to recover into. Connected-window redelivery only
-      // applies while the address is routable; a disconnected address is not
-      // retried here.
-      deletePendingMail(byId, agentAddress, messageId);
-      logger.warn`Dropping un-acked mail ${messageId} for ${agentAddress}: no live connection to redeliver over`;
+      allocated !== undefined &&
+      allocated.identity.generation === entry.allocatedTarget.generation &&
+      allocated.ws === ws;
+    if (
+      !targetStillOwnsAddress &&
+      !followRoutedGeneration(byId, entry, owningAllocation(conn, agentAddress))
+    ) {
       return;
     }
 
-    if (!(await replaySendPendingMail(conn, entry))) return;
-    entry.attempts += 1;
-    entry.cancelRetry = scheduleMailRetry(agentAddress, messageId);
+    await replaySendPendingMail(conn, entry, retryLoop);
   }
 
-  function resolvePendingMail(agentAddress: string, messageId: string): void {
+  function resolvePendingMail(
+    agentAddress: string,
+    messageId: string,
+    generation: number,
+  ): void {
     const byId = pendingMail.get(agentAddress);
     if (byId === undefined) return;
     const entry = byId.get(messageId);
-    if (entry === undefined) return;
+    if (entry?.allocatedTarget.generation !== generation) return;
     entry.cancelRetry();
     deletePendingMail(byId, agentAddress, messageId);
   }
@@ -1134,10 +1517,9 @@ export function createSidecarRouter(
   // Hold an address's un-acked pending mail across a disconnect. The per-entry
   // retry timers are cleared -- retrying over the dead socket is pointless --
   // but the entries are KEPT so a verified reconnect can redeliver them. A
-  // retention TTL (the disconnect-queue horizon) bounds the hold so a sidecar
-  // that never reconnects does not leak; on expiry the still-un-acked entries
-  // are surfaced as `mail.outbound.undelivered` so the host can relay them,
-  // since a withheld ack means the sidecar's durable write never landed.
+  // retention TTL bounds the hold so a sidecar that never reconnects does not
+  // leak; on expiry the still-un-acked entries are given up, since a withheld
+  // ack means the sidecar's durable write never landed.
   function retainPendingMailForAddress(agentAddress: string): void {
     const byId = pendingMail.get(agentAddress);
     if (byId === undefined) return;
@@ -1148,30 +1530,31 @@ export function createSidecarRouter(
       pendingMailRetention.delete(agentAddress);
       const expired = pendingMail.get(agentAddress);
       pendingMail.delete(agentAddress);
-      if (expired !== undefined && expired.size > 0) {
-        for (const entry of expired.values()) {
-          if (entry.frame.type !== "mail.inbound") continue;
-          events.emit("mail.outbound.undelivered", {
-            rawMessage: entry.frame.rawMessage,
-            recipients: [agentAddress],
-          });
-        }
-        logger.warn`Dropping ${String(expired.size)} un-acked message(s) for ${agentAddress}: pending-mail retention TTL expired`;
+      for (const entry of expired?.values() ?? []) {
+        abandonPendingMail(
+          entry,
+          "no reconnect redelivered it within the retention time",
+        );
       }
-    }, disconnectQueueTTLMs);
+    }, mailHoldTTLMs);
     pendingMailRetention.set(agentAddress, timer);
   }
 
-  // Redeliver an address's retained un-acked pending mail on a verified
-  // reconnect. Replays identical bytes (same messageId) over the new
-  // connection, so the sidecar's inbox dedups a message it already wrote
-  // (effectively-once) and processes one it had dropped (no loss). Re-arms the
-  // connected-window retry over the new connection with a fresh per-generation
-  // budget, so a redelivery that is itself dropped before its ack is retried.
+  // Redeliver an address's retained un-acked pending mail once a `hello`
+  // routes the address again.
+  // Replays identical bytes (same messageId) over that connection, so the
+  // sidecar's inbox dedups a message it already wrote (effectively-once) and
+  // processes one it had dropped (no loss). Re-arms the connected-window retry
+  // over that connection with a fresh per-generation budget, so a redelivery
+  // that is itself dropped before its ack is retried.
   async function redeliverPendingMail(
     agentAddress: string,
     conn: SidecarConnection,
   ): Promise<void> {
+    // A handshake that took the sidecar over meanwhile redelivers what it
+    // routes, and mail it does not route keeps its retention.
+    const routedOn = addressIndex.get(agentAddress);
+    if (routedOn === undefined || connections.get(routedOn) !== conn) return;
     const retention = pendingMailRetention.get(agentAddress);
     if (retention !== undefined) {
       clearTimeout(retention);
@@ -1179,26 +1562,30 @@ export function createSidecarRouter(
     }
     const byId = pendingMail.get(agentAddress);
     if (byId === undefined) return;
+    let redelivered = 0;
     for (const entry of [...byId.values()]) {
+      const routed = owningAllocation(conn, agentAddress);
+      if (routed === undefined) {
+        // The route went while an earlier entry awaited its replay. The rest
+        // waits for the generation routed next, as a detach leaves it, unless
+        // another connection already routes the address and delivers it there.
+        if (!addressIndex.has(agentAddress)) {
+          retainPendingMailForAddress(agentAddress);
+        }
+        return;
+      }
       if (
-        entry.allocatedTarget !== undefined &&
-        (conn.identity.kind !== "allocated" ||
-          conn.identity.allocationId !== entry.allocatedTarget.allocationId ||
-          conn.identity.generation !== entry.allocatedTarget.generation)
+        (routed.allocationId !== entry.allocatedTarget.allocationId ||
+          routed.generation !== entry.allocatedTarget.generation) &&
+        !followRoutedGeneration(byId, entry, routed)
       ) {
-        // The Hub-owned dispatch row survives generation replacement and will
-        // be requeued by the allocation-ready callback. Do not leak or replay
-        // this generation-local retry entry onto a different worker.
-        entry.cancelRetry();
-        deletePendingMail(byId, agentAddress, entry.messageId);
         continue;
       }
-      if (!(await replaySendPendingMail(conn, entry))) continue;
-      entry.attempts = 0;
-      entry.cancelRetry = scheduleMailRetry(agentAddress, entry.messageId);
+      if (!(await replaySendPendingMail(conn, entry, undefined))) continue;
+      redelivered += 1;
     }
-    if (byId.size > 0) {
-      logger.info`Redelivered ${String(byId.size)} un-acked message(s) to ${agentAddress} on reconnect`;
+    if (redelivered > 0) {
+      logger.info`Redelivered ${String(redelivered)} un-acked message(s) to ${agentAddress}`;
     }
   }
 
@@ -1216,14 +1603,14 @@ export function createSidecarRouter(
 
   function handlePing(ws: WsHandle): void {
     resetLivenessTimer(ws);
-    // Always respond with pong, even before register/reconnect completes.
-    // The sidecar's ping timer starts on open, which may fire before the
-    // async registration handshake finishes.
+    // Always respond with pong, even before the hello is answered. The
+    // sidecar's ping timer starts on open, which may fire before the async
+    // registration handshake finishes.
     ws.send(JSON.stringify({ type: "pong" }));
   }
 
   function handleOpen(ws: WsHandle): void {
-    // Connection is not usable until a register frame arrives.
+    // Connection is not usable until a hello frame arrives.
     // Start the liveness timer immediately — a sidecar that connects
     // but never sends a ping will be reaped.
     resetLivenessTimer(ws);
@@ -1240,6 +1627,27 @@ export function createSidecarRouter(
     const validated = SidecarFrame(raw);
     if (validated instanceof type.errors) {
       logger.warn`Invalid sidecar frame: ${validated.summary}`;
+      // An invalid hello cannot be answered with `welcome`, so the socket
+      // closes rather than leave the sidecar waiting on it.
+      if (
+        typeof raw === "object" &&
+        raw !== null &&
+        "type" in raw &&
+        raw.type === "hello"
+      ) {
+        handleClose(ws);
+        ws.close();
+      }
+      const done = MalformedPackDone(raw);
+      if (!(done instanceof type.errors)) {
+        // Behind the frames the sidecar sent before it, such as the
+        // transfer's own chunks, so the rejection cannot overtake them.
+        enqueueOnConnection(ws, async () => {
+          rejectMalformedPackDone(ws, done);
+        }).catch((err: unknown) => {
+          logger.warn`Rejecting a malformed repo.pack.done failed: ${err instanceof Error ? err.message : String(err)}`;
+        });
+      }
       return;
     }
     const frame = validated;
@@ -1247,6 +1655,12 @@ export function createSidecarRouter(
     // Bypass frames (liveness + terminal responses to outbound requests)
     // dispatch immediately: they resolve the very promises a queued handler
     // may be blocked on, so queuing them would deadlock the round-trip.
+    // A queued stop acknowledgement may wait behind slow pack ingestion. The
+    // worker has answered, so its silence timeout stops here.
+    if (frame.type === "workflow.control.ack") {
+      const entry = pendingWorkflowControls.get(frame.requestId);
+      if (entry?.ws === ws) entry.meta.received();
+    }
     if (frameBypassesQueue(frame)) {
       // Guard so a bypass handler's failure -- a synchronous throw or an async
       // ack handler's rejection -- is logged rather than floating out of the
@@ -1268,6 +1682,26 @@ export function createSidecarRouter(
     messageChains.set(ws, next);
   }
 
+  // Run Hub-initiated connection work on the same per-ws chain as inbound
+  // frames, so it observes a completed registration and a registration
+  // observes its effects. The caller sees the task's own outcome; the chain
+  // only needs it settled.
+  function enqueueOnConnection<T>(
+    ws: WsHandle,
+    task: () => Promise<T>,
+  ): Promise<T> {
+    const prev = messageChains.get(ws) ?? Promise.resolve();
+    const result = prev.then(task);
+    messageChains.set(
+      ws,
+      result.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return result;
+  }
+
   function assertNever(x: never): never {
     throw new Error(`Unclassified sidecar frame type: ${JSON.stringify(x)}`);
   }
@@ -1280,30 +1714,34 @@ export function createSidecarRouter(
   // (a response cannot resolve "too early" for a request that already went
   // out), and it is exactly what in-flight queued handlers block on, so it MUST
   // run out of band. Every other frame establishes or reads routing, or carries
-  // an inbound payload whose order matters, so it queues. The exhaustive switch
-  // + assertNever makes adding a SidecarFrame variant without classifying it a
-  // compile error, not a latent deadlock or a silent bypass hole.
+  // an inbound payload whose order matters, so it queues. A workflow stop
+  // acknowledgement queues too: it ends the worker's history, so the packs the
+  // worker sent before it must land before the stop resolves and later packs
+  // are fenced. The exhaustive switch + assertNever makes adding a SidecarFrame
+  // variant without classifying it a compile error, not a latent deadlock or a
+  // silent bypass hole.
   function frameBypassesQueue(frame: SidecarFrame): boolean {
     switch (frame.type) {
       case "ping":
       case "session.ack":
       case "session.error":
       case "agent.deploy.ack":
-      case "agent.error":
+      case "agent.deploy.error":
       case "agent.undeploy.ack":
+      case "agent.undeploy.error":
       case "repo.pack.ack":
       case "repo.pack.reject":
       case "workflow.probe.result":
       case "workflow.probe.error":
-      case "oauth.login.result":
         return true;
-      case "register":
-      case "reconnect":
+      case "hello":
       case "mail.outbound":
       case "agent.event":
       case "connector.state.changed":
       case "mail.inbound.ack":
       case "signal.correlation.register":
+      case "workflow.control.ack":
+      case "deployment.stopped":
       case "repo.pack.push":
       case "repo.pack.done":
         return false;
@@ -1319,43 +1757,52 @@ export function createSidecarRouter(
     ws: WsHandle,
     frame: SidecarFrame,
   ): void | Promise<void> {
-    const registeredIdentity = connections.get(ws)?.identity;
-    if (
-      registeredIdentity?.kind === "probe" &&
-      frame.type !== "register" &&
-      frame.type !== "reconnect" &&
-      frame.type !== "ping" &&
-      frame.type !== "workflow.probe.result" &&
-      frame.type !== "workflow.probe.error"
-    ) {
-      logger.warn`Rejected ${frame.type} from probe sidecar ${registeredIdentity.sidecarId}`;
-      handleClose(ws);
-      ws.close();
-      return;
-    }
     switch (frame.type) {
-      case "register": {
-        const agentAddresses = frame.agentAddresses;
+      case "hello": {
+        const { incarnations } = frame;
         const cachedSenderAddresses = frame.cachedSenderAddresses ?? [];
-        return authenticateHandshake(ws, frame, (identity) =>
-          handleRegister(ws, identity, agentAddresses, cachedSenderAddresses),
-        );
-      }
-      case "reconnect": {
-        const agentAddresses = frame.agentAddresses;
-        const cachedSenderAddresses = frame.cachedSenderAddresses ?? [];
-        return authenticateHandshake(ws, frame, (identity) =>
-          handleReconnect(ws, identity, agentAddresses, cachedSenderAddresses),
-        );
+        // A hello is answered with `welcome` or with the socket closing, never
+        // left waiting: a registration that fails before its welcome closes
+        // the socket, and the sidecar registers again on a new one. One that
+        // fails after it is only reported, since registering again would meet
+        // the same failure and resend the sidecar's pending mail each time.
+        return authenticateHandshake(
+          ws,
+          frame,
+          (sidecarId) =>
+            handleRegistration(
+              ws,
+              sidecarId,
+              incarnations,
+              cachedSenderAddresses,
+              frame.capacity,
+            ),
+          (sidecarId) => undeployRetired(ws, sidecarId, incarnations),
+        ).catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          if (welcomedSockets.has(ws)) {
+            logger.error`Registration of sidecar ${frame.sidecarId} failed after its welcome: ${message}`;
+            return;
+          }
+          logger.error`Registration of sidecar ${frame.sidecarId} failed; closing its connection: ${message}`;
+          handleClose(ws);
+          ws.close();
+        });
       }
       case "agent.deploy.ack":
         return handleDeployAck(ws, frame);
-      case "agent.error":
-        rejectDeployPendingFromFrame(ws, frame.agentAddress, frame.error);
-        rejectUndeployPending(ws, frame.agentAddress, frame.error);
+      case "workflow.control.ack":
+        return handleWorkflowControlAck(ws, frame);
+      case "agent.deploy.error":
+        rejectDeployPendingFromFrame(ws, frame);
         return;
       case "agent.undeploy.ack":
-        resolveUndeployPending(ws, frame.agentAddress);
+        settleUndeploy(ws, frame);
+        resolveUndeployPending(ws, frame);
+        return;
+      case "agent.undeploy.error":
+        settleUndeploy(ws, frame);
+        rejectUndeployPending(ws, frame);
         return;
       case "ping":
         handlePing(ws);
@@ -1363,8 +1810,13 @@ export function createSidecarRouter(
       case "mail.outbound": {
         const conn = connections.get(ws);
         if (conn === undefined) return;
-        if (!connOwnsAddress(conn, frame.senderAddress)) {
-          logger.warn`Dropping mail.outbound from ${frame.senderAddress}: not registered to this sidecar`;
+        if (
+          !namesRoutedIncarnation(conn, {
+            agentAddress: frame.senderAddress,
+            generation: frame.generation,
+          })
+        ) {
+          logger.warn`Dropping mail.outbound from ${frame.senderAddress} generation ${String(frame.generation)}: this sidecar does not route that incarnation`;
           return;
         }
         // The DoS backstop and the trust boundary for an untrusted sidecar's
@@ -1380,8 +1832,8 @@ export function createSidecarRouter(
         }
         if (frame.delivered !== true) {
           // frame.senderAddress is the sender this connection was just gated
-          // on by connOwnsAddress above -- a hub-verified value. Thread it so
-          // the relayed inbound frame is stamped with it, not the MIME From.
+          // on above -- a hub-verified value. Thread it so the relayed
+          // inbound frame is stamped with it, not the MIME From.
           return handleMailOutbound(
             frame.rawMessage,
             frame.senderAddress,
@@ -1402,8 +1854,8 @@ export function createSidecarRouter(
       case "agent.event": {
         const conn = connections.get(ws);
         if (conn === undefined) return;
-        if (!connOwnsAddress(conn, frame.agentAddress)) {
-          logger.warn`Dropping agent.event for ${frame.agentAddress}: not registered to this sidecar`;
+        if (!namesRoutedIncarnation(conn, frame)) {
+          logger.debug`Dropping agent.event for ${frame.agentAddress} generation ${String(frame.generation)}: this sidecar does not route that incarnation`;
           return;
         }
         events.emit("agent.event", {
@@ -1433,27 +1885,32 @@ export function createSidecarRouter(
         return;
       case "mail.inbound.ack": {
         // Terminal receipt for a connected-window `mail.inbound`: the sidecar
-        // has durably written the message to its inbox. Gate on ownership --
-        // like connector.state.changed and signal.correlation.register -- so a
-        // sidecar cannot clear another sidecar's pending mail. The messageId is
-        // a hub-minted id only the owning sidecar ever received on the frame,
-        // so the ownership check is defense-in-depth, not the sole guard.
+        // has durably written the message to the inbox of the incarnation the
+        // ack names. Only the incarnation this connection routes may settle
+        // it: an ack from a generation the Hub fenced is for an inbox that may
+        // be gone, and crediting it would settle mail the routed generation
+        // never received.
         const conn = connections.get(ws);
         if (conn === undefined) return;
-        if (!connOwnsAddress(conn, frame.agentAddress)) {
-          logger.warn`Dropping mail.inbound.ack for ${frame.agentAddress}: not registered to this sidecar`;
+        if (!namesRoutedIncarnation(conn, frame)) {
+          logger.warn`Dropping mail.inbound.ack for ${frame.agentAddress} generation ${String(frame.generation)}: this sidecar does not route that incarnation`;
           return;
         }
-        resolvePendingMail(frame.agentAddress, frame.messageId);
+        resolvePendingMail(
+          frame.agentAddress,
+          frame.messageId,
+          frame.generation,
+        );
+        const acknowledging = owningAllocation(conn, frame.agentAddress);
         events.emit("mail.inbound.acknowledged", {
           agentAddress: frame.agentAddress,
           messageId: frame.messageId,
-          ...(conn.identity.kind === "allocated"
+          ...(acknowledging !== undefined
             ? {
                 allocated: {
-                  allocationId: conn.identity.allocationId,
-                  anchorRunId: conn.identity.anchorRunId,
-                  generation: conn.identity.generation,
+                  allocationId: acknowledging.allocationId,
+                  anchorRunId: acknowledging.anchorRunId,
+                  generation: acknowledging.generation,
                 },
               }
             : {}),
@@ -1463,9 +1920,11 @@ export function createSidecarRouter(
       case "signal.correlation.register":
         return handleSignalCorrelationRegister(ws, frame);
       case "session.ack":
+        if (pendingRequests.get(frame.requestId)?.ws !== ws) return;
         pendingRequests.resolve(frame.requestId);
         return;
       case "session.error":
+        if (pendingRequests.get(frame.requestId)?.ws !== ws) return;
         pendingRequests.reject(frame.requestId, frame.error);
         return;
       case "repo.pack.ack":
@@ -1490,16 +1949,16 @@ export function createSidecarRouter(
       case "workflow.probe.error":
         rejectProbe(ws, frame.requestId, frame.error);
         return;
-      case "oauth.login.result":
-        settleOAuthLogin(frame.requestId, frame.outcome);
+      case "deployment.stopped":
+        handleDeploymentStopped(ws, frame);
         return;
       default:
         return assertNever(frame);
     }
   }
 
-  // Authenticate a register/reconnect handshake exactly once, then run the
-  // frame's handler with the verified identity. The claimed `sidecarId` on
+  // Authenticate a hello handshake exactly once, then run the
+  // frame's handler with the verified sidecar id. The claimed `sidecarId` on
   // the frame is an unauthenticated hint: it is logged if it disagrees with
   // the verified id but never trusted -- routing keys off the verified id.
   // Fails closed by closing the connection when the authenticator rejects
@@ -1508,11 +1967,12 @@ export function createSidecarRouter(
   async function authenticateHandshake(
     ws: WsHandle,
     frame: { type: string; sidecarId: string; token: string },
-    run: (identity: SidecarAuthIdentity) => Promise<void>,
+    run: (sidecarId: string) => Promise<void>,
+    retired: (sidecarId: string) => void,
   ): Promise<void> {
-    let identity: SidecarAuthIdentity | null;
+    let credentials: SidecarCredentials | null;
     try {
-      identity = await authenticateSidecar({
+      credentials = await authenticateSidecar({
         sidecarId: frame.sidecarId,
         token: frame.token,
       });
@@ -1521,20 +1981,22 @@ export function createSidecarRouter(
       ws.close();
       return;
     }
-    if (identity === null) {
+    if (credentials === null) {
       logger.warn`Rejected ${frame.type} from claimed sidecar ${frame.sidecarId}: invalid token`;
       ws.close();
       return;
     }
-    if (identity.sidecarId !== frame.sidecarId) {
-      logger.warn`Sidecar ${frame.type} claimed id ${frame.sidecarId} but token verifies as ${identity.sidecarId}; keying off the verified id`;
-    }
-    if (!(await validateSidecarIdentity(identity, "registration"))) {
-      logger.warn`Rejected ${frame.type} from sidecar ${identity.sidecarId}: credential identity is no longer current`;
+    const sidecarId = credentials.sidecarId;
+    if (credentials.retired === true) {
+      logger.warn`Rejected ${frame.type} from sidecar ${sidecarId}: its identity is retired`;
+      retired(sidecarId);
       ws.close();
       return;
     }
-    await run(identity);
+    if (sidecarId !== frame.sidecarId) {
+      logger.warn`Sidecar ${frame.type} claimed id ${frame.sidecarId} but token verifies as ${sidecarId}; keying off the verified id`;
+    }
+    await run(sidecarId);
   }
 
   async function notifyAllocationWaiters(allocationId: string): Promise<void> {
@@ -1556,7 +2018,7 @@ export function createSidecarRouter(
     try {
       identityCurrent = await validation;
     } catch (cause) {
-      // A failed revalidation leaves the waiters parked: a later register
+      // A failed revalidation leaves the waiters parked: a later hello
       // revalidates, and at expiry the wait reports the failure rather than a
       // missed deadline. Registration itself was already gated, so this must
       // not fail the connection that just registered.
@@ -1591,89 +2053,762 @@ export function createSidecarRouter(
       allocationWaiters.delete(allocationId);
   }
 
-  async function handleAllocatedRegister(
-    ws: WsHandle,
-    identity: SidecarAuthIdentity,
-    agentAddresses: string[],
-    cachedSenderAddresses: string[],
-  ): Promise<void> {
-    if (allocationFences.get(identity.allocationId) !== identity.generation) {
-      logger.warn`Rejected allocated sidecar ${identity.sidecarId}: allocation ${identity.allocationId} generation ${String(identity.generation)} is not fenced as current`;
-      ws.close();
-      return;
-    }
-    if (identity.kind === "probe" && agentAddresses.length > 0) {
-      logger.warn`Rejected probe sidecar ${identity.sidecarId}: probe ${identity.allocationId} claimed workflow addresses`;
-      ws.close();
-      return;
-    }
+  function isFencedAsCurrent(binding: SidecarAuthIdentity): boolean {
+    return (
+      allocationFences.get(binding.allocationId)?.generation ===
+      binding.generation
+    );
+  }
+
+  function getCleanupFence(
+    target: AllocatedSidecarTarget & { sidecarId: string },
+  ) {
+    const fence = allocationFences.get(target.allocationId);
     if (
-      agentAddresses.length > 0 &&
-      !(await validateSidecarIdentity(identity, "routing"))
-    ) {
-      logger.warn`Rejected allocated sidecar ${identity.sidecarId}: allocation ${identity.allocationId} is not ready to reclaim routes`;
-      ws.close();
-      return;
-    }
+      fence === undefined ||
+      fence.cleanup?.sidecarId !== target.sidecarId ||
+      fence.generation < target.generation
+    )
+      return undefined;
+    return fence;
+  }
 
-    const existingOnSocket = connections.get(ws);
-    const newlyRoutedAddresses = new Set<string>();
-    for (const address of agentAddresses) {
-      const alreadyOwned =
-        existingOnSocket?.identity.kind === "allocated" &&
-        existingOnSocket.identity.allocationId === identity.allocationId &&
-        addressIndex.get(address) === ws &&
-        connOwnsAddress(existingOnSocket, address);
+  // A committed cleanup binding can be observed before its releasing caller
+  // publishes the fence. Transfer the binding without issuing an untracked undeploy.
+  function fenceCleanupBindings(
+    bindings: readonly SidecarAuthIdentity[],
+  ): void {
+    for (const binding of bindings) {
+      if (binding.kind !== "cleanup") continue;
+      const fence = allocationFences.get(binding.allocationId);
       if (
-        identity.kind !== "allocated" ||
-        (!alreadyOwned && address !== identity.workflowRunAddress)
-      ) {
-        logger.warn`Rejected allocated sidecar ${identity.sidecarId}: allocation ${identity.allocationId} claimed unrelated address ${address}`;
-        ws.close();
-        return;
+        fence !== undefined &&
+        (fence.generation < binding.generation ||
+          (fence.generation === binding.generation &&
+            fence.cleanup?.sidecarId !== binding.sidecarId))
+      )
+        fenceAllocation(binding.allocationId, binding.generation, {
+          cleanup: { sidecarId: binding.sidecarId },
+        });
+    }
+  }
+
+  // Make `bindings` the connection's current set. A binding the in-memory
+  // fence no longer accepts is skipped; one this socket held that is absent
+  // or superseded is detached; one still attached to another sidecar's socket
+  // moves here. Returns the attached bindings and, of those, the ones this
+  // socket did not already hold at the same generation and kind. A binding it
+  // already holds that way keeps its entry: readiness and routing checks read
+  // the entry, await its validation, and treat a replaced entry as a changed
+  // connection, so a sync that changes nothing must not replace it. A newer
+  // generation attaches at once even while the sidecar is still tearing an
+  // older one of the same deployment down: every frame names its generation,
+  // so nothing the older one still sends is credited to the newer one.
+  function attachBindings(
+    ws: WsHandle,
+    conn: SidecarConnection,
+    bindings: readonly SidecarAuthIdentity[],
+    beforeRead?: ReadonlyMap<string, SidecarAuthIdentity>,
+  ): { attached: SidecarAuthIdentity[]; added: SidecarAuthIdentity[] } {
+    const beforeTransfer = new Map(conn.bindings);
+    const unchangedDuringRead = (id: string) =>
+      beforeRead === undefined || beforeRead.get(id) === conn.bindings.get(id);
+    const observed = bindings.filter((binding) =>
+      unchangedDuringRead(binding.allocationId),
+    );
+    fenceCleanupBindings(observed);
+    const current = observed.filter(isFencedAsCurrent);
+    for (const binding of observed) {
+      if (!current.includes(binding)) {
+        logger.warn`Sidecar ${conn.sidecarId} skipped ${binding.kind} ${binding.allocationId} generation ${String(binding.generation)}: it is not fenced as current`;
       }
-      if (!alreadyOwned) newlyRoutedAddresses.add(address);
     }
+    for (const [allocationId, held] of [...conn.bindings]) {
+      if (!unchangedDuringRead(allocationId)) continue;
+      const observed = bindings.find(
+        (binding) => binding.allocationId === allocationId,
+      );
+      if (observed !== undefined && observed.generation < held.generation)
+        continue;
+      const next = current.find(
+        (binding) => binding.allocationId === allocationId,
+      );
+      if (next === undefined || next.generation !== held.generation) {
+        detachBinding(ws, allocationId, "Its binding is no longer current", {
+          undeploy: next?.kind !== "cleanup",
+        });
+      }
+    }
+    const added: SidecarAuthIdentity[] = [];
+    for (const binding of current) {
+      const elsewhere = allocatedConnections.get(binding.allocationId);
+      if (elsewhere !== undefined && elsewhere.ws !== ws) {
+        detachBinding(
+          elsewhere.ws,
+          binding.allocationId,
+          `It moved to sidecar ${conn.sidecarId}`,
+          { undeploy: true },
+        );
+      }
+      const held = conn.bindings.get(binding.allocationId);
+      const unchanged =
+        held?.generation === binding.generation && held.kind === binding.kind;
+      const previous = beforeTransfer.get(binding.allocationId);
+      if (
+        previous?.generation !== binding.generation ||
+        previous.kind !== binding.kind
+      )
+        added.push(binding);
+      if (
+        unchanged &&
+        allocatedConnections.get(binding.allocationId)?.ws === ws
+      )
+        continue;
+      conn.bindings.set(binding.allocationId, binding);
+      allocatedConnections.set(binding.allocationId, { ws, identity: binding });
+    }
+    return { attached: [...conn.bindings.values()], added };
+  }
 
-    if (allocationFences.get(identity.allocationId) !== identity.generation) {
-      ws.close();
-      return;
+  // Remove one binding from its connection: drop its routes and in-flight
+  // work and report the lost routes. Unless cleanup owns removal, also tell the
+  // sidecar to undeploy it. The socket stays open when nothing is left: whether
+  // an idle sidecar keeps running is its provisioner's decision.
+  function detachBinding(
+    ws: WsHandle,
+    allocationId: string,
+    reason: string,
+    { undeploy }: { undeploy: boolean },
+  ): void {
+    const conn = connections.get(ws);
+    const binding = conn?.bindings.get(allocationId);
+    if (conn === undefined || binding === undefined) return;
+    conn.bindings.delete(allocationId);
+    const allocated: { allocationId: string; generation: number }[] = [];
+    if (allocatedConnections.get(allocationId)?.ws === ws) {
+      allocatedConnections.delete(allocationId);
+      if (binding.kind === "allocated") {
+        allocated.push({ allocationId, generation: binding.generation });
+      }
     }
-    const current = allocatedConnections.get(identity.allocationId);
-    if (current !== undefined && current.ws !== ws) {
-      // A current-generation takeover is a reconnect, not a capacity loss.
-      // Remove the old socket from the allocation index before closing it so
-      // handleClose does not emit a false allocated-disconnect event.
-      allocatedConnections.delete(identity.allocationId);
-      handleClose(current.ws);
-      current.ws.close();
+    const addresses = [...conn.workflowAddresses].flatMap(([address, owner]) =>
+      owner === allocationId ? [address] : [],
+    );
+    for (const address of addresses) {
+      conn.workflowAddresses.delete(address);
+      if (addressIndex.get(address) === ws) {
+        addressIndex.delete(address);
+        connectorStates.delete(address);
+        retainPendingMailForAddress(address);
+      }
+      agentStatePackReceiver.cancelByAgent(address);
+      workflowRunPackReceiver.cancelByAgent(address);
     }
+    const deploymentAddress =
+      binding.kind !== "probe" ? binding.workflowRunAddress : undefined;
+    // A transfer to a cleanup binding keeps the physical generation's proof
+    // until retirement; other detachments discard the obsolete entry.
+    if (undeploy && deploymentAddress !== undefined) {
+      const retained = connectionRetention.get(ws);
+      const proof = retained?.get(deploymentAddress);
+      if (proof !== undefined && proof.generation <= binding.generation)
+        retained?.delete(deploymentAddress);
+    }
+    // An own-repository transfer needs no route, so the loop above can miss
+    // it.
+    if (deploymentAddress !== undefined)
+      workflowRunPackReceiver.cancelByAgent(deploymentAddress);
+    const error = `${binding.kind === "probe" ? "Probe" : "Allocation"} ${allocationId} left sidecar ${conn.sidecarId}: ${reason}`;
+    const released = new Set(addresses);
+    if (deploymentAddress !== undefined) released.add(deploymentAddress);
+    pendingRequests.rejectForWs(ws, (entry) => released.has(entry.meta), error);
+    pendingDeploys.rejectForWs(ws, (entry) => released.has(entry.key), error);
+    pendingPacks.rejectForWs(
+      ws,
+      (entry) => released.has(entry.meta.agentAddress),
+      error,
+    );
+    pendingUndeploys.rejectForWs(ws, (entry) => released.has(entry.key), error);
+    pendingProbes.rejectForWs(
+      ws,
+      (entry) => entry.meta === allocationId,
+      error,
+    );
+    pendingWorkflowControls.rejectForWs(
+      ws,
+      (entry) => entry.meta.allocationId === allocationId,
+      error,
+    );
+    // The Hub cannot tell whether the sidecar still holds the deployment: a
+    // deploy that timed out or failed has already dropped its route and
+    // pending entry, yet the sidecar may have installed it. The undeploy
+    // names this generation, so it never removes a newer one, and a sidecar
+    // that does not hold it acknowledges it anyway.
+    if (
+      undeploy &&
+      deploymentAddress !== undefined &&
+      binding.kind === "allocated"
+    ) {
+      sendUndeploy(
+        conn,
+        { address: deploymentAddress, generation: binding.generation },
+        reason,
+        { waitable: true },
+      );
+    }
+    if (addresses.length > 0 || allocated.length > 0) {
+      events.emit("sidecar.disconnect", {
+        ownedAddresses: addresses,
+        allocated,
+      });
+    }
+  }
 
-    const conn: SidecarConnection = existingOnSocket ?? {
-      sidecarId: identity.sidecarId,
-      identity,
-      agentAddresses: new Set(),
-      workflowAddresses: new Set(),
+  // Nothing a retired sidecar reports is the Hub's any more, yet it may still
+  // run some of it, and none of its handshakes gets further than this.
+  function undeployRetired(
+    ws: WsHandle,
+    sidecarId: string,
+    incarnations: readonly HostedIncarnation[],
+  ): void {
+    const retired = {
+      sidecarId,
+      undeploying: new Map<string, UndeployInFlight>(),
       send(frame: HubFrame) {
         ws.send(JSON.stringify(frame));
       },
     };
-    if (
-      conn.identity.kind !== identity.kind ||
-      conn.identity.allocationId !== identity.allocationId ||
-      conn.identity.generation !== identity.generation
-    ) {
-      logger.warn`Rejected allocated sidecar ${identity.sidecarId}: socket identity changed during registration`;
+    for (const incarnation of incarnations)
+      sendUndeploy(retired, incarnation, "The sidecar's identity is retired", {
+        waitable: false,
+      });
+  }
+
+  // Only a later deploy of the address on this connection waits on the
+  // answer, bounded by the request timeout. What the sidecar still sends for
+  // the incarnation names its generation and is dropped, and an incarnation
+  // still held after an undeploy lost with its connection is in the sidecar's
+  // next `hello`. Orphans are undeployed again; cleanup bindings leave removal
+  // to the reconciler's retry policy. An undeploy no deploy can wait on,
+  // such as one of an address the sidecar reports but no binding of it
+  // deploys, is not kept, so a sidecar cannot make the Hub keep any number of
+  // them.
+  function sendUndeploy(
+    conn: Pick<SidecarConnection, "sidecarId" | "send" | "undeploying">,
+    incarnation: { address: string; generation: number },
+    reason: string,
+    { waitable }: { waitable: boolean },
+  ): void {
+    const requestId = nextRequestId();
+    try {
+      conn.send({
+        type: "agent.undeploy",
+        requestId,
+        agentAddress: incarnation.address,
+        generation: incarnation.generation,
+        reason,
+      });
+    } catch (err) {
+      logger.warn`Failed to ask sidecar ${conn.sidecarId} to undeploy ${incarnation.address} generation ${String(incarnation.generation)}: ${err instanceof Error ? err.message : String(err)}`;
+      return;
+    }
+    if (waitable) noteUndeploying(conn, incarnation.address, requestId);
+  }
+
+  function noteUndeploying(
+    conn: Pick<SidecarConnection, "undeploying">,
+    agentAddress: string,
+    requestId: string,
+  ): void {
+    const inFlight = conn.undeploying.get(agentAddress);
+    if (inFlight !== undefined) {
+      // The sidecar answers an address's undeploys in the order it got them,
+      // so whoever waits on the earlier one waits for this later one.
+      inFlight.requestId = requestId;
+      return;
+    }
+    let settle = (): void => undefined;
+    const answered = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    conn.undeploying.set(agentAddress, { requestId, answered, settle });
+  }
+
+  // Settled behind the frames the sidecar sent before its answer, so all the
+  // removed copy still sent is handled, and dropped, before a deploy waiting
+  // on the answer routes the address again.
+  function settleUndeploy(
+    ws: WsHandle,
+    frame: { agentAddress: string; requestId: string },
+  ): void {
+    void enqueueOnConnection(ws, async () => {
+      const conn = connections.get(ws);
+      const inFlight = conn?.undeploying.get(frame.agentAddress);
+      if (conn === undefined || inFlight?.requestId !== frame.requestId) {
+        return;
+      }
+      conn.undeploying.delete(frame.agentAddress);
+      inFlight.settle();
+    });
+  }
+
+  // Resolves once no undeploy of `agentAddress` is unanswered on `conn`. Fails
+  // when the answer takes longer than a request may, or the caller aborts.
+  async function undeployAnswered(
+    conn: SidecarConnection,
+    agentAddress: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const inFlight = conn.undeploying.get(agentAddress);
+    if (inFlight === undefined) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let onAbort = (): void => undefined;
+    try {
+      await Promise.race([
+        inFlight.answered,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            reject(
+              new Error(
+                `${agentAddress} is still being undeployed on sidecar ${conn.sidecarId} after ${String(requestTimeoutMs)}ms`,
+              ),
+            );
+          }, requestTimeoutMs);
+          onAbort = () => {
+            reject(
+              signal?.reason instanceof Error
+                ? signal.reason
+                : new Error("The deploy was aborted"),
+            );
+          };
+          signal?.addEventListener("abort", onAbort, { once: true });
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    }
+  }
+
+  async function announceAttached(
+    ws: WsHandle,
+    bindings: readonly SidecarAuthIdentity[],
+  ): Promise<void> {
+    for (const binding of bindings) {
+      await notifyAllocationWaiters(binding.allocationId);
+      // The socket can close or the binding move on while the waiters are
+      // notified, and a connected event after its disconnect would wake the
+      // allocation as if its sidecar were back.
+      const attached = allocatedConnections.get(binding.allocationId);
+      if (
+        attached?.ws !== ws ||
+        attached.identity.generation !== binding.generation
+      )
+        continue;
+      if (binding.kind !== "probe") {
+        events.emit("sidecar.allocated.connected", {
+          allocationId: binding.allocationId,
+          generation: binding.generation,
+        });
+      }
+    }
+  }
+
+  // What a registering sidecar hosts: the bindings current for it, the
+  // reported incarnations that take their route back, stopped copies kept
+  // for inspection, live copies kept under retention, and reported copies
+  // the Hub does not keep. Null once registration has been rejected and its
+  // socket closed.
+  async function readHostedWork(
+    ws: WsHandle,
+    sidecarId: string,
+    existing: SidecarConnection | undefined,
+    incarnations: readonly HostedIncarnation[],
+  ): Promise<{
+    bindings: SidecarAuthIdentity[];
+    reclaimed: Map<string, Extract<SidecarAuthIdentity, { kind: "allocated" }>>;
+    retained: Map<string, Extract<SidecarAuthIdentity, { kind: "allocated" }>>;
+    unkept: HostedIncarnation[];
+    stopOnly: Set<string>;
+    failed: {
+      binding: Extract<SidecarAuthIdentity, { kind: "allocated" }>;
+      error: string;
+    }[];
+  } | null> {
+    let bindings: SidecarAuthIdentity[];
+    try {
+      const resolved = await resolveSidecarBindings(sidecarId);
+      const current = await Promise.all(
+        resolved.map((binding) =>
+          validateSidecarIdentity(binding, "registration"),
+        ),
+      );
+      bindings = resolved.filter((_, index) => current[index]);
+      fenceCleanupBindings(bindings);
+    } catch (err) {
+      logger.error`Rejected registration from sidecar ${sidecarId}: cannot resolve what it hosts: ${err instanceof Error ? err.message : String(err)}`;
+      handleClose(ws);
+      ws.close();
+      return null;
+    }
+    // A reported incarnation takes its route back only when it is live, it is
+    // the generation of a binding current for this sidecar, that deployment's
+    // first deploy has completed, and its run has not ended. A stopped one of
+    // a current binding, and a live one whose run ended, stay
+    // unrouted, their local state kept for inspection until the Hub releases
+    // the deployment; one that stopped on its own is noted, and the reconciler
+    // fails its deployment. A cleanup binding leaves removal to allocation
+    // reconciliation. Every other one is undeployed: an earlier
+    // generation, a live one of a still-live run whose sidecar already reported
+    // it stopped, a deployment
+    // that left this sidecar while it was disconnected, one still deploying or
+    // tearing down, or one whose deploy is still uncertain. The reconciler
+    // fails a deployment whose current generation the sidecar no longer
+    // reports.
+    const reclaimed = new Map<
+      string,
+      Extract<SidecarAuthIdentity, { kind: "allocated" }>
+    >();
+    const retained = new Map<
+      string,
+      Extract<SidecarAuthIdentity, { kind: "allocated" }>
+    >();
+    const stopOnly = new Set<string>();
+    const unkept: HostedIncarnation[] = [];
+    const failed: {
+      binding: Extract<SidecarAuthIdentity, { kind: "allocated" }>;
+      error: string;
+    }[] = [];
+    async function readIncarnation(incarnation: HostedIncarnation) {
+      const address = incarnation.address;
+      const binding = bindings.find(
+        (candidate) =>
+          candidate.kind === "allocated" &&
+          candidate.workflowRunAddress === address &&
+          candidate.generation === incarnation.generation,
+      );
+      if (
+        binding?.kind !== "allocated" ||
+        (incarnation.state !== "live" && incarnation.state !== "stopped")
+      ) {
+        return { incarnation, kind: "unkept" } as const;
+      }
+      if (incarnation.state === "stopped") {
+        return { incarnation, binding, kind: "stopped" } as const;
+      }
+      const reportedStopped =
+        reportedStops.get(binding.allocationId)?.generation ===
+        binding.generation;
+      const alreadyRouted =
+        existing?.workflowAddresses.get(address) === binding.allocationId &&
+        existing.bindings.get(binding.allocationId)?.generation ===
+          binding.generation &&
+        addressIndex.get(address) === ws;
+      try {
+        if (
+          !reportedStopped &&
+          (alreadyRouted || (await validateSidecarIdentity(binding, "reclaim")))
+        )
+          return { incarnation, binding, kind: "reclaimed" } as const;
+        if (await validateSidecarIdentity(binding, "retention-transition")) {
+          const retain = await validateSidecarIdentity(binding, "retention");
+          return {
+            incarnation,
+            binding,
+            kind: retain ? "retained" : "stop-only",
+          } as const;
+        }
+        return { incarnation, kind: "unkept" } as const;
+      } catch (err) {
+        logger.error`Rejected registration from sidecar ${sidecarId}: cannot validate reported ${address} generation ${String(incarnation.generation)}: ${err instanceof Error ? err.message : String(err)}`;
+        throw err;
+      }
+    }
+    // Each validation reads the database. Bound the fan-out while avoiding a
+    // serial round trip for every deployment before the welcome deadline.
+    // Apply results in inventory order; no routes are published until every
+    // batch succeeds and handleRegistration rechecks the connection/fences.
+    try {
+      for (
+        let offset = 0;
+        offset < incarnations.length;
+        offset += INCARNATION_VALIDATION_CONCURRENCY
+      ) {
+        const results = await Promise.all(
+          incarnations
+            .slice(offset, offset + INCARNATION_VALIDATION_CONCURRENCY)
+            .map(readIncarnation),
+        );
+        for (const result of results) {
+          const { incarnation } = result;
+          switch (result.kind) {
+            case "reclaimed":
+              reclaimed.set(incarnation.address, result.binding);
+              break;
+            case "retained":
+            case "stop-only":
+              retained.set(incarnation.address, result.binding);
+              if (result.kind === "stop-only")
+                stopOnly.add(incarnation.address);
+              break;
+            case "stopped":
+              retained.set(incarnation.address, result.binding);
+              if (incarnation.error !== undefined)
+                failed.push({
+                  binding: result.binding,
+                  error: incarnation.error,
+                });
+              break;
+            case "unkept":
+              unkept.push(incarnation);
+              break;
+          }
+        }
+      }
+    } catch {
+      handleClose(ws);
+      ws.close();
+      return null;
+    }
+    return { bindings, reclaimed, retained, unkept, failed, stopOnly };
+  }
+
+  async function handleRegistration(
+    ws: WsHandle,
+    sidecarId: string,
+    incarnations: readonly HostedIncarnation[],
+    cachedSenderAddresses: string[],
+    capacity: SidecarCapacity,
+  ): Promise<void> {
+    const existing = connections.get(ws);
+    if (existing !== undefined && existing.sidecarId !== sidecarId) {
+      logger.warn`Rejected sidecar ${sidecarId}: socket is registered as sidecar ${existing.sidecarId}`;
+      handleClose(ws);
       ws.close();
       return;
     }
 
-    connections.set(ws, conn);
-    for (const address of agentAddresses) {
-      conn.workflowAddresses.add(address);
-      addressIndex.set(address, ws);
+    if (closedSockets.has(ws)) return;
+
+    // Claim the sidecar before reading what it hosts. A sync for it queues
+    // behind this registration from here on, and a sync that ran earlier
+    // followed a placement this read sees, so work placed on the sidecar
+    // while it connects is attached either way. The claim ends with the read:
+    // the takeover below runs without yielding, or the registration stops.
+    sidecarClaims.set(sidecarId, ws);
+    let hosted: Awaited<ReturnType<typeof readHostedWork>>;
+    let claimHeld: boolean;
+    try {
+      hosted = await readHostedWork(ws, sidecarId, existing, incarnations);
+    } finally {
+      claimHeld = sidecarClaims.get(sidecarId) === ws;
+      if (claimHeld) sidecarClaims.delete(sidecarId);
     }
-    allocatedConnections.set(identity.allocationId, { ws, identity });
+    if (hosted === null) return;
+    if (!claimHeld) {
+      logger.info`Dropping a registration of sidecar ${sidecarId}: its socket closed, or a newer handshake took the sidecar over`;
+      // A socket already serving the sidecar keeps serving until that
+      // handshake takes its bindings over.
+      if (existing === undefined) {
+        handleClose(ws);
+        ws.close();
+      }
+      return;
+    }
+    const { reclaimed, retained, unkept, failed, stopOnly } = hosted;
+    // A release can commit while the hello reads other deployments. Carry its
+    // cleanup binding into welcome so later stop reports still have an owner.
+    const bindings = hosted.bindings.map((binding) => {
+      if (binding.kind === "probe") return binding;
+      const fence = getCleanupFence(binding);
+      if (fence !== undefined) {
+        return {
+          ...binding,
+          kind: "cleanup" as const,
+          generation: fence.generation,
+        };
+      }
+      return binding;
+    });
+
+    // A sidecar reconnecting on a new socket takes its bindings along. Move
+    // them off the previous socket first so its close reports only the
+    // bindings that did not follow.
+    const previous = sidecarSockets.get(sidecarId);
+    if (previous !== undefined && previous !== ws) {
+      for (const binding of bindings.filter(isFencedAsCurrent)) {
+        if (allocatedConnections.get(binding.allocationId)?.ws === previous)
+          allocatedConnections.delete(binding.allocationId);
+      }
+      handleClose(previous);
+      previous.close();
+    }
+
+    const conn: SidecarConnection = existing ?? {
+      sidecarId,
+      capacity,
+      bindings: new Map(),
+      workflowAddresses: new Map(),
+      unansweredDeploys: new Map(),
+      undeploying: new Map(),
+      send(frame: HubFrame) {
+        ws.send(JSON.stringify(frame));
+      },
+    };
+    conn.capacity = capacity;
+    connections.set(ws, conn);
+    sidecarSockets.set(sidecarId, ws);
+
+    const deployable = new Set(
+      bindings.flatMap((binding) =>
+        binding.kind === "allocated" ? [binding.workflowRunAddress] : [],
+      ),
+    );
+    for (const incarnation of unkept) {
+      // The reconciler owns the acknowledged teardown for this release fence.
+      if (
+        bindings.some(
+          (binding) =>
+            binding.kind !== "probe" &&
+            binding.workflowRunAddress === incarnation.address &&
+            getCleanupFence({
+              allocationId: binding.allocationId,
+              generation: incarnation.generation,
+              sidecarId,
+            }) !== undefined,
+        )
+      )
+        continue;
+      logger.warn`Sidecar ${sidecarId} reported ${incarnation.address} generation ${String(incarnation.generation)} ${incarnation.state}, which the Hub does not keep there; asking it to undeploy`;
+      sendUndeploy(
+        conn,
+        incarnation,
+        "The Hub does not keep this incarnation on this sidecar",
+        { waitable: deployable.has(incarnation.address) },
+      );
+    }
+    const { attached, added } = attachBindings(ws, conn, bindings);
+    const retention = new Map<
+      string,
+      { generation: number; retention: DeploymentRetention }
+    >();
+    for (const incarnation of incarnations) {
+      if (incarnation.retention === undefined) continue;
+      const binding = attached.find(
+        (candidate) =>
+          candidate.kind !== "probe" &&
+          candidate.workflowRunAddress === incarnation.address &&
+          (candidate.kind === "cleanup"
+            ? candidate.generation >= incarnation.generation
+            : candidate.generation === incarnation.generation),
+      );
+      if (binding !== undefined)
+        retention.set(incarnation.address, {
+          generation: incarnation.generation,
+          retention: incarnation.retention,
+        });
+    }
+    connectionRetention.set(ws, retention);
+    for (const { binding, error } of failed) {
+      if (
+        conn.bindings.get(binding.allocationId)?.generation ===
+        binding.generation
+      )
+        noteReportedStop(binding, error);
+    }
+    const newlyRoutedAddresses = new Set<string>();
+    const routed: { address: string; generation: number }[] = [];
+    for (const [address, binding] of reclaimed) {
+      if (getCleanupFence(binding) !== undefined) continue;
+      if (
+        conn.bindings.get(binding.allocationId)?.generation !==
+        binding.generation
+      ) {
+        sendUndeploy(
+          conn,
+          { address, generation: binding.generation },
+          "The deployment is not current on this sidecar",
+          { waitable: true },
+        );
+        continue;
+      }
+      if (addressIndex.get(address) !== ws) newlyRoutedAddresses.add(address);
+      conn.workflowAddresses.set(address, binding.allocationId);
+      addressIndex.set(address, ws);
+      routed.push({ address, generation: binding.generation });
+    }
+    // Remove stale retained copies unless the current cleanup fence owns them.
+    for (const [address, binding] of retained) {
+      if (getCleanupFence(binding) !== undefined) continue;
+      if (
+        conn.bindings.get(binding.allocationId)?.generation !==
+        binding.generation
+      ) {
+        sendUndeploy(
+          conn,
+          { address, generation: binding.generation },
+          "The deployment is not current on this sidecar",
+          { waitable: true },
+        );
+      }
+    }
+    // Routing is settled, so the sidecar can stop holding back what must be
+    // delivered and re-drive what it owes each routed incarnation.
+    conn.send({ type: "welcome", routed });
+    welcomedSockets.add(ws);
+    notifySidecarInventory(sidecarId);
+    // Live retained copies were validated in readHostedWork's bounded batches.
+    // Stop them without repeating those queries or awaiting acknowledgements
+    // inside the hello handler that must finish before processing the replies.
+    for (const incarnation of incarnations) {
+      if (incarnation.state !== "live") continue;
+      const validated = retained.get(incarnation.address);
+      if (validated === undefined) continue;
+      const binding = conn.bindings.get(validated.allocationId);
+      if (
+        binding?.kind !== "allocated" ||
+        binding.generation !== validated.generation ||
+        !isFencedAsCurrent(binding) ||
+        connections.get(ws) !== conn
+      )
+        continue;
+      const target = {
+        allocationId: binding.allocationId,
+        generation: binding.generation,
+      };
+      const stopping = stopOnly.has(incarnation.address);
+      const request = stopping
+        ? sendWorkflowControlOnConnection(
+            { ws, conn, binding },
+            target,
+            {
+              runId: binding.anchorRunId,
+              agentAddress: binding.workflowRunAddress,
+              action: "stop",
+              reason: "The deployment's retention period ended",
+            },
+            requestTimeoutMs,
+            { terminal: true },
+          )
+        : retainOnConnection({ ws, conn, binding }, target, requestTimeoutMs);
+      void request.catch((cause: unknown) => {
+        logger.warn`${stopping ? "Stop" : "Retention"} remains unconfirmed after reconnect for ${binding.allocationId}: ${cause instanceof Error ? cause.message : String(cause)}`;
+      });
+    }
+    if (attached.length === 0)
+      logger.info`Provisioned sidecar ${sidecarId} registered hosting nothing`;
+    else
+      logger.info`Provisioned sidecar ${sidecarId} registered for ${attached.map((binding) => `${binding.kind} ${binding.allocationId} generation ${String(binding.generation)}`).join(", ")}`;
+    // Replay can wait on database admission without delaying connection readiness.
+    // Newly attached cleanup bindings can wake pending attempts. Repeated
+    // hellos on this socket must not bypass the normal retry backoff.
+    await announceAttached(
+      ws,
+      attached.filter(
+        (binding) => binding.kind !== "cleanup" || added.includes(binding),
+      ),
+    );
+    if (connections.get(ws) !== conn) return;
     for (const address of newlyRoutedAddresses) {
       await redeliverPendingMail(address, conn);
     }
@@ -1699,7 +2834,10 @@ export function createSidecarRouter(
     // large cache cannot fan out into one concurrent DB query per reported
     // sender on every reconnect.
     const resolveSenderKeyStrict = lookups.resolveSenderKeyStrict;
-    if (identity.kind === "allocated" && resolveSenderKeyStrict !== undefined) {
+    if (
+      allocationBindings(conn).length > 0 &&
+      resolveSenderKeyStrict !== undefined
+    ) {
       const rotatableSenders = new Set(cachedSenderAddresses);
       // Resolve-don't-trust applied to input SIZE: bound the reported set before
       // acting on it. Run addresses count toward the cap by design -- the
@@ -1709,7 +2847,7 @@ export function createSidecarRouter(
       // log the overflow so a misbehaving sidecar is detectable.
       let sendersToResync = [...rotatableSenders];
       if (sendersToResync.length > MAX_RESYNC_SENDER_ADDRESSES) {
-        logger.warn`Sidecar ${identity.sidecarId} reported ${String(sendersToResync.length)} cached sender addresses on allocation ${identity.allocationId} generation ${String(identity.generation)}, over the ${String(MAX_RESYNC_SENDER_ADDRESSES)} resync cap; reconciling the first ${String(MAX_RESYNC_SENDER_ADDRESSES)} and ignoring the rest`;
+        logger.warn`Sidecar ${conn.sidecarId} reported ${String(sendersToResync.length)} cached sender addresses, over the ${String(MAX_RESYNC_SENDER_ADDRESSES)} resync cap; reconciling the first ${String(MAX_RESYNC_SENDER_ADDRESSES)} and ignoring the rest`;
         sendersToResync = sendersToResync.slice(0, MAX_RESYNC_SENDER_ADDRESSES);
       }
       void (async () => {
@@ -1750,45 +2888,55 @@ export function createSidecarRouter(
         // is gone. That means the connection left, so stop -- the remaining
         // sends would fail the same way.
         const message = cause instanceof Error ? cause.message : String(cause);
-        logger.warn`Sender-key resync for sidecar ${identity.sidecarId} stopped: ${message}`;
-      });
-    }
-    logger.info`Provisioned sidecar ${identity.sidecarId} registered for allocation ${identity.allocationId} generation ${String(identity.generation)}`;
-    await notifyAllocationWaiters(identity.allocationId);
-    if (identity.kind === "allocated") {
-      events.emit("sidecar.allocated.connected", {
-        allocationId: identity.allocationId,
-        generation: identity.generation,
+        logger.warn`Sender-key resync for sidecar ${conn.sidecarId} stopped: ${message}`;
       });
     }
   }
 
-  async function handleRegister(
-    ws: WsHandle,
-    identity: SidecarAuthIdentity,
-    agentAddresses: string[],
-    cachedSenderAddresses: string[],
-  ): Promise<void> {
-    await handleAllocatedRegister(
-      ws,
-      identity,
-      agentAddresses,
-      cachedSenderAddresses,
-    );
+  // The socket a sync for the sidecar runs on: the one registering it while
+  // a handshake holds its claim, otherwise the one it is connected on.
+  function syncTarget(sidecarId: string): WsHandle | undefined {
+    return sidecarClaims.get(sidecarId) ?? sidecarSockets.get(sidecarId);
   }
 
-  async function handleReconnect(
-    ws: WsHandle,
-    identity: SidecarAuthIdentity,
-    agentAddresses: string[],
-    cachedSenderAddresses: string[],
+  async function syncSidecar(
+    sidecarId: string,
+    signal?: AbortSignal,
   ): Promise<void> {
-    await handleAllocatedRegister(
-      ws,
-      identity,
-      agentAddresses,
-      cachedSenderAddresses,
-    );
+    signal?.throwIfAborted();
+    const ws = syncTarget(sidecarId);
+    if (ws === undefined) return;
+    await enqueueOnConnection(ws, async () => {
+      signal?.throwIfAborted();
+      // The registration this queued behind may have been rejected, leaving
+      // the sidecar on its previous socket, or superseded.
+      if (syncTarget(sidecarId) !== ws) {
+        redirectSync(sidecarId, signal);
+        return;
+      }
+      const conn = connections.get(ws);
+      if (conn === undefined) return;
+      const before = new Map(conn.bindings);
+      const bindings = await resolveSidecarBindings(sidecarId);
+      signal?.throwIfAborted();
+      if (syncTarget(sidecarId) !== ws) {
+        redirectSync(sidecarId, signal);
+        return;
+      }
+      if (connections.get(ws) !== conn) return;
+      // A snapshot must not undo a fence or retirement published during its read.
+      const { added } = attachBindings(ws, conn, bindings, before);
+      await announceAttached(ws, added);
+    });
+  }
+
+  // Not awaited: the socket the sync moves to may have work queued behind the
+  // one that redirects it.
+  function redirectSync(sidecarId: string, signal?: AbortSignal): void {
+    syncSidecar(sidecarId, signal).catch((err: unknown) => {
+      if (signal?.aborted) return;
+      logger.warn`Failed to sync the bindings of sidecar ${sidecarId}: ${err instanceof Error ? err.message : String(err)}`;
+    });
   }
 
   // Park a pre-ack sender's mail synchronously and return its entry. Registering
@@ -1820,7 +2968,7 @@ export function createSidecarRouter(
           recipients: entry.recipients,
         });
         logger.warn`Dropping mail from ${entry.authenticatedSender}: its sender key was not recorded before the deferred-mail TTL expired`;
-      }, disconnectQueueTTLMs),
+      }, mailHoldTTLMs),
     };
     parked.add(entry);
     return entry;
@@ -1902,10 +3050,173 @@ export function createSidecarRouter(
     settleSenderMail(sender, outcome);
   }
 
+  function parkDeferredRecipientResolutionMail(
+    recipient: string,
+    rawMessage: string,
+    authenticatedSender: string,
+    recordedSenderKey: string | null,
+  ): DeferredRecipientResolutionMailEntry {
+    let parked = deferredRecipientResolutionMail.get(recipient);
+    if (parked === undefined) {
+      parked = new Set();
+      deferredRecipientResolutionMail.set(recipient, parked);
+    }
+    // The hold owns this recipient alone. Its settle, TTL, and drain report
+    // `recipients`, and a recorded settle re-drives only that list.
+    const entry: DeferredRecipientResolutionMailEntry = {
+      recipient,
+      authenticatedSender,
+      rawMessage,
+      recipients: [recipient],
+      recordedSenderKey,
+      inflight: true,
+      wake: null,
+      cancelTimer: null,
+    };
+    parked.add(entry);
+    return entry;
+  }
+
+  function claimDeferredRecipientResolutionEntry(
+    entry: DeferredRecipientResolutionMailEntry,
+  ): boolean {
+    const parked = deferredRecipientResolutionMail.get(entry.recipient);
+    if (parked === undefined) return false;
+    const claimed = parked.delete(entry);
+    if (!claimed) return false;
+    if (entry.cancelTimer !== null) {
+      entry.cancelTimer();
+      entry.cancelTimer = null;
+    }
+    if (parked.size === 0)
+      deferredRecipientResolutionMail.delete(entry.recipient);
+    return true;
+  }
+
+  function redriveRecipientResolutionMail(
+    entry: DeferredRecipientResolutionMailEntry,
+  ): void {
+    // Re-drive with the sender key bound when this mail was accepted. The
+    // recipient's recorded key authenticates the deployment, not the
+    // sender, so it is not the fourth argument.
+    void Promise.resolve()
+      .then(() =>
+        handleMailOutbound(
+          entry.rawMessage,
+          entry.authenticatedSender,
+          entry.recipients,
+          entry.recordedSenderKey,
+        ),
+      )
+      .catch((err: unknown) => {
+        logger.error`Re-driving deferred mail to ${entry.recipient} failed: ${err instanceof Error ? err.message : String(err)}`;
+      });
+  }
+
+  function undeliverRecipientResolutionEntry(
+    entry: DeferredRecipientResolutionMailEntry,
+    reason: string,
+  ): void {
+    events.emit("mail.outbound.undelivered", {
+      rawMessage: entry.rawMessage,
+      recipients: entry.recipients,
+    });
+    logger.warn`Dropping mail to ${entry.recipient}: ${reason}`;
+  }
+
+  // The in-flight attempt is about to route. Drop the hold, including a
+  // settle that arrived during the await, so that settle does not route too.
+  function takeInFlightRecipientDelivery(
+    entry: DeferredRecipientResolutionMailEntry,
+  ): boolean {
+    entry.inflight = false;
+    entry.wake = null;
+    return claimDeferredRecipientResolutionEntry(entry);
+  }
+
+  // The TTL starts once the attempt has finished parked. Arming it at
+  // park time can claim the hold while materialize is still in flight,
+  // which drops a recorded wake and supersedes a return that is ready
+  // to route. A drain during that await detaches the entry; arming then
+  // would leak a timer whose callback no-ops.
+  function armRecipientResolutionTtl(
+    entry: DeferredRecipientResolutionMailEntry,
+  ): void {
+    if (entry.cancelTimer !== null) return;
+    const parked = deferredRecipientResolutionMail.get(entry.recipient);
+    if (parked === undefined || !parked.has(entry)) return;
+    entry.cancelTimer = scheduleTimeout(() => {
+      if (!claimDeferredRecipientResolutionEntry(entry)) return;
+      events.emit("mail.outbound.undelivered", {
+        rawMessage: entry.rawMessage,
+        recipients: entry.recipients,
+      });
+      logger.warn`Dropping mail to ${entry.recipient}: credential resolution was not recorded before the deferred-mail TTL expired`;
+    }, mailHoldTTLMs);
+  }
+
+  // The in-flight attempt did not route. A settle that arrived during the
+  // await owns the next step; otherwise the entry stays parked for a later
+  // settle or the TTL.
+  function finishParkedRecipientResolution(
+    entry: DeferredRecipientResolutionMailEntry,
+  ): void {
+    entry.inflight = false;
+    const wake = entry.wake;
+    if (wake === null) {
+      armRecipientResolutionTtl(entry);
+      return;
+    }
+    if (!claimDeferredRecipientResolutionEntry(entry)) return;
+    if ("failed" in wake) {
+      undeliverRecipientResolutionEntry(
+        entry,
+        `recipient deploy failed: ${wake.failed}`,
+      );
+      return;
+    }
+    redriveRecipientResolutionMail(entry);
+  }
+
+  // A thrown attempt fails closed. Claim the hold so the TTL does not later
+  // report the original recipient list as undelivered.
+  function abandonInFlightRecipientResolution(
+    entry: DeferredRecipientResolutionMailEntry,
+  ): void {
+    entry.inflight = false;
+    entry.wake = null;
+    claimDeferredRecipientResolutionEntry(entry);
+  }
+
+  function settleRecipientResolutionMail(
+    address: string,
+    outcome: SenderDeploySettledOutcome,
+  ): void {
+    // A failed attempt has not recorded resolution and does not prove a
+    // later attempt will not. Claiming the hold drops mail the next
+    // recorded settle can still deliver. The TTL undelivers if none does.
+    if ("failed" in outcome) return;
+    const parked = deferredRecipientResolutionMail.get(address);
+    if (parked === undefined) return;
+    const idle: DeferredRecipientResolutionMailEntry[] = [];
+    for (const entry of parked) {
+      if (entry.inflight) {
+        entry.wake = outcome;
+      } else {
+        idle.push(entry);
+      }
+    }
+    for (const entry of idle) {
+      if (!claimDeferredRecipientResolutionEntry(entry)) continue;
+      redriveRecipientResolutionMail(entry);
+    }
+  }
+
   function settleSenderMail(
     address: string,
     outcome: SenderDeploySettledOutcome,
   ): void {
+    settleRecipientResolutionMail(address, outcome);
     if ("failed" in outcome) {
       drainDeferredSenderMail(
         address,
@@ -2017,7 +3328,11 @@ export function createSidecarRouter(
     rawMessage: string,
     authenticatedSender: string,
     recipients: string[],
-    recordedSenderKey?: string,
+    // undefined resolves now. null is a finished resolve that found no
+    // key, and a string is the key already bound for this message. null
+    // and undefined are different: treating null as missing resolves again
+    // and can co-deliver a key this message was not accepted under.
+    recordedSenderKey?: string | null,
   ): Promise<void> {
     // A mail addressed to more than one workflow deployment would birth a
     // run per recipient from a single inbound mail. The stable runId
@@ -2068,23 +3383,52 @@ export function createSidecarRouter(
           };
     if (!resolution.deliver) return;
     const senderIdentities = resolution.senderIdentities;
+    const boundIdentity = senderIdentities?.[0];
+    const boundSenderKey =
+      boundIdentity === undefined ? null : boundIdentity.publicKey;
 
-    // Route to locally connected sidecars first, then try disconnect queues.
+    // Route each recipient over the connection that routes its address.
     const unrouted: string[] = [];
     for (const recipient of recipients) {
       // Each recipient is isolated: a materialization failure or a
       // fail-closed rejection for one must not drop the mail for its
       // co-recipients. The catch fails THIS recipient closed (its run never
       // starts under-authorized) and continues to the rest.
+      // Register the hold before awaiting materialization. A settle that
+      // lands during that await finds the entry and records a wake; it does
+      // not re-drive until this attempt finishes, so a ready attempt routes
+      // once and a not-ready attempt hands the mail to that wake.
+      let parked: DeferredRecipientResolutionMailEntry | undefined;
       try {
+        parked =
+          lookups.materializeMailTriggeredRunGrants !== undefined &&
+          isRunAddress(recipient)
+            ? parkDeferredRecipientResolutionMail(
+                recipient,
+                rawMessage,
+                authenticatedSender,
+                boundSenderKey,
+              )
+            : undefined;
         const outcome = await deliverMailToRecipient(
           recipient,
           rawMessage,
           authenticatedSender,
           senderIdentities,
+          parked,
         );
+        if (
+          parked !== undefined &&
+          (outcome === "parked" || outcome === "superseded")
+        ) {
+          // This hold is only this recipient. Its settle, TTL, and drain
+          // report that recipient, so the rest of this attempt still runs.
+          if (outcome === "parked") finishParkedRecipientResolution(parked);
+          continue;
+        }
         if (outcome === "unrouted") unrouted.push(recipient);
       } catch (err) {
+        if (parked !== undefined) abandonInFlightRecipientResolution(parked);
         logger.error`Failed to deliver mail to ${recipient}: ${err instanceof Error ? err.message : String(err)}`;
       }
     }
@@ -2103,12 +3447,17 @@ export function createSidecarRouter(
   // Deliver an inbound mail to one recipient, materializing a
   // mail-triggered run's grants first when the recipient is a workflow
   // deployment. Returns:
-  //   - `routed`: the mail reached a live connection or disconnect queue.
+  //   - `routed`: the mail reached the connection that routes the recipient,
+  //     or pending redelivery after a transient admission failure.
   //   - `unrouted`: the mail was locally undeliverable and should be
   //     relayed externally by the host.
   //   - `failed-closed`: the run's grants could not be materialized safely,
   //     so the mail is deliberately DROPPED for this recipient (not relayed)
   //     to keep its run from starting under-authorized.
+  //   - `parked`: credential resolution is not recorded yet. The caller holds
+  //     the mail and retries after initialization; it is not relayed.
+  //   - `superseded`: something else claimed the hold during this attempt.
+  //     The caller must not also route.
   //
   // A workflow deployment is the only recipient whose inbound mail can first
   // fire its stable run. Its grants are reserved, and the `run.grants` frame is
@@ -2122,7 +3471,10 @@ export function createSidecarRouter(
     rawMessage: string,
     authenticatedSender: string,
     senderIdentities: RunGrantsFrame["senderIdentities"],
-  ): Promise<"routed" | "unrouted" | "failed-closed"> {
+    hold?: DeferredRecipientResolutionMailEntry,
+  ): Promise<
+    "routed" | "unrouted" | "failed-closed" | "parked" | "superseded"
+  > {
     if (
       lookups.materializeMailTriggeredRunGrants !== undefined &&
       isRunAddress(recipient)
@@ -2141,6 +3493,12 @@ export function createSidecarRouter(
         agentAddress: recipient,
         runId,
       });
+      if (result.outcome === "notReady") return "parked";
+      // Claim before any send. A settle that arrived during the await must
+      // not route beside this attempt.
+      if (hold !== undefined && !takeInFlightRecipientDelivery(hold)) {
+        return "superseded";
+      }
       if (result.outcome === "rejected") {
         // The run's grants could not be materialized with sufficient
         // authority or it is already terminal. Fail the mail closed for this
@@ -2161,16 +3519,6 @@ export function createSidecarRouter(
         // Finish asynchronous preparation before sending the grants and mail
         // together, keeping another delivery's key out of the gap between them.
         const messageId = await deriveMessageId(base64Decode(rawMessage));
-        // Send the run's grants ahead of the mail. A `false` here means the
-        // deployment is unroutable. Do not route the mail that would dispatch
-        // it; the grants-only reservation remains the canonical snapshot for a
-        // later first-delivery attempt.
-        if (
-          !sendRunGrants(recipient, runId, result.stepGrants, senderIdentities)
-        ) {
-          logger.error`Deployment ${recipient} is not routable for run ${runId}; retaining the unfired run's grant reservation for retry`;
-          return "unrouted";
-        }
         // Route through the messageId handshake `routeMail` -- NOT a
         // fire-and-forget send. This branch COMMITS a run, so a mail dropped in
         // the connected window (a socket that half-dies before the sidecar's
@@ -2181,7 +3529,7 @@ export function createSidecarRouter(
         // mail's own id (derived over the same bytes the sidecar derives), so a
         // redelivery replays identically and the downstream RunStarted /
         // stable-runId dedup makes it effectively-once.
-        const outcome: "routed" | "unrouted" = routeMail(
+        const outcome: "routed" | "unrouted" = (await routeMail(
           recipient,
           rawMessage,
           authenticatedSender,
@@ -2191,7 +3539,7 @@ export function createSidecarRouter(
             stepGrants: result.stepGrants,
             ...(senderIdentities !== undefined ? { senderIdentities } : {}),
           },
-        )
+        ))
           ? "routed"
           : "unrouted";
         return outcome;
@@ -2201,7 +3549,7 @@ export function createSidecarRouter(
       // authorize. No run is committed here, so no ack handshake is needed.
     }
 
-    return routeMail(recipient, rawMessage, authenticatedSender)
+    return (await routeMail(recipient, rawMessage, authenticatedSender))
       ? "routed"
       : "unrouted";
   }
@@ -2242,16 +3590,13 @@ export function createSidecarRouter(
     ws: WsHandle,
     frame: SignalCorrelationRegisterFrame,
   ): Promise<void> {
-    // Gate the co-write on the sending sidecar actually owning the named
-    // deployment address, mirroring the connector.state.changed and pack
-    // handlers. A workflow deployment routes on the keyless workflow set, so
-    // ownership is the union check, not addressIndex identity alone. Without
-    // it a misbehaving sidecar that knows another deployment's address could
-    // register a spurious correlation against it.
+    // Only the incarnation this connection routes may register a correlation
+    // for its address; otherwise a misbehaving sidecar that knows another
+    // deployment's address could register a spurious one against it.
     const conn = connections.get(ws);
     if (conn === undefined) return;
-    if (!connOwnsAddress(conn, frame.agentAddress)) {
-      logger.warn`Dropping signal.correlation.register for ${frame.agentAddress}: not registered to this sidecar`;
+    if (!namesRoutedIncarnation(conn, frame)) {
+      logger.warn`Dropping signal.correlation.register for ${frame.agentAddress} generation ${String(frame.generation)}: this sidecar does not route that incarnation`;
       return;
     }
 
@@ -2287,75 +3632,14 @@ export function createSidecarRouter(
   }
 
   function handleClose(ws: WsHandle): void {
-    const conn = connections.get(ws);
-    if (conn === undefined) return;
-    let allocated: { allocationId: string; generation: number } | undefined;
-
-    for (const addr of conn.agentAddresses) {
-      // Only remove routing and pending state if this connection still
-      // owns the address. A reconnected sidecar may have already claimed it.
-      if (addressIndex.get(addr) === ws) {
-        addressIndex.delete(addr);
-        // Drop cached connector state for the same reason: a takeover
-        // sidecar's state lives in connectorStates under the same key,
-        // and only this owner's close should evict it. The next
-        // reconnect re-bootstraps via the router's
-        // restore-fires-callback path.
-        connectorStates.delete(addr);
-        // Retain this address's un-acked pending mail across the disconnect:
-        // its in-flight retry timers target a dead socket (cleared), but the
-        // entries are held so a verified reconnect redelivers them, closing the
-        // connected-window drop rather than losing the mail. Bounded by a
-        // retention TTL.
-        retainPendingMailForAddress(addr);
-        // Create a queue entry so messages can accumulate while the
-        // sidecar is disconnected. Skip if the agent is being undeployed --
-        // there is no point queuing messages for an agent being torn down.
-        if (!pendingUndeploys.has(addr)) {
-          const timer = setTimeout(() => {
-            const expired = disconnectedAgents.get(addr);
-            disconnectedAgents.delete(addr);
-            if (expired !== undefined) {
-              surfaceDroppedFrames(
-                addr,
-                expired.queue,
-                "disconnect queue TTL expired",
-              );
-            }
-          }, disconnectQueueTTLMs);
-          disconnectedAgents.set(addr, { queue: [], timer });
-        }
+    closedSockets.add(ws);
+    for (const [sidecarId, claimant] of sidecarClaims) {
+      if (claimant === ws) {
+        sidecarClaims.delete(sidecarId);
+        // A failed takeover can leave the previous connection usable.
+        notifySidecarInventory(sidecarId);
       }
     }
-    // Remove this connection's workflow-substrate routes. No disconnect queue
-    // is created: these addresses re-register (with the complete live set)
-    // when the sidecar reconnects, and their in-flight run state is
-    // reconstructed sidecar-locally, not from a hub-side queue. The ownership
-    // guard mirrors the session loop above so a takeover by a newer ws is not
-    // clobbered by the prior owner's close.
-    for (const addr of conn.workflowAddresses) {
-      if (addressIndex.get(addr) === ws) {
-        addressIndex.delete(addr);
-        connectorStates.delete(addr);
-        // Retain un-acked workflow trigger mail across the disconnect for the
-        // same reason as the session loop above -- an authenticated reconnect
-        // redelivers it. This is un-acked TRIGGER mail, distinct from the
-        // deployment's in-flight run state (reconstructed sidecar-locally); the
-        // "no disconnect queue" note above is about that run state, not this.
-        retainPendingMailForAddress(addr);
-      }
-    }
-    const current = allocatedConnections.get(conn.identity.allocationId);
-    if (current?.ws === ws) {
-      allocatedConnections.delete(conn.identity.allocationId);
-      if (conn.identity.kind === "allocated") {
-        allocated = {
-          allocationId: conn.identity.allocationId,
-          generation: conn.identity.generation,
-        };
-      }
-    }
-    connections.delete(ws);
 
     // Cancel the liveness timer for this connection.
     const cancelLiveness = livenessTimers.get(ws);
@@ -2367,6 +3651,42 @@ export function createSidecarRouter(
     // Drop the per-ws serialization chain; no more frames will queue on it.
     messageChains.delete(ws);
 
+    const conn = connections.get(ws);
+    if (conn === undefined) return;
+    const allocated: { allocationId: string; generation: number }[] = [];
+    // A deploy waiting on an answer this socket will not carry goes on and
+    // finds the connection gone.
+    for (const inFlight of conn.undeploying.values()) inFlight.settle();
+    conn.undeploying.clear();
+
+    // Remove this connection's workflow-substrate routes. The sidecar reports
+    // what it still holds in its next `hello`, and its in-flight run state is
+    // reconstructed sidecar-locally, not from a hub-side queue. Only routes
+    // this connection still owns are removed, so a takeover by a newer ws is
+    // not clobbered by the prior owner's close.
+    for (const addr of conn.workflowAddresses.keys()) {
+      if (addressIndex.get(addr) === ws) {
+        addressIndex.delete(addr);
+        connectorStates.delete(addr);
+        // Retain un-acked trigger mail across the disconnect: its in-flight
+        // retry timers target a dead socket (cleared), but the entries are
+        // held so the next registration that routes the same incarnation
+        // redelivers them. Bounded by a retention TTL.
+        retainPendingMailForAddress(addr);
+      }
+    }
+    for (const [allocationId, binding] of conn.bindings) {
+      if (allocatedConnections.get(allocationId)?.ws !== ws) continue;
+      allocatedConnections.delete(allocationId);
+      if (binding.kind === "allocated") {
+        allocated.push({ allocationId, generation: binding.generation });
+      }
+    }
+    if (sidecarSockets.get(conn.sidecarId) === ws) {
+      sidecarSockets.delete(conn.sidecarId);
+    }
+    connections.delete(ws);
+
     // Reject any in-flight requests that were sent to this sidecar. Each
     // entry's reject closure runs its own per-site cleanup (the deploy and
     // undeploy closures roll routing back), exactly as a frame-error
@@ -2375,9 +3695,7 @@ export function createSidecarRouter(
       ws,
       `Sidecar ${conn.sidecarId} disconnected`,
     );
-    // Reject every deploy issued on this socket, including allocated
-    // workflow deployments stored in `workflowAddresses` rather than
-    // `agentAddresses`.
+    // Reject every deploy issued on this socket.
     pendingDeploys.rejectAllForWs(ws, `Sidecar ${conn.sidecarId} disconnected`);
     // Reject any in-flight pack transfers for this sidecar.
     pendingPacks.rejectAllForWs(ws, `Sidecar ${conn.sidecarId} disconnected`);
@@ -2391,37 +3709,31 @@ export function createSidecarRouter(
     // without it a probe whose sidecar drops mid-flight would hang until its
     // own timeout instead of failing fast on the disconnect.
     pendingProbes.rejectAllForWs(ws, `Sidecar ${conn.sidecarId} disconnected`);
-
-    // Fail any in-flight loopback logins on this sidecar the same way: the
-    // login dies with its callback server, so a disconnect is terminal even
-    // though the browser may still be sitting on the consent page.
-    for (const [requestId, login] of pendingOAuthLogins) {
-      if (login.ws !== ws) continue;
-      clearTimeout(login.timer);
-      pendingOAuthLogins.delete(requestId);
-      settleOAuthLoginError(requestId, login, "the sidecar disconnected");
-    }
+    pendingWorkflowControls.rejectAllForWs(
+      ws,
+      `Sidecar ${conn.sidecarId} disconnected`,
+    );
 
     // Cancel any in-flight inbound pack transfers from this sidecar
     // across both receivers. The two receivers track their own in-
     // flight transferIds, so a pending workflow-run transfer for an
     // agent that just disconnected won't outlive the connection just
-    // because the agent-state receiver has nothing to cancel. Iterate the
-    // owned union so a reconnected workflow deployment's transfer is
-    // cancelled too; the deduped set avoids a double-cancel for an address
-    // that is in both sets. A reclaimed address is not present here -- the
-    // verified reconnect path that took it over evicts it from this
-    // (superseded) connection's owned set -- so a stale close does not cancel
-    // the new owner's work.
-    const owned = ownedAddresses(conn);
+    // because the agent-state receiver has nothing to cancel.
+    const owned = new Set(conn.workflowAddresses.keys());
     for (const addr of owned) {
       agentStatePackReceiver.cancelByAgent(addr);
       workflowRunPackReceiver.cancelByAgent(addr);
     }
+    // An own-repository transfer needs no route, so the owned addresses above
+    // can miss it. A successor for these allocations closes this connection
+    // while registering, before handling any frame of its own, so this cannot
+    // cancel the successor's transfers.
+    for (const binding of allocationBindings(conn))
+      workflowRunPackReceiver.cancelByAgent(binding.workflowRunAddress);
 
     events.emit("sidecar.disconnect", {
       ownedAddresses: [...owned],
-      ...(allocated !== undefined ? { allocated } : {}),
+      allocated,
     });
 
     logger.info`Sidecar ${conn.sidecarId} disconnected`;
@@ -2431,25 +3743,39 @@ export function createSidecarRouter(
     return `req-${++requestCounter}`;
   }
 
+  // The connection and incarnation the Hub routes `agentAddress` to, or
+  // undefined when it routes none. Frames sent through it name the generation
+  // of this incarnation.
+  function routedIncarnation(agentAddress: string):
+    | {
+        ws: WsHandle;
+        conn: SidecarConnection;
+        binding: Extract<SidecarAuthIdentity, { kind: "allocated" }>;
+      }
+    | undefined {
+    const ws = addressIndex.get(agentAddress);
+    const conn = ws === undefined ? undefined : connections.get(ws);
+    const binding =
+      conn === undefined ? undefined : owningAllocation(conn, agentAddress);
+    if (ws === undefined || conn === undefined || binding === undefined)
+      return undefined;
+    return { ws, conn, binding };
+  }
+
   function sendRequest(
     agentAddress: string,
-    buildFrame: (requestId: string) => HubFrame,
+    buildFrame: (requestId: string, generation: number) => HubFrame,
   ): Promise<void> {
-    const ws = addressIndex.get(agentAddress);
-    if (ws === undefined) {
+    const routed = routedIncarnation(agentAddress);
+    if (routed === undefined) {
       return Promise.reject(
         new Error(`No sidecar connected for agent "${agentAddress}"`),
       );
     }
-    const conn = connections.get(ws);
-    if (conn === undefined) {
-      return Promise.reject(
-        new Error(`No sidecar connected for agent "${agentAddress}"`),
-      );
-    }
+    const { ws, conn, binding } = routed;
 
     const requestId = nextRequestId();
-    const frame = buildFrame(requestId);
+    const frame = buildFrame(requestId, binding.generation);
 
     return new Promise<void>((resolve, reject) => {
       pendingRequests.register(
@@ -2463,7 +3789,7 @@ export function createSidecarRouter(
             reject(new Error(error));
           },
         },
-        undefined,
+        agentAddress,
       );
 
       conn.send(frame);
@@ -2514,25 +3840,51 @@ export function createSidecarRouter(
     );
   }
 
-  function resolveUndeployPending(ws: WsHandle, agentAddress: string): void {
-    const req = pendingUndeploys.get(agentAddress);
-    if (req === undefined) {
-      logger.warn`Received agent.undeploy.ack for "${agentAddress}" with no pending undeploy`;
+  function resolveUndeployPending(
+    ws: WsHandle,
+    frame: AgentUndeployAckFrame,
+  ): void {
+    const req = pendingUndeploys.get(frame.agentAddress);
+    if (
+      req?.ws !== ws ||
+      req.meta.requestId !== frame.requestId ||
+      req.meta.generation !== frame.generation
+    ) {
+      logger.debug`agent.undeploy.ack for ${frame.agentAddress} generation ${String(frame.generation)} answers an undeploy no request waits on`;
       return;
     }
-    if (req.ws !== ws) return;
-    pendingUndeploys.resolve(agentAddress);
+    const target = req.meta.target;
+    if (target !== undefined) {
+      const current = allocatedConnections.get(target.allocationId);
+      if (
+        allocationFences.get(target.allocationId)?.generation !==
+          target.generation ||
+        current?.ws !== ws ||
+        current.identity.kind !== "cleanup" ||
+        current.identity.generation !== target.generation
+      ) {
+        pendingUndeploys.reject(frame.agentAddress, "Cleanup identity changed");
+        return;
+      }
+    }
+    pendingUndeploys.resolve(frame.agentAddress);
   }
 
   function rejectUndeployPending(
     ws: WsHandle,
-    agentAddress: string,
-    error: string,
+    frame: AgentUndeployErrorFrame,
   ): void {
-    const req = pendingUndeploys.get(agentAddress);
-    if (req === undefined) return;
-    if (req.ws !== ws) return;
-    pendingUndeploys.reject(agentAddress, error);
+    const req = pendingUndeploys.get(frame.agentAddress);
+    if (
+      req?.ws === ws &&
+      req.meta.requestId === frame.requestId &&
+      req.meta.generation === frame.generation
+    ) {
+      pendingUndeploys.reject(frame.agentAddress, frame.error);
+      return;
+    }
+    // No caller waits on this undeploy, so the failure surfaces only here.
+    logger.error`Sidecar failed to undeploy ${frame.agentAddress} generation ${String(frame.generation)}: ${frame.error}`;
   }
 
   function resolveProbe(
@@ -2586,25 +3938,48 @@ export function createSidecarRouter(
     }
   }
 
+  // The generation whose workflow stop the Hub confirmed, when the pack is
+  // for its workflow-run repository. That history is final.
+  function stoppedPackSender(
+    conn: SidecarConnection,
+    frame: PackPushFrame | PackDoneFrame,
+  ): SidecarAuthIdentity | undefined {
+    const binding = deploymentBinding(conn, frame.agentAddress);
+    return frame.repoId.kind === "workflow-run" &&
+      binding !== undefined &&
+      stoppedAllocations.get(binding.allocationId) === binding.generation
+      ? binding
+      : undefined;
+  }
+
+  // The sender holds a transfer open until it is answered, so a done that
+  // fails validation is still rejected when it names its transfer.
+  function rejectMalformedPackDone(
+    ws: WsHandle,
+    done: typeof MalformedPackDone.infer,
+  ): void {
+    const conn = connections.get(ws);
+    if (conn === undefined) return;
+    pickPackReceiver(done.repoId)?.receiver.cancel(done.transferId);
+    conn.send({
+      type: "repo.pack.reject",
+      agentAddress: done.agentAddress,
+      repoId: done.repoId,
+      transferId: done.transferId,
+      reason: "corrupt",
+    });
+  }
+
   function handlePackPush(ws: WsHandle, frame: PackPushFrame): void {
     const conn = connections.get(ws);
     if (conn === undefined) return;
-    if (!connOwnsAddress(conn, frame.agentAddress)) {
-      logger.warn`Received repo.pack.push for unrouted agent ${frame.agentAddress}`;
+    // A chunk of a transfer the connection may not make is dropped: the
+    // transfer is answered once, when its `repo.pack.done` is rejected.
+    if (
+      stoppedPackSender(conn, frame) !== undefined ||
+      !connCanPushRepo(conn, frame)
+    )
       return;
-    }
-    if (!connCanPushRepo(conn, frame.agentAddress, frame.repoId)) {
-      logger.warn`Rejected repo.pack.push outside sidecar ${conn.sidecarId}'s authenticated repository scope`;
-      conn.send({
-        type: "repo.pack.reject",
-        agentAddress: frame.agentAddress,
-        repoId: frame.repoId,
-        transferId: frame.transferId,
-        reason: "path_violation",
-      });
-      return;
-    }
-    if (conn.identity.kind !== "allocated") return;
 
     const picked = pickPackReceiver(frame.repoId);
     if (picked === null) {
@@ -2637,12 +4012,9 @@ export function createSidecarRouter(
   ): Promise<void> {
     const conn = connections.get(ws);
     if (conn === undefined) return;
-    if (!connOwnsAddress(conn, frame.agentAddress)) {
-      logger.warn`Received repo.pack.done for unrouted agent ${frame.agentAddress}`;
-      return;
-    }
-    if (!connCanPushRepo(conn, frame.agentAddress, frame.repoId)) {
-      logger.warn`Rejected repo.pack.done outside sidecar ${conn.sidecarId}'s authenticated repository scope`;
+    const stopped = stoppedPackSender(conn, frame);
+    if (stopped !== undefined) {
+      logger.warn`Rejected repo.pack.done from allocation ${stopped.allocationId} after its workflow stop`;
       conn.send({
         type: "repo.pack.reject",
         agentAddress: frame.agentAddress,
@@ -2652,8 +4024,20 @@ export function createSidecarRouter(
       });
       return;
     }
-    if (conn.identity.kind !== "allocated") return;
-    const identity = conn.identity;
+    const identity = deploymentBinding(conn, frame.agentAddress);
+    if (identity === undefined || !connCanPushRepo(conn, frame)) {
+      // Answer rather than drop: the sender holds the transfer open until it
+      // is answered, and later pushes to the same repository wait behind it.
+      logger.warn`Rejected repo.pack.done for ${frame.agentAddress} generation ${String(frame.generation)} outside sidecar ${conn.sidecarId}'s routed repositories`;
+      conn.send({
+        type: "repo.pack.reject",
+        agentAddress: frame.agentAddress,
+        repoId: frame.repoId,
+        transferId: frame.transferId,
+        reason: "path_violation",
+      });
+      return;
+    }
 
     const picked = pickPackReceiver(frame.repoId);
     if (picked === null) {
@@ -2691,19 +4075,28 @@ export function createSidecarRouter(
       return;
     }
 
-    const verdict = await receivePackLookup(
-      frame.repoId,
-      result.pack,
-      result.ref,
-      result.commitSha,
-      {
-        kind: "allocated",
-        agentAddress: frame.agentAddress,
-        allocationId: identity.allocationId,
-        anchorRunId: identity.anchorRunId,
-        generation: identity.generation,
-      },
-    );
+    let verdict: Awaited<ReturnType<typeof receivePackLookup>>;
+    try {
+      verdict = await receivePackLookup(
+        frame.repoId,
+        result.pack,
+        result.ref,
+        result.commitSha,
+        {
+          kind: "allocated",
+          agentAddress: frame.agentAddress,
+          allocationId: identity.allocationId,
+          anchorRunId: identity.anchorRunId,
+          generation: identity.generation,
+        },
+      );
+    } catch (err) {
+      // A lookup that throws still owes the sender its answer: the socket
+      // stays open for the sidecar's other deployments, so nothing else
+      // settles the transfer, and later pushes to the repository wait on it.
+      logger.error`Receiving the pack for ${frame.agentAddress} generation ${String(frame.generation)} failed: ${err instanceof Error ? err.message : String(err)}`;
+      verdict = { accepted: false, reason: "corrupt" };
+    }
 
     // Connection may have closed during async verification.
     const currentConn = connections.get(ws);
@@ -2733,22 +4126,31 @@ export function createSidecarRouter(
    * and asset packs before the deployment-level frame spawns the child.
    *
    * The address is Hub-minted and workflow-derived, so it enters the
-   * `workflowAddresses` set rather than the legacy `agentAddresses` set and is
+   * `workflowAddresses` set and is
    * torn down by `unbindStepRoute` once the
    * step's packs land. `handleClose` reclaims it if the sidecar drops
    * mid-stage. Per-step addresses are not runtime-routed (mail, signals, and
-   * drains use the deployment address), so the binding is transient: it is
-   * never persisted into the reconnect set and never resurrected on
-   * reconnect.
+   * drains use the deployment address), so the binding is transient: no
+   * `hello` reports it and no reconnect restores it.
    */
-  function fenceAllocation(allocationId: string, generation: number): void {
+  function fenceAllocation(
+    allocationId: string,
+    generation: number,
+    { cleanup }: { cleanup?: { sidecarId: string } } = {},
+  ): void {
     const existing = allocationFences.get(allocationId);
-    if (existing !== undefined && generation < existing) {
+    if (existing !== undefined && generation < existing.generation) {
       throw new Error(
-        `Cannot move allocation ${allocationId} fence backward from ${String(existing)} to ${String(generation)}`,
+        `Cannot move allocation ${allocationId} fence backward from ${String(existing.generation)} to ${String(generation)}`,
       );
     }
-    allocationFences.set(allocationId, generation);
+    allocationFences.set(allocationId, { generation, cleanup });
+    const stopped = stoppedAllocations.get(allocationId);
+    if (stopped !== undefined && stopped < generation)
+      stoppedAllocations.delete(allocationId);
+    const reportedStop = reportedStops.get(allocationId);
+    if (reportedStop !== undefined && reportedStop.generation < generation)
+      reportedStops.delete(allocationId);
 
     // A durable generation advance resolves unfinished initialization as failed.
     // This also covers a cleanup transaction whose response was lost: the next
@@ -2766,8 +4168,27 @@ export function createSidecarRouter(
 
     const current = allocatedConnections.get(allocationId);
     if (current !== undefined && current.identity.generation !== generation) {
-      handleClose(current.ws);
-      current.ws.close();
+      const cleanupCurrent = cleanup?.sidecarId === current.identity.sidecarId;
+      const conn = connections.get(current.ws);
+      detachBinding(
+        current.ws,
+        allocationId,
+        `Generation ${String(generation)} superseded it`,
+        { undeploy: !cleanupCurrent },
+      );
+      if (
+        cleanupCurrent &&
+        conn !== undefined &&
+        current.identity.kind !== "probe"
+      ) {
+        // Keep the control binding while the reconciler releases the provider
+        // hold. It carries no workflow routes, and cleanup still revalidates
+        // the durable generation before sending.
+        attachBindings(current.ws, conn, [
+          ...conn.bindings.values(),
+          { ...current.identity, kind: "cleanup", generation },
+        ]);
+      }
     }
 
     const waiters = allocationWaiters.get(allocationId);
@@ -2786,10 +4207,16 @@ export function createSidecarRouter(
   }
 
   function retireAllocation(target: AllocatedSidecarTarget): void {
-    if (allocationFences.get(target.allocationId) !== target.generation) return;
+    if (
+      allocationFences.get(target.allocationId)?.generation !==
+      target.generation
+    )
+      return;
 
-    disconnectAllocation(target);
+    detachAllocation(target);
     allocationFences.delete(target.allocationId);
+    stoppedAllocations.delete(target.allocationId);
+    reportedStops.delete(target.allocationId);
 
     // The fence is gone, so a lingering attempt can never settle normally.
     // Fail it here rather than leaving a marker that blocks the address.
@@ -2819,9 +4246,21 @@ export function createSidecarRouter(
 
   async function getProvisionedConnection(
     target: AllocatedSidecarTarget,
-    use: "readiness" | "routing",
-  ): Promise<{ ws: WsHandle; conn: SidecarConnection }> {
-    if (allocationFences.get(target.allocationId) !== target.generation) {
+    use:
+      | "readiness"
+      | "routing"
+      | "cleanup"
+      | "retention"
+      | "retention-transition",
+  ): Promise<{
+    ws: WsHandle;
+    conn: SidecarConnection;
+    binding: SidecarAuthIdentity;
+  }> {
+    if (
+      allocationFences.get(target.allocationId)?.generation !==
+      target.generation
+    ) {
       throw new Error(
         `Allocation ${target.allocationId} generation ${String(target.generation)} is not current`,
       );
@@ -2835,6 +4274,14 @@ export function createSidecarRouter(
         `Allocated sidecar is not connected for allocation ${target.allocationId} generation ${String(target.generation)}`,
       );
     }
+    if (
+      (current.identity.kind === "cleanup" && use !== "cleanup") ||
+      (current.identity.kind !== "cleanup" && use === "cleanup")
+    ) {
+      throw new Error(
+        `Allocation ${target.allocationId} does not permit ${use}`,
+      );
+    }
     let identityCurrent: boolean;
     try {
       identityCurrent = await validateSidecarIdentity(current.identity, use);
@@ -2846,9 +4293,37 @@ export function createSidecarRouter(
       );
     }
     if (!identityCurrent) {
-      if (allocatedConnections.get(target.allocationId) === current) {
-        handleClose(current.ws);
-        current.ws.close();
+      if (
+        use !== "retention-transition" &&
+        use !== "retention" &&
+        allocatedConnections.get(target.allocationId) === current
+      ) {
+        // The database may have committed release before its caller published
+        // the fence. Do not let an old acknowledgement undeploy that copy.
+        let bindings: readonly SidecarAuthIdentity[];
+        try {
+          bindings = await resolveSidecarBindings(current.identity.sidecarId);
+        } catch (cause) {
+          throw new SidecarIdentityValidationError(
+            target.allocationId,
+            target.generation,
+            cause,
+          );
+        }
+        if (allocatedConnections.get(target.allocationId) === current) {
+          fenceCleanupBindings(
+            bindings.filter(
+              (binding) => binding.allocationId === target.allocationId,
+            ),
+          );
+          if (allocatedConnections.get(target.allocationId) === current)
+            detachBinding(
+              current.ws,
+              target.allocationId,
+              "Its identity is no longer current",
+              { undeploy: true },
+            );
+        }
       }
       throw new Error(
         `Allocated sidecar identity is no longer current for allocation ${target.allocationId}`,
@@ -2860,37 +4335,34 @@ export function createSidecarRouter(
       );
     }
     const conn = connections.get(current.ws);
+    const binding = conn?.bindings.get(target.allocationId);
     if (
       conn === undefined ||
-      conn.identity.allocationId !== target.allocationId ||
-      conn.identity.generation !== target.generation
+      binding === undefined ||
+      binding.generation !== target.generation
     ) {
       throw new Error(
         `Allocated sidecar is not connected for allocation ${target.allocationId}`,
       );
     }
-    return { ws: current.ws, conn };
+    return { ws: current.ws, conn, binding };
   }
 
   async function getAllocatedConnection(
     target: AllocatedSidecarTarget,
-    use: "readiness" | "routing",
+    use: "readiness" | "routing" | "retention" | "retention-transition",
   ): Promise<{
     ws: WsHandle;
-    conn: SidecarConnection & {
-      identity: Extract<SidecarAuthIdentity, { kind: "allocated" }>;
-    };
+    conn: SidecarConnection;
+    binding: Extract<SidecarAuthIdentity, { kind: "allocated" }>;
   }> {
-    const current = await getProvisionedConnection(target, use);
-    if (current.conn.identity.kind !== "allocated") {
+    const { ws, conn, binding } = await getProvisionedConnection(target, use);
+    if (binding.kind !== "allocated") {
       throw new Error(
         `Allocation ${target.allocationId} is connected as probe capacity`,
       );
     }
-    return {
-      ws: current.ws,
-      conn: { ...current.conn, identity: current.conn.identity },
-    };
+    return { ws, conn, binding };
   }
 
   async function isAllocatedSidecarReady(
@@ -2908,36 +4380,193 @@ export function createSidecarRouter(
     }
   }
 
+  function holdsAllocatedBinding(target: AllocatedSidecarTarget): boolean {
+    const held = allocatedConnections.get(target.allocationId)?.identity;
+    return held?.kind === "allocated" && held.generation === target.generation;
+  }
+
+  function getAllocationRetention(
+    target: AllocatedSidecarTarget,
+  ): DeploymentRetention | undefined {
+    const current = allocatedConnections.get(target.allocationId);
+    if (
+      current?.identity.kind !== "allocated" ||
+      current.identity.generation !== target.generation ||
+      !isFencedAsCurrent(current.identity) ||
+      connections.get(current.ws)?.bindings.get(target.allocationId) !==
+        current.identity
+    )
+      return undefined;
+    const retained = connectionRetention
+      .get(current.ws)
+      ?.get(current.identity.workflowRunAddress);
+    return retained?.generation === target.generation
+      ? retained.retention
+      : undefined;
+  }
+
+  function sidecarInventoryConnection(sidecarId: string) {
+    const ws = sidecarSockets.get(sidecarId);
+    const conn = ws === undefined ? undefined : connections.get(ws);
+    if (
+      ws === undefined ||
+      conn === undefined ||
+      closedSockets.has(ws) ||
+      !welcomedSockets.has(ws) ||
+      sidecarClaims.has(sidecarId)
+    )
+      return undefined;
+    return { ws, conn };
+  }
+
+  function notifySidecarInventory(sidecarId: string): void {
+    if (sidecarInventoryConnection(sidecarId) === undefined) return;
+    for (const ready of [...(inventoryWaiters.get(sidecarId) ?? [])]) ready();
+  }
+
+  async function waitForSidecarInventory(
+    sidecarId: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    signal.throwIfAborted();
+    if (sidecarInventoryConnection(sidecarId) !== undefined) return;
+    await new Promise<void>((resolve, reject) => {
+      const waiters = inventoryWaiters.get(sidecarId) ?? new Set<() => void>();
+      const cleanUp = () => {
+        signal.removeEventListener("abort", abort);
+        waiters.delete(ready);
+        if (waiters.size === 0) inventoryWaiters.delete(sidecarId);
+      };
+      const ready = () => {
+        cleanUp();
+        resolve();
+      };
+      const abort = () => {
+        cleanUp();
+        reject(signal.reason);
+      };
+      waiters.add(ready);
+      inventoryWaiters.set(sidecarId, waiters);
+      signal.addEventListener("abort", abort, { once: true });
+    });
+  }
+
+  function getSidecarInventory(
+    sidecarId: string,
+  ): SidecarInventory | undefined {
+    const current = sidecarInventoryConnection(sidecarId);
+    if (current === undefined) return undefined;
+    const { ws, conn } = current;
+    const retained = connectionRetention.get(ws);
+    const retainedIncarnations = [...conn.bindings.values()].flatMap(
+      (binding) => {
+        if (
+          binding.kind === "probe" ||
+          !isFencedAsCurrent(binding) ||
+          allocatedConnections.get(binding.allocationId)?.ws !== ws
+        )
+          return [];
+        const copy = retained?.get(binding.workflowRunAddress);
+        if (
+          copy?.retention !== "kept" ||
+          (binding.kind === "cleanup"
+            ? copy.generation > binding.generation
+            : copy.generation !== binding.generation)
+        )
+          return [];
+        return [
+          { allocationId: binding.allocationId, generation: copy.generation },
+        ];
+      },
+    );
+    return { capacity: conn.capacity, retainedIncarnations };
+  }
+
+  function getRetentionCandidates() {
+    const candidates: (AllocatedSidecarTarget & { sidecarId: string })[] = [];
+    for (const [allocationId, current] of allocatedConnections) {
+      if (
+        current.identity.kind !== "allocated" ||
+        !isFencedAsCurrent(current.identity) ||
+        connections.get(current.ws)?.bindings.get(allocationId) !==
+          current.identity
+      )
+        continue;
+      const target = { allocationId, generation: current.identity.generation };
+      if (
+        getAllocationRetention(target) !== "kept" ||
+        stoppedAllocations.get(allocationId) !== target.generation
+      )
+        candidates.push({ ...target, sidecarId: current.identity.sidecarId });
+    }
+    return candidates;
+  }
+
   async function isAllocatedWorkflowActive(
     target: AllocatedSidecarTarget,
   ): Promise<boolean> {
-    try {
-      const { conn } = await getAllocatedConnection(target, "readiness");
-      if (conn.identity.kind !== "allocated") return false;
-      return conn.workflowAddresses.has(conn.identity.workflowRunAddress);
-    } catch (error) {
-      if (error instanceof SidecarIdentityValidationError) throw error;
-      return false;
-    }
+    const { conn, binding } = await getAllocatedConnection(target, "readiness");
+    return (
+      conn.workflowAddresses.get(binding.workflowRunAddress) ===
+      binding.allocationId
+    );
+  }
+
+  function reportedStop(target: AllocatedSidecarTarget) {
+    const reported = reportedStops.get(target.allocationId);
+    return reported?.generation === target.generation ? reported : undefined;
+  }
+
+  function reportedDeploymentFailure(
+    target: AllocatedSidecarTarget,
+  ): string | undefined {
+    return reportedStop(target)?.error;
+  }
+
+  async function stoppedDeploymentHistory(
+    target: AllocatedSidecarTarget,
+  ): Promise<{ unreceived: string | null; reportedAt: Date } | undefined> {
+    const reported = reportedStop(target);
+    if (reported === undefined) return undefined;
+    // A generation whose stop the Hub confirmed is fenced, so the history the
+    // Hub holds is final.
+    return {
+      unreceived:
+        stoppedAllocations.get(target.allocationId) === target.generation
+          ? null
+          : await findUnreceivedWorkflowHistory(
+              reported.address,
+              reported.refTips,
+            ),
+      reportedAt: reported.reportedAt,
+    };
   }
 
   async function waitForAllocatedSidecar(
     target: AllocatedSidecarTarget,
     timeoutMs: number,
     onValidation?: (validation: Promise<boolean>) => void,
+    signal?: AbortSignal,
   ): Promise<void> {
+    signal?.throwIfAborted();
     // An indeterminable worker waits out the unknown while time remains: only
     // confirmed absence may surface as a connection timeout. At expiry the
     // wait reports the validation failure rather than a missed deadline, so
     // the caller retries instead of releasing a worker that may be healthy.
     let validationFailure: SidecarIdentityValidationError | undefined;
+    let ready = false;
     try {
-      if (await isAllocatedSidecarReady(target)) return;
+      ready = await isAllocatedSidecarReady(target);
     } catch (error) {
       if (!(error instanceof SidecarIdentityValidationError)) throw error;
       validationFailure = error;
     }
-    if (allocationFences.get(target.allocationId) !== target.generation) {
+    signal?.throwIfAborted();
+    if (ready) return;
+    if (
+      allocationFences.get(target.allocationId)?.generation !==
+      target.generation
+    ) {
       throw new Error(
         `Allocation ${target.allocationId} generation ${String(target.generation)} is not current`,
       );
@@ -2949,20 +4578,36 @@ export function createSidecarRouter(
       );
     }
 
+    const waitMs = Math.min(timeoutMs, MAX_TIMER_DELAY_MS);
     await new Promise<void>((resolve, reject) => {
+      const cleanUp = () => {
+        clearTimeout(waiter.timer);
+        signal?.removeEventListener("abort", onAbort);
+        const current = allocationWaiters.get(target.allocationId);
+        current?.delete(waiter);
+        if (current?.size === 0) allocationWaiters.delete(target.allocationId);
+      };
+      const onAbort = () => {
+        waiter.reject(
+          signal?.reason instanceof Error
+            ? signal.reason
+            : new Error("Sidecar connection wait cancelled"),
+        );
+      };
       const waiter: AllocationWaiter = {
         generation: target.generation,
         validations: new Set(),
         ...(onValidation !== undefined ? { onValidation } : {}),
-        resolve,
-        reject,
+        resolve() {
+          cleanUp();
+          resolve();
+        },
+        reject(error) {
+          cleanUp();
+          reject(error);
+        },
         timer: setTimeout(() => {
-          const current = allocationWaiters.get(target.allocationId);
-          current?.delete(waiter);
-          if (current?.size === 0) {
-            allocationWaiters.delete(target.allocationId);
-          }
-          reject(
+          waiter.reject(
             waiter.validationFailure ??
               (waiter.validations.size > 0
                 ? new SidecarIdentityValidationError(
@@ -2973,7 +4618,7 @@ export function createSidecarRouter(
                     `Timed out waiting for allocated sidecar ${target.allocationId} generation ${String(target.generation)}`,
                   )),
           );
-        }, timeoutMs),
+        }, waitMs),
         ...(validationFailure !== undefined ? { validationFailure } : {}),
       };
       let waiters = allocationWaiters.get(target.allocationId);
@@ -2982,6 +4627,7 @@ export function createSidecarRouter(
         allocationWaiters.set(target.allocationId, waiters);
       }
       waiters.add(waiter);
+      signal?.addEventListener("abort", onAbort, { once: true });
       void notifyAllocationWaiters(target.allocationId);
     });
   }
@@ -2997,7 +4643,13 @@ export function createSidecarRouter(
         `Workflow step ${stepAddress} is already routed to another sidecar`,
       );
     }
-    conn.workflowAddresses.add(stepAddress);
+    const owner = conn.workflowAddresses.get(stepAddress);
+    if (owner !== undefined && owner !== target.allocationId) {
+      throw new Error(
+        `Workflow step ${stepAddress} is already routed to allocation ${owner}`,
+      );
+    }
+    conn.workflowAddresses.set(stepAddress, target.allocationId);
     addressIndex.set(stepAddress, ws);
   }
 
@@ -3013,7 +4665,10 @@ export function createSidecarRouter(
       return;
     }
     if (addressIndex.get(stepAddress) !== current.ws) return;
-    connections.get(current.ws)?.workflowAddresses.delete(stepAddress);
+    const conn = connections.get(current.ws);
+    if (conn?.workflowAddresses.get(stepAddress) !== target.allocationId)
+      return;
+    conn.workflowAddresses.delete(stepAddress);
     addressIndex.delete(stepAddress);
   }
 
@@ -3024,12 +4679,13 @@ export function createSidecarRouter(
     ws: WsHandle,
     conn: SidecarConnection,
     agentAddress: string,
+    generation: number,
     pack: Uint8Array,
     ref: string,
     commitSha: string,
     options?: SendPackOptions,
   ): Promise<void> {
-    const transferId = `pack-${++packCounter}`;
+    const transferId = `pack-${crypto.randomUUID()}`;
     // For the agent-state flow the destination agent and the source repo
     // are the same entity, so `repoId.id === agentAddress`. Asset packs
     // override this with the SOURCE asset's id so audit can correlate
@@ -3062,6 +4718,7 @@ export function createSidecarRouter(
         conn.send({
           type: "repo.pack.push",
           agentAddress,
+          generation,
           repoId,
           transferId,
           seq: chunk.seq,
@@ -3073,6 +4730,7 @@ export function createSidecarRouter(
       conn.send({
         type: "repo.pack.done",
         agentAddress,
+        generation,
         repoId,
         transferId,
         ref,
@@ -3091,20 +4749,32 @@ export function createSidecarRouter(
     options?: SendPackOptions,
   ): Promise<void> {
     const { ws, conn } = await getAllocatedConnection(target, "routing");
-    if (addressIndex.get(agentAddress) !== ws) {
+    if (
+      addressIndex.get(agentAddress) !== ws ||
+      conn.workflowAddresses.get(agentAddress) !== target.allocationId
+    ) {
       throw new Error(
         `Address ${agentAddress} is not routed on allocation ${target.allocationId}`,
       );
     }
-    return sendPackOnConnection(
-      ws,
-      conn,
-      agentAddress,
-      pack,
-      ref,
-      commitSha,
-      options,
-    );
+    let transfer: Promise<void> | undefined;
+    await withWorkflowWorkAdmission(ws, conn, agentAddress, () => {
+      transfer = sendPackOnConnection(
+        ws,
+        conn,
+        agentAddress,
+        target.generation,
+        pack,
+        ref,
+        commitSha,
+        options,
+      );
+      // The acknowledgement can reject before admission's transaction ends.
+      void transfer.catch(() => undefined);
+      return true;
+    });
+    if (transfer === undefined) throw new Error("Workflow pack was not sent");
+    return transfer;
   }
 
   async function sendWorkflowRunPackToAllocation(
@@ -3116,27 +4786,48 @@ export function createSidecarRouter(
     signal?: AbortSignal,
   ): Promise<void> {
     signal?.throwIfAborted();
-    const { ws, conn } = await getAllocatedConnection(target, "routing");
+    const { ws, conn, binding } = await getAllocatedConnection(
+      target,
+      "routing",
+    );
     signal?.throwIfAborted();
-    if (agentAddress !== conn.identity.workflowRunAddress) {
+    if (agentAddress !== binding.workflowRunAddress) {
       throw new Error(
         `Allocation ${target.allocationId} cannot restore unrelated address ${agentAddress}`,
       );
     }
-    if (conn.workflowAddresses.has(agentAddress)) {
-      throw new Error(
-        `Allocation ${target.allocationId} already hosts active workflow ${agentAddress}; refusing to overwrite its run history`,
-      );
-    }
-    return sendPackOnConnection(ws, conn, agentAddress, pack, ref, commitSha, {
-      repoId: {
-        kind: "workflow-run",
-        id: deriveWorkflowRunRepoId(agentAddress),
+    let transfer: Promise<void> | undefined;
+    await withAllocationWorkAdmission(
+      ws,
+      binding,
+      () => {
+        if (conn.workflowAddresses.has(agentAddress)) {
+          throw new Error(
+            `Allocation ${target.allocationId} already hosts active workflow ${agentAddress}; refusing to overwrite its run history`,
+          );
+        }
+        transfer = sendPackOnConnection(
+          ws,
+          conn,
+          agentAddress,
+          target.generation,
+          pack,
+          ref,
+          commitSha,
+          { repoId: workflowRunRepoIdForAddress(agentAddress) },
+        );
+        // The acknowledgement can reject before admission's transaction ends.
+        void transfer.catch(() => undefined);
+        return true;
       },
-    });
+      signal,
+    );
+    if (transfer === undefined)
+      throw new Error("Workflow restore was not sent");
+    return transfer;
   }
 
-  function routeMail(
+  async function routeMail(
     agentAddress: string,
     rawMessage: string,
     authenticatedSender: string,
@@ -3146,7 +4837,7 @@ export function createSidecarRouter(
       stepGrants: RunGrantsFrame["stepGrants"];
       senderIdentities?: RunGrantsFrame["senderIdentities"];
     },
-  ): boolean {
+  ): Promise<boolean> {
     // `authenticatedSender` is hub-assigned by the caller from a hub-verified
     // value (the ownership-gated sender of a relayed mail, or the triggering
     // principal's address) -- never the message's own MIME `From`. It rides
@@ -3162,17 +4853,37 @@ export function createSidecarRouter(
     // Optional: the workflow-trigger and session-conversation callers supply
     // it (they participate in the ack/retry handshake); a caller without a
     // hub-minted id omits it and the delivery is not tracked for redelivery.
-    const frame: HubFrame = {
+    const routed = routedIncarnation(agentAddress);
+    if (routed === undefined) return false;
+    const { ws, conn, binding } = routed;
+    const frame: MailInboundFrame = {
       type: "mail.inbound",
       agentAddress,
+      generation: binding.generation,
       rawMessage,
       authenticatedSender,
       ...(messageId !== undefined ? { messageId } : {}),
     };
-    const ws = addressIndex.get(agentAddress);
-    if (ws !== undefined) {
-      const conn = connections.get(ws);
-      if (conn !== undefined) {
+    const grantsFrame: HubFrame | undefined =
+      runGrants === undefined
+        ? undefined
+        : {
+            type: "run.grants",
+            agentAddress,
+            generation: binding.generation,
+            runId: runGrants.runId,
+            stepGrants: runGrants.stepGrants,
+            ...(runGrants.senderIdentities !== undefined
+              ? { senderIdentities: runGrants.senderIdentities }
+              : {}),
+          };
+    const target = {
+      allocationId: binding.allocationId,
+      generation: binding.generation,
+    };
+    try {
+      return await withWorkflowWorkAdmission(ws, conn, agentAddress, () => {
+        if (grantsFrame !== undefined) conn.send(grantsFrame);
         conn.send(frame);
         // Track the delivery for redelivery until the sidecar acks its durable
         // inbox write. Only mail carrying a hub-minted messageId participates
@@ -3181,14 +4892,37 @@ export function createSidecarRouter(
         // run carries the run's grants so redelivery can replay them ahead of
         // the mail.
         if (messageId !== undefined) {
-          trackPendingMail(agentAddress, messageId, frame, runGrants);
+          trackPendingMail(
+            agentAddress,
+            messageId,
+            frame,
+            target,
+            false,
+            runGrants,
+          );
         }
         return true;
-      }
+      });
+    } catch (error) {
+      if (error instanceof WorkflowRunNotExecutableError) throw error;
+      logger.warn`Mail admission failed for ${agentAddress}: ${error instanceof Error ? error.message : String(error)}`;
+      if (messageId === undefined) return false;
+      // Admission may have awaited a disconnect and missed handleClose's
+      // pending-mail retention. Record the mail now, then either retry on
+      // the current owner or retain it for the next verified reconnect.
+      trackPendingMail(
+        agentAddress,
+        messageId,
+        frame,
+        target,
+        false,
+        runGrants,
+      );
+      const current = addressIndex.get(agentAddress);
+      if (current === undefined || !connections.has(current))
+        retainPendingMailForAddress(agentAddress);
+      return true;
     }
-
-    // If the agent recently disconnected, queue for delivery on reconnect.
-    return enqueueForDisconnected(agentAddress, frame);
   }
 
   function sendRunGrants(
@@ -3197,33 +4931,17 @@ export function createSidecarRouter(
     stepGrants: RunGrantsFrame["stepGrants"],
     senderIdentities: RunGrantsFrame["senderIdentities"],
   ): boolean {
-    const frame: HubFrame = {
+    const routed = routedIncarnation(agentAddress);
+    if (routed === undefined) return false;
+    routed.conn.send({
       type: "run.grants",
       agentAddress,
+      generation: routed.binding.generation,
       runId,
       stepGrants,
       ...(senderIdentities !== undefined ? { senderIdentities } : {}),
-    };
-
-    const ws = addressIndex.get(agentAddress);
-    if (ws !== undefined) {
-      const conn = connections.get(ws);
-      if (conn !== undefined) {
-        conn.send(frame);
-        return true;
-      }
-    }
-
-    // Mirror routeMail: if the address has a live disconnect queue, ride it
-    // so a run.grants issued in the window between deploy and the first
-    // reconnect survives the same way the dispatching trigger mail does.
-    // A queue exists only while the deployment address is still on
-    // agentAddresses (pre-first-reconnect); after an authenticated reconnect it
-    // moves to workflowAddresses, which handleClose leaves unqueued because
-    // that generation's in-flight run state is reconstructed sidecar-locally.
-    // Returning without enqueueing there is correct; enqueueing is what keeps
-    // grants and mail from diverging in the pre-reconnect window.
-    return enqueueForDisconnected(agentAddress, frame);
+    });
+    return true;
   }
 
   async function sendWorkflowRunDispatchToAllocation(
@@ -3239,7 +4957,10 @@ export function createSidecarRouter(
     signal?.throwIfAborted();
     const { ws, conn } = await getAllocatedConnection(target, "routing");
     signal?.throwIfAborted();
-    if (addressIndex.get(agentAddress) !== ws) {
+    if (
+      addressIndex.get(agentAddress) !== ws ||
+      conn.workflowAddresses.get(agentAddress) !== target.allocationId
+    ) {
       throw new Error(
         `Address ${agentAddress} is not routed on allocation ${target.allocationId}`,
       );
@@ -3279,42 +5000,86 @@ export function createSidecarRouter(
       stepGrants,
       ...(senderIdentities !== undefined ? { senderIdentities } : {}),
     };
-    conn.send({
-      type: "run.grants",
-      agentAddress,
-      runId,
-      stepGrants,
-      ...(senderIdentities !== undefined ? { senderIdentities } : {}),
-    });
-    const frame: HubFrame = {
+    const frame: MailInboundFrame = {
       type: "mail.inbound",
       agentAddress,
+      generation: target.generation,
       rawMessage,
       authenticatedSender,
       messageId,
     };
-    conn.send(frame);
-    trackPendingMail(agentAddress, messageId, frame, runGrants, target);
+    await withWorkflowWorkAdmission(
+      ws,
+      conn,
+      agentAddress,
+      () => {
+        conn.send({
+          type: "run.grants",
+          agentAddress,
+          generation: target.generation,
+          ...runGrants,
+        });
+        conn.send(frame);
+        trackPendingMail(
+          agentAddress,
+          messageId,
+          frame,
+          target,
+          true,
+          runGrants,
+        );
+        return true;
+      },
+      signal,
+    );
+  }
+
+  // The deploy in flight for a reply's address on this connection, when the
+  // reply answers it: the one with the reply's request id and generation.
+  function deployAnsweredBy(
+    ws: WsHandle,
+    frame: AgentDeployAckFrame | AgentDeployErrorFrame,
+  ):
+    | PendingEntry<string, string, PendingDeploy, DeploymentRejectedError>
+    | undefined {
+    const req = pendingDeploys.get(frame.agentAddress);
+    return req?.ws === ws &&
+      req.meta.requestId === frame.requestId &&
+      req.meta.generation === frame.generation
+      ? req
+      : undefined;
   }
 
   async function handleDeployAck(
     ws: WsHandle,
     frame: AgentDeployAckFrame,
   ): Promise<void> {
-    const req = pendingDeploys.get(frame.agentAddress);
+    connections.get(ws)?.unansweredDeploys.delete(frame.requestId);
+    const req = deployAnsweredBy(ws, frame);
     if (req === undefined) {
-      logger.warn`Received agent.deploy.ack for "${frame.agentAddress}" with no pending deploy`;
+      logger.warn`Ignoring agent.deploy.ack ${frame.requestId} for ${frame.agentAddress} generation ${String(frame.generation)}: it answers no deploy in flight on this connection`;
       return;
     }
-    if (req.ws !== ws) return;
+    // The listeners below are awaited, and the deploy this ack answers can be
+    // settled meanwhile (a timeout, the allocation leaving) and the address
+    // deployed again. Only the deploy the ack answers may be settled by it.
+    const stillAnswered = (): boolean => {
+      if (pendingDeploys.get(frame.agentAddress) === req) return true;
+      logger.warn`Dropping agent.deploy.ack ${frame.requestId} for ${frame.agentAddress} generation ${String(frame.generation)}: its deploy was settled while the ack's listeners ran`;
+      return false;
+    };
 
     if (events.listenerCount("agent.deploy.ack") > 0) {
       try {
-        const identity = connections.get(ws)?.identity;
+        const conn = connections.get(ws);
+        const identity =
+          conn === undefined
+            ? undefined
+            : owningAllocation(conn, frame.agentAddress);
         await events.emitAndAwait("agent.deploy.ack", {
           agentAddress: frame.agentAddress,
           publicKey: frame.publicKey,
-          ...(identity?.kind === "allocated"
+          ...(identity !== undefined
             ? {
                 allocated: {
                   allocationId: identity.allocationId,
@@ -3325,31 +5090,39 @@ export function createSidecarRouter(
             : {}),
         });
       } catch (err) {
+        if (!stillAnswered()) return;
         pendingDeploys.reject(
           frame.agentAddress,
           `Failed to store public key: ${err instanceof Error ? err.message : String(err)}`,
         );
         return;
       }
+      if (!stillAnswered()) return;
     }
     pendingDeploys.resolve(frame.agentAddress, frame.publicKey);
   }
 
   function rejectDeployPendingFromFrame(
     ws: WsHandle,
-    agentAddress: string,
-    error: string,
+    frame: AgentDeployErrorFrame,
   ): void {
-    const req = pendingDeploys.get(agentAddress);
-    if (req === undefined || req.ws !== ws) return;
-    // Settle by key, not by the `req` object: a key lookup observes the
-    // CURRENT entry, so a stale handle cannot settle a replaced round-trip.
-    pendingDeploys.reject(agentAddress, error);
+    connections.get(ws)?.unansweredDeploys.delete(frame.requestId);
+    if (deployAnsweredBy(ws, frame) === undefined) {
+      logger.warn`Ignoring agent.deploy.error ${frame.requestId} for ${frame.agentAddress} generation ${String(frame.generation)}: it answers no deploy in flight on this connection: ${frame.error.code}: ${frame.error.message}`;
+      return;
+    }
+    pendingDeploys.reject(
+      frame.agentAddress,
+      frame.error.code === "capacity_full"
+        ? new DeploymentRejectedError(frame.error.code, frame.error.message)
+        : frame.error.message,
+    );
   }
 
   function sendAgentDeployOnConnection(
     ws: WsHandle,
     conn: SidecarConnection,
+    target: AllocatedSidecarTarget,
     agentAddress: string,
     harnessConfig: HarnessConfig,
     workflow?: AgentDeployFrame["workflow"],
@@ -3368,75 +5141,64 @@ export function createSidecarRouter(
       );
     }
 
-    const addressSet =
-      conn.identity.kind === "allocated"
-        ? conn.workflowAddresses
-        : conn.agentAddresses;
-    addressSet.add(agentAddress);
+    conn.workflowAddresses.set(agentAddress, target.allocationId);
     addressIndex.set(agentAddress, ws);
 
-    return new Promise<{ publicKey: string }>((resolve, reject) => {
-      // Timeout and frame-error rejections share this closure, so the routing
-      // rollback and the `frameSent: true` tag live in one place.
-      pendingDeploys.register(
-        agentAddress,
-        ws,
-        {
-          timeoutMs: requestTimeoutMs,
-          timeoutMessage: `Deploy of "${agentAddress}" timed out after ${requestTimeoutMs}ms`,
-          resolve(publicKey) {
-            resolve({ publicKey });
-          },
-          reject(error: string) {
-            if (addressIndex.get(agentAddress) === ws) {
-              addressSet.delete(agentAddress);
-              addressIndex.delete(agentAddress);
-            }
-            // A non-allocated deployment's key is recorded by the deploy-ack
-            // projection, whose failure (reject/timeout/agent.error/disconnect)
-            // is observed only here. Drain any pre-ack sender mail parked on
-            // this address so it surfaces as undelivered rather than waiting out
-            // the TTL. An allocated deployment's failure is drained by its
-            // session-service owner instead, so skip it here to keep one owner
-            // per case.
-            if (conn.identity.kind !== "allocated") {
-              drainDeferredSenderMail(agentAddress, `deploy failed: ${error}`);
-            }
-            reject(deployFrameFailure(error, true));
-          },
+    const requestId = nextRequestId();
+    const response = Promise.withResolvers<{ publicKey: string }>();
+    // Every failure removes the provisional route. Only an explicit rejection
+    // proves the sidecar did not start; other replies and timeouts stay uncertain.
+    pendingDeploys.register(
+      agentAddress,
+      ws,
+      {
+        timeoutMs: requestTimeoutMs,
+        timeoutMessage: `Deploy of "${agentAddress}" timed out after ${requestTimeoutMs}ms`,
+        resolve(publicKey) {
+          response.resolve({ publicKey });
         },
-        undefined,
-      );
+        reject(error) {
+          if (addressIndex.get(agentAddress) === ws) {
+            conn.workflowAddresses.delete(agentAddress);
+            addressIndex.delete(agentAddress);
+          }
+          // The deployment's owner settles any pre-ack sender mail parked on
+          // this address once it knows the outcome.
+          response.reject(
+            typeof error === "string" ? deployFrameFailure(error, true) : error,
+          );
+        },
+      },
+      { requestId, generation: target.generation },
+    );
 
-      try {
-        conn.send({
-          type: "agent.deploy",
-          agentAddress,
-          agentId: harnessConfig.agentId,
-          config: harnessConfig,
-          hubPublicKey: hubPublicKeyHex,
-          ...(workflow !== undefined ? { workflow } : {}),
-        });
-      } catch (err) {
-        // A synchronous send failure means the frame never reached the wire.
-        // Drop the pending entry (and its armed timer) and reject as not-sent
-        // so a caller may safely roll back what it staged. The drop bypasses
-        // the entry's reject closure: this failure must report
-        // `frameSent: false`, and the timer must not fire later and
-        // double-reject.
-        pendingDeploys.delete(agentAddress);
-        if (addressIndex.get(agentAddress) === ws) {
-          addressSet.delete(agentAddress);
-          addressIndex.delete(agentAddress);
-        }
-        reject(
-          deployFrameFailure(
-            `Deploy of "${agentAddress}" failed to send: ${err instanceof Error ? err.message : String(err)}`,
-            false,
-          ),
-        );
+    try {
+      conn.send({
+        type: "agent.deploy",
+        requestId,
+        agentAddress,
+        generation: target.generation,
+        agentId: harnessConfig.agentId,
+        config: harnessConfig,
+        hubPublicKey: hubPublicKeyHex,
+        ...(workflow !== undefined ? { workflow } : {}),
+      });
+      conn.unansweredDeploys.set(requestId, agentAddress);
+    } catch (cause) {
+      // Throw synchronously on a proven-unsent frame. Returning the response
+      // promise below is the caller's evidence that the send took place.
+      pendingDeploys.delete(agentAddress);
+      if (addressIndex.get(agentAddress) === ws) {
+        conn.workflowAddresses.delete(agentAddress);
+        addressIndex.delete(agentAddress);
       }
-    });
+      throw deployFrameFailure(
+        `Deploy of "${agentAddress}" failed to send: ${cause instanceof Error ? cause.message : String(cause)}`,
+        false,
+        cause,
+      );
+    }
+    return response.promise;
   }
 
   async function sendAgentDeployToAllocation(
@@ -3447,11 +5209,15 @@ export function createSidecarRouter(
     signal?: AbortSignal,
     beforeSend?: () => Promise<void>,
   ): Promise<{ publicKey: string }> {
+    let response: Promise<{ publicKey: string }> | undefined;
     try {
       signal?.throwIfAborted();
-      const { ws, conn } = await getAllocatedConnection(target, "routing");
+      const { ws, conn, binding } = await getAllocatedConnection(
+        target,
+        "routing",
+      );
       signal?.throwIfAborted();
-      if (agentAddress !== conn.identity.workflowRunAddress) {
+      if (agentAddress !== binding.workflowRunAddress) {
         throw new Error(
           `Allocation ${target.allocationId} cannot deploy unrelated address ${agentAddress}`,
         );
@@ -3468,31 +5234,42 @@ export function createSidecarRouter(
         throw new Error(
           `Deploy already in progress for agent "${agentAddress}"`,
         );
-      await beforeSend?.();
+      // The sidecar may still be tearing down a copy of this address it was
+      // told to undeploy, and anything that copy sends names the same address.
+      // Routing the address back before the answer would credit it all here.
+      await undeployAnswered(conn, agentAddress, signal);
       signal?.throwIfAborted();
-      if (
-        allocatedConnections.get(target.allocationId)?.ws !== ws ||
-        allocationFences.get(target.allocationId) !== target.generation
-      ) {
-        throw new Error(
-          `Allocated sidecar connection changed for allocation ${target.allocationId}`,
-        );
-      }
-      // Return without awaiting: only pre-send failures belong to this catch.
-      return sendAgentDeployOnConnection(
+      await beforeSend?.();
+      await withAllocationWorkAdmission(
         ws,
-        conn,
-        agentAddress,
-        harnessConfig,
-        workflow,
+        binding,
+        () => {
+          response = sendAgentDeployOnConnection(
+            ws,
+            conn,
+            target,
+            agentAddress,
+            harnessConfig,
+            workflow,
+          );
+          // Own an early ack rejection while the admission transaction ends.
+          void response.catch(() => undefined);
+          return true;
+        },
+        signal,
       );
+      if (response === undefined)
+        throw new Error("Workflow deploy was not sent");
     } catch (cause) {
+      // A failed transaction response cannot roll back a frame already sent.
       throw deployFrameFailure(
         cause instanceof Error ? cause.message : String(cause),
-        false,
+        response !== undefined,
         cause,
       );
     }
+    // Never hold the lifecycle locks while waiting for the worker's reply.
+    return response;
   }
 
   /**
@@ -3504,14 +5281,15 @@ export function createSidecarRouter(
    * step is provisioned, spawns the child.
    *
    * The step address must already be bound via `bindStepRoute`, which
-   * resolves and records the sidecar; this reuses that route rather than
-   * touching `agentAddresses`. Waits for the sidecar's `agent.deploy.ack`
+   * resolves and records the sidecar; this reuses that route. Waits for the
+   * sidecar's `agent.deploy.ack`
    * so the caller can safely deliver the deploy pack afterward. On failure
    * the caller owns tearing the route down via `unbindStepRoute`.
    */
   function sendProvisionStepOnConnection(
     ws: WsHandle,
     conn: SidecarConnection,
+    generation: number,
     agentAddress: string,
     harnessConfig: HarnessConfig,
   ): Promise<void> {
@@ -3523,6 +5301,7 @@ export function createSidecarRouter(
     }
 
     const hubKey = hubPublicKeyHex;
+    const requestId = nextRequestId();
     return new Promise<void>((resolve, reject) => {
       // The sidecar's `agent.deploy.ack` resolves this through
       // `pendingDeploys.resolve`. The per-step address is workflow-derived
@@ -3537,21 +5316,24 @@ export function createSidecarRouter(
           resolve(_publicKey) {
             resolve();
           },
-          reject(error: string) {
-            reject(new Error(error));
+          reject(error) {
+            reject(typeof error === "string" ? new Error(error) : error);
           },
         },
-        undefined,
+        { requestId, generation },
       );
 
       conn.send({
         type: "agent.deploy",
+        requestId,
         agentAddress,
+        generation,
         agentId: harnessConfig.agentId,
         config: harnessConfig,
         hubPublicKey: hubKey,
         provisionStep: true,
       });
+      conn.unansweredDeploys.set(requestId, agentAddress);
     });
   }
 
@@ -3561,17 +5343,36 @@ export function createSidecarRouter(
     harnessConfig: HarnessConfig,
   ): Promise<void> {
     const { ws, conn } = await getAllocatedConnection(target, "routing");
-    if (addressIndex.get(agentAddress) !== ws) {
+    if (
+      addressIndex.get(agentAddress) !== ws ||
+      conn.workflowAddresses.get(agentAddress) !== target.allocationId
+    ) {
       throw new Error(
         `Step route ${agentAddress} is not bound to allocation ${target.allocationId}`,
       );
     }
-    return sendProvisionStepOnConnection(ws, conn, agentAddress, harnessConfig);
+    let provisioned: Promise<void> | undefined;
+    await withWorkflowWorkAdmission(ws, conn, agentAddress, () => {
+      provisioned = sendProvisionStepOnConnection(
+        ws,
+        conn,
+        target.generation,
+        agentAddress,
+        harnessConfig,
+      );
+      // The acknowledgement can reject before admission's transaction ends.
+      void provisioned.catch(() => undefined);
+      return true;
+    });
+    if (provisioned === undefined)
+      throw new Error("Workflow step was not provisioned");
+    return provisioned;
   }
 
   function sendProbeOnConnection(
     ws: WsHandle,
     conn: SidecarConnection,
+    probeId: string,
     args: SendProbeArgs,
   ): Promise<WorkflowProbeResult> {
     const requestId = nextRequestId();
@@ -3588,7 +5389,7 @@ export function createSidecarRouter(
             reject(new Error(error));
           },
         },
-        undefined,
+        probeId,
       );
 
       conn.send({
@@ -3607,121 +5408,10 @@ export function createSidecarRouter(
     args: SendProbeArgs,
   ): Promise<WorkflowProbeResult> {
     const { ws, conn } = await getProvisionedConnection(target, "routing");
-    return sendProbeOnConnection(ws, conn, args);
+    return sendProbeOnConnection(ws, conn, target.allocationId, args);
   }
 
-  function settleOAuthLoginError(
-    requestId: string,
-    entry: PendingOAuthLogin,
-    message: string,
-  ): void {
-    entry.resolveFinal({ status: "error", message });
-    if (!entry.requestSettled) {
-      entry.requestSettled = true;
-      entry.resolveRequest({ status: "error", message });
-    }
-  }
-
-  function settleOAuthLogin(
-    requestId: string,
-    outcome: OAuthLoginResultFrame["outcome"],
-  ): void {
-    const entry = pendingOAuthLogins.get(requestId);
-    if (entry === undefined) {
-      logger.debug`Received oauth.login.result for uncorrelated ${requestId}`;
-      return;
-    }
-    if (outcome.status === "started") {
-      if (entry.requestSettled) return;
-      entry.requestSettled = true;
-      entry.resolveRequest({
-        status: "started",
-        requestId,
-        authorizeUrl: outcome.authorizeUrl,
-        completed: entry.completed,
-      });
-      return;
-    }
-    clearTimeout(entry.timer);
-    pendingOAuthLogins.delete(requestId);
-    if (outcome.status === "completed") {
-      if (!entry.requestSettled) {
-        // A terminal frame arrived before the started acknowledgement —
-        // settle the request promise so the caller never hangs. This
-        // ordering drops the exchanged tokens: nothing consumes the
-        // completed promise without the started arm, so the person has
-        // to run the login again.
-        entry.requestSettled = true;
-        entry.resolveRequest({
-          status: "error",
-          message: "the login completed before it started",
-        });
-      }
-      entry.resolveFinal({ status: "completed", tokens: outcome.tokens });
-      return;
-    }
-    settleOAuthLoginError(requestId, entry, outcome.message);
-  }
-
-  async function requestOAuthLogin(args: {
-    connectorId: "codex" | "xai-oauth";
-  }): Promise<OAuthLoginRequestOutcome> {
-    const gate = config.oauthLogin;
-    let target: { ws: WsHandle; conn: SidecarConnection } | undefined;
-    for (const [ws, conn] of connections) {
-      if (gate !== undefined && (await gate.isLocalSidecar(conn.identity))) {
-        target = { ws, conn };
-        break;
-      }
-    }
-    if (target === undefined || gate === undefined) {
-      return {
-        status: "gate",
-        message:
-          "Connecting this provider requires a local sidecar — its login opens a pinned loopback port (codex: localhost:1455, xai-oauth: 127.0.0.1:1456) on the machine you are browsing from, and no connected sidecar is local to this hub.",
-      };
-    }
-    const targetWs = target.ws;
-    const targetConn = target.conn;
-
-    const timeoutMs = gate.timeoutMs ?? DEFAULT_OAUTH_LOGIN_TIMEOUT_MS;
-    const requestId = nextRequestId();
-    return new Promise<OAuthLoginRequestOutcome>((resolveRequest) => {
-      let resolveCompleted!: (outcome: OAuthLoginFinalOutcome) => void;
-      const completed = new Promise<OAuthLoginFinalOutcome>((resolve) => {
-        resolveCompleted = resolve;
-      });
-      const entry: PendingOAuthLogin = {
-        ws: targetWs,
-        conn: targetConn,
-        requestSettled: false,
-        resolveRequest,
-        resolveFinal: resolveCompleted,
-        completed,
-        timer: setTimeout(() => {
-          pendingOAuthLogins.delete(requestId);
-          // Tell the sidecar to tear its callback listener down: the hub
-          // gave up, and an abandoned pinned-port bind would make every
-          // retry of this connector fail to bind until the stale login
-          // completes or the sidecar restarts.
-          targetConn.send({ type: "oauth.login.cancel", requestId });
-          settleOAuthLoginError(
-            requestId,
-            entry,
-            `the login timed out after ${String(timeoutMs)}ms`,
-          );
-        }, timeoutMs),
-      };
-      pendingOAuthLogins.set(requestId, entry);
-      targetConn.send({
-        type: "oauth.login.start",
-        requestId,
-        connectorId: args.connectorId,
-      });
-    });
-  }
-
-  function disconnectAllocation(target: AllocatedSidecarTarget): void {
+  function detachAllocation(target: AllocatedSidecarTarget): void {
     const current = allocatedConnections.get(target.allocationId);
     if (
       current === undefined ||
@@ -3729,62 +5419,544 @@ export function createSidecarRouter(
     ) {
       return;
     }
-    handleClose(current.ws);
-    current.ws.close();
+    detachBinding(current.ws, target.allocationId, "It was released", {
+      undeploy: true,
+    });
+  }
+
+  async function handleWorkflowControlAck(
+    ws: WsHandle,
+    frame: WorkflowControlAckFrame,
+  ): Promise<void> {
+    const entry = pendingWorkflowControls.get(frame.requestId);
+    if (entry === undefined || entry.ws !== ws) return;
+    const fail = (error: Error) => {
+      pendingWorkflowControls.delete(frame.requestId);
+      entry.meta.fail(error);
+    };
+    try {
+      const current = await getAllocatedConnection(
+        entry.meta,
+        entry.meta.terminal ? "retention-transition" : "routing",
+      );
+      if (current.ws !== ws) return;
+    } catch (cause) {
+      // A failed lookup leaves the stop unknown, not refused. The caller
+      // retries, and the worker acknowledges a repeated stop.
+      fail(
+        cause instanceof SidecarIdentityValidationError
+          ? cause
+          : new WorkflowControlUnreachableError(
+              "Workflow control allocation changed",
+              cause,
+            ),
+      );
+      return;
+    }
+    if (pendingWorkflowControls.get(frame.requestId) !== entry) return;
+    if (frame.error !== undefined)
+      fail(
+        frame.error === WORKFLOW_CONTROL_INITIALIZING_ERROR
+          ? new WorkflowControlInitializingError()
+          : new WorkflowControlRejectedError(frame.error),
+      );
+    else {
+      if (entry.meta.action === "retain") {
+        if (frame.retention === undefined) {
+          fail(new WorkflowControlRejectedError("Retention was not confirmed"));
+          return;
+        }
+        // A durable kept decision frees active capacity independently of the
+        // earlier history receives that may still be settling on the Hub.
+        const retained = connectionRetention.get(ws) ?? new Map();
+        retained.set(entry.meta.agentAddress, {
+          generation: entry.meta.generation,
+          retention: frame.retention,
+        });
+        connectionRetention.set(ws, retained);
+        removeRoute(ws, entry.meta.agentAddress);
+      }
+      if (entry.meta.action === "stop" || entry.meta.action === "retain") {
+        // A live stop waits for the worker's tips. Terminal controls follow the
+        // admission cutoff instead: later history cannot change an ended run.
+        // Both wait for earlier accepted writes before fencing further packs.
+        let unreceived: string | null = null;
+        let unreceivedCause: unknown;
+        if (
+          stoppedAllocations.get(entry.meta.allocationId) !==
+          entry.meta.generation
+        ) {
+          if (entry.meta.terminal) {
+            unreceived = "the Hub has not finalized the terminal run's history";
+            if (lookups.isWorkflowRunHistoryFinal !== undefined) {
+              try {
+                if (
+                  await lookups.isWorkflowRunHistoryFinal({
+                    kind: "allocated",
+                    allocationId: entry.meta.allocationId,
+                    anchorRunId: entry.meta.runId,
+                    agentAddress: entry.meta.agentAddress,
+                    generation: entry.meta.generation,
+                  })
+                )
+                  unreceived = null;
+              } catch (cause) {
+                unreceived = `the Hub cannot confirm final history: ${cause instanceof Error ? cause.message : String(cause)}`;
+                unreceivedCause = cause;
+              }
+            }
+          } else {
+            unreceived = await findUnreceivedWorkflowHistory(
+              entry.meta.agentAddress,
+              frame.refTips,
+            );
+          }
+        }
+        // History lookup can outlive the request, connection, or release fence.
+        if (pendingWorkflowControls.get(frame.requestId) !== entry) return;
+        const current = allocatedConnections.get(entry.meta.allocationId);
+        if (
+          current?.ws !== ws ||
+          current.identity.generation !== entry.meta.generation ||
+          !isFencedAsCurrent(current.identity)
+        ) {
+          fail(
+            new WorkflowControlUnreachableError(
+              "Workflow control allocation changed",
+            ),
+          );
+          return;
+        }
+        if (unreceived !== null) {
+          fail(
+            new WorkflowControlHistoryPendingError(
+              unreceived,
+              unreceivedCause === undefined
+                ? undefined
+                : { cause: unreceivedCause },
+            ),
+          );
+          return;
+        }
+        stoppedAllocations.set(entry.meta.allocationId, entry.meta.generation);
+        removeRoute(ws, entry.meta.agentAddress);
+      }
+      pendingWorkflowControls.resolve(
+        frame.requestId,
+        entry.meta.action === "retain" ? frame.retention : undefined,
+      );
+    }
+  }
+
+  // A stop keeps its first error and when it was first reported, whichever
+  // connection or frame carries it later, so a reconnect cannot restart the
+  // wait for its history. The tips are the latest the sidecar reported.
+  function noteReportedStop(
+    binding: Extract<SidecarAuthIdentity, { kind: "allocated" }>,
+    error: string,
+    refTips?: WorkflowRunRefTips,
+  ): void {
+    const previous = reportedStops.get(binding.allocationId);
+    const first =
+      previous?.generation === binding.generation ? previous : undefined;
+    const tips = refTips ?? first?.refTips;
+    reportedStops.set(binding.allocationId, {
+      generation: binding.generation,
+      address: binding.workflowRunAddress,
+      error: first?.error ?? error,
+      reportedAt: first?.reportedAt ?? now(),
+      ...(tips !== undefined ? { refTips: tips } : {}),
+    });
+  }
+
+  // A deployment stopped though the Hub did not stop it. A current
+  // generation's stays unrouted, as a stopped one a hello reports does, and
+  // the reconciler fails it once the Hub holds the history the stopped copy
+  // reported, or once it stops waiting for it. Cleanup bindings leave removal
+  // to the reconciler; any other stopped incarnation is undeployed.
+  function handleDeploymentStopped(
+    ws: WsHandle,
+    frame: DeploymentStoppedFrame,
+  ): void {
+    const conn = connections.get(ws);
+    if (conn === undefined) return;
+    // Cleanup bindings retain access for the reconciler's acknowledged removal.
+    if (
+      [...conn.bindings.values()].some(
+        (binding) =>
+          binding.kind === "cleanup" &&
+          binding.workflowRunAddress === frame.agentAddress &&
+          binding.generation >= frame.generation &&
+          isFencedAsCurrent(binding),
+      )
+    )
+      return;
+    const binding = deploymentBinding(conn, frame.agentAddress);
+    if (
+      binding?.generation !== frame.generation ||
+      !isFencedAsCurrent(binding)
+    ) {
+      sendUndeploy(
+        conn,
+        { address: frame.agentAddress, generation: frame.generation },
+        "The Hub does not keep this incarnation on this sidecar",
+        { waitable: binding !== undefined },
+      );
+      return;
+    }
+    removeRoute(ws, frame.agentAddress);
+    noteReportedStop(binding, frame.error, frame.refTips);
+    events.emit("deployment.stopped", {
+      allocationId: binding.allocationId,
+      generation: binding.generation,
+    });
+  }
+
+  // Describes the first ref whose reported tip the Hub does not hold, or
+  // returns null when the Hub holds the worker's whole history.
+  async function findUnreceivedWorkflowHistory(
+    agentAddress: string,
+    reported: WorkflowRunRefTips | undefined,
+  ): Promise<string | null> {
+    if (reported === undefined) return "the worker did not report its ref tips";
+    if (lookups.readWorkflowRunRefTips === undefined)
+      return "the Hub cannot read workflow history";
+    let received: WorkflowRunRefTips;
+    try {
+      received = await lookups.readWorkflowRunRefTips(agentAddress);
+    } catch (cause) {
+      return `the Hub cannot read workflow history: ${cause instanceof Error ? cause.message : String(cause)}`;
+    }
+    for (const [ref, tip] of Object.entries(received)) {
+      const reportedTip = reported[ref];
+      if (reportedTip !== tip)
+        return `${ref} is at ${tip ?? "no commit"} on the Hub and ${reportedTip ?? "no commit"} on the worker`;
+    }
+    return null;
+  }
+
+  async function sendWorkflowControl(
+    target: AllocatedSidecarTarget,
+    command: WorkflowControlCommand,
+    timeoutMs: number,
+  ): Promise<void> {
+    await requestWorkflowControl(target, command, timeoutMs);
+  }
+
+  async function retainAllocation(
+    target: AllocatedSidecarTarget,
+    timeoutMs: number,
+  ): Promise<DeploymentRetention> {
+    const connection = await getAllocatedConnection(target, "retention");
+    return retainOnConnection(connection, target, timeoutMs);
+  }
+
+  async function retainOnConnection(
+    connection: Awaited<ReturnType<typeof getAllocatedConnection>>,
+    target: AllocatedSidecarTarget,
+    timeoutMs: number,
+  ): Promise<DeploymentRetention> {
+    const { ws, binding } = connection;
+    const confirmed = getAllocationRetention(target);
+    if (
+      confirmed !== undefined &&
+      stoppedAllocations.get(target.allocationId) === target.generation
+    )
+      return confirmed;
+    const held = retainingAllocations.get(target.allocationId);
+    if (held?.ws === ws && held.generation === target.generation)
+      return held.result;
+    const result = sendWorkflowControlOnConnection(
+      connection,
+      target,
+      {
+        runId: binding.anchorRunId,
+        agentAddress: binding.workflowRunAddress,
+        action: "retain",
+        reason: "The deployment ended; retain its stopped copy",
+      },
+      timeoutMs,
+      { terminal: true },
+    ).then((retention) => {
+      if (retention === undefined)
+        throw new WorkflowControlRejectedError("Retention was not confirmed");
+      return retention;
+    });
+    const request = { ws, generation: target.generation, result };
+    retainingAllocations.set(target.allocationId, request);
+    try {
+      return await result;
+    } finally {
+      if (retainingAllocations.get(target.allocationId) === request)
+        retainingAllocations.delete(target.allocationId);
+    }
+  }
+
+  async function requestWorkflowControl(
+    target: AllocatedSidecarTarget,
+    command: WorkflowControlCommand,
+    timeoutMs: number,
+  ): Promise<DeploymentRetention | undefined> {
+    let connection: Awaited<ReturnType<typeof getAllocatedConnection>>;
+    try {
+      connection = await getAllocatedConnection(target, "routing");
+    } catch (cause) {
+      if (cause instanceof SidecarIdentityValidationError) throw cause;
+      throw new WorkflowControlUnreachableError(
+        cause instanceof Error ? cause.message : String(cause),
+        cause,
+      );
+    }
+    return sendWorkflowControlOnConnection(
+      connection,
+      target,
+      command,
+      timeoutMs,
+      { terminal: false },
+    );
+  }
+
+  function sendWorkflowControlOnConnection(
+    connection: Awaited<ReturnType<typeof getAllocatedConnection>>,
+    target: AllocatedSidecarTarget,
+    command: Omit<WorkflowControlFrame, "type" | "requestId" | "generation">,
+    timeoutMs: number,
+    { terminal }: { terminal: boolean },
+  ): Promise<DeploymentRetention | undefined> {
+    const { ws, conn, binding } = connection;
+    if (
+      command.agentAddress !== binding.workflowRunAddress ||
+      command.runId !== binding.anchorRunId
+    ) {
+      throw new Error(
+        "Workflow control does not target the allocation's anchor run",
+      );
+    }
+    const requestId = nextRequestId();
+    const timeoutMessage = `Workflow control ${requestId} timed out`;
+    const unconfirmedMessage = `Workflow control ${requestId} was acknowledged but not processed in time`;
+    return new Promise<DeploymentRetention | undefined>((resolve, reject) => {
+      let cancelProcessing: (() => void) | undefined;
+      const settle = () => {
+        cancelProcessing?.();
+      };
+      pendingWorkflowControls.register(
+        requestId,
+        ws,
+        {
+          timeoutMs,
+          timeoutMessage,
+          resolve: (retention) => {
+            settle();
+            resolve(retention);
+          },
+          // The tracker reports timeouts, disconnect sweeps, send failures,
+          // and the processing limit as strings. Only a timeout shows the live
+          // connection stayed silent.
+          reject: (error) => {
+            settle();
+            reject(
+              error === timeoutMessage
+                ? [...conn.unansweredDeploys.values()].includes(
+                    command.agentAddress,
+                  )
+                  ? new WorkflowControlInitializingError()
+                  : new WorkflowControlTimeoutError(error)
+                : error === unconfirmedMessage
+                  ? new WorkflowControlUnconfirmedError(error)
+                  : new WorkflowControlUnreachableError(error),
+            );
+          },
+        },
+        {
+          ...target,
+          agentAddress: command.agentAddress,
+          runId: command.runId,
+          action: command.action,
+          terminal,
+          fail: (error) => {
+            settle();
+            reject(error);
+          },
+          received: () => {
+            const entry = pendingWorkflowControls.get(requestId);
+            if (entry === undefined || cancelProcessing !== undefined) return;
+            entry.cancelTimeout();
+            cancelProcessing = scheduleTimeout(() => {
+              pendingWorkflowControls.reject(requestId, unconfirmedMessage);
+            }, timeoutMs);
+          },
+        },
+      );
+      try {
+        conn.send({
+          type: "workflow.control",
+          requestId,
+          generation: target.generation,
+          ...command,
+        });
+      } catch (error) {
+        pendingWorkflowControls.reject(
+          requestId,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    });
   }
 
   function sendAgentUndeploy(
     agentAddress: string,
     reason: string,
   ): Promise<void> {
-    const ws = addressIndex.get(agentAddress);
-    if (ws === undefined) {
+    const routed = routedIncarnation(agentAddress);
+    if (routed === undefined) {
       return Promise.reject(
         new Error(`No sidecar connected for agent "${agentAddress}"`),
       );
     }
-    const conn = connections.get(ws);
-    if (conn === undefined) {
-      return Promise.reject(
-        new Error(`No sidecar connected for agent "${agentAddress}"`),
-      );
-    }
+    const { ws, conn, binding } = routed;
+    return requestUndeploy({
+      ws,
+      conn,
+      agentAddress,
+      generation: binding.generation,
+      reason,
+      timeoutMs: requestTimeoutMs,
+    });
+  }
 
+  function getCleanupConnection(
+    target: AllocatedSidecarTarget,
+  ): object | undefined {
+    const current = allocatedConnections.get(target.allocationId);
+    return allocationFences.get(target.allocationId)?.generation ===
+      target.generation &&
+      current?.identity.kind === "cleanup" &&
+      current.identity.generation === target.generation
+      ? current.ws
+      : undefined;
+  }
+
+  async function undeployAllocation(
+    target: AllocatedSidecarTarget,
+    timeoutMs: number,
+    signal: AbortSignal,
+    expectedConnection: object,
+    onSent: () => void,
+  ): Promise<void> {
+    signal.throwIfAborted();
+    const { ws, conn, binding } = await getProvisionedConnection(
+      target,
+      "cleanup",
+    );
+    if (binding.kind !== "cleanup") {
+      throw new Error(
+        `Allocation ${target.allocationId} is not being cleaned up`,
+      );
+    }
+    if (ws !== expectedConnection) {
+      throw new Error("Cleanup connection changed before the request was sent");
+    }
+    await requestUndeploy({
+      ws,
+      conn,
+      agentAddress: binding.workflowRunAddress,
+      generation: binding.generation,
+      reason: "The allocation is being released",
+      timeoutMs,
+      target,
+      signal,
+      onSent,
+    });
+  }
+
+  function requestUndeploy(args: {
+    ws: WsHandle;
+    conn: SidecarConnection;
+    agentAddress: string;
+    generation: number;
+    reason: string;
+    timeoutMs: number;
+    signal?: AbortSignal;
+    target?: AllocatedSidecarTarget;
+    onSent?: () => void;
+  }): Promise<void> {
+    const {
+      ws,
+      conn,
+      agentAddress,
+      generation,
+      reason,
+      timeoutMs,
+      signal,
+      target,
+    } = args;
+    signal?.throwIfAborted();
+    if (pendingUndeploys.has(agentAddress)) {
+      return Promise.reject(
+        new Error(`Undeploy of ${agentAddress} is already pending`),
+      );
+    }
+    const requestId = nextRequestId();
     return new Promise<void>((resolve, reject) => {
-      // Timeout, ack, and error rejection share one closure so the routing
-      // teardown runs exactly once no matter how the round-trip settles.
+      const finish = () => {
+        signal?.removeEventListener("abort", onAbort);
+        if (target === undefined) removeRoute(ws, agentAddress);
+      };
+      const onAbort = () => {
+        if (pendingUndeploys.get(agentAddress)?.meta.requestId !== requestId)
+          return;
+        pendingUndeploys.delete(agentAddress);
+        finish();
+        reject(
+          signal?.reason instanceof Error
+            ? signal.reason
+            : new Error("Cleanup aborted"),
+        );
+      };
       pendingUndeploys.register(
         agentAddress,
         ws,
         {
-          timeoutMs: requestTimeoutMs,
-          timeoutMessage: `Undeploy of "${agentAddress}" timed out after ${requestTimeoutMs}ms`,
+          timeoutMs,
+          timeoutMessage: `Undeploy of "${agentAddress}" timed out after ${timeoutMs}ms`,
           resolve() {
-            removeAgentAddress(ws, agentAddress);
+            finish();
             resolve();
           },
           reject(error: string) {
-            removeAgentAddress(ws, agentAddress);
+            finish();
             reject(new Error(error));
           },
         },
-        undefined,
+        { requestId, generation, ...(target !== undefined ? { target } : {}) },
       );
-
-      conn.send({
-        type: "agent.undeploy",
-        agentAddress,
-        reason,
-      });
+      signal?.addEventListener("abort", onAbort, { once: true });
+      try {
+        conn.send({
+          type: "agent.undeploy",
+          requestId,
+          agentAddress,
+          generation,
+          reason,
+        });
+        args.onSent?.();
+        noteUndeploying(conn, agentAddress, requestId);
+      } catch (error) {
+        pendingUndeploys.reject(
+          agentAddress,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
     });
   }
 
-  function removeAgentAddress(ws: WsHandle, agentAddress: string): void {
-    addressIndex.delete(agentAddress);
-    const conn = connections.get(ws);
-    if (conn !== undefined) {
-      conn.agentAddresses.delete(agentAddress);
+  function removeRoute(ws: WsHandle, agentAddress: string): void {
+    if (addressIndex.get(agentAddress) === ws) {
+      addressIndex.delete(agentAddress);
+      retainPendingMailForAddress(agentAddress);
     }
+    connections.get(ws)?.workflowAddresses.delete(agentAddress);
   }
 
   function dispatchToSubscribers(agentAddress: string, event: unknown): void {
@@ -3838,10 +6010,11 @@ export function createSidecarRouter(
     sources: InferenceSource[],
     defaultSource: string,
   ): Promise<void> {
-    await sendRequest(agentAddress, (requestId) => ({
+    await sendRequest(agentAddress, (requestId, generation) => ({
       type: "sources.update",
       requestId,
       agentAddress,
+      generation,
       sources,
       defaultSource,
     }));
@@ -3852,59 +6025,45 @@ export function createSidecarRouter(
     delivery: CredentialDelivery,
     revoke?: string[],
   ): Promise<void> {
-    await sendRequest(agentAddress, (requestId) => ({
+    await sendRequest(agentAddress, (requestId, generation) => ({
       type: "credentials.update",
       requestId,
       agentAddress,
+      generation,
       delivery,
       ...(revoke !== undefined ? { revoke } : {}),
     }));
   }
 
-  function sendSyncRequest(agentAddress: string): void {
-    const ws = addressIndex.get(agentAddress);
-    if (ws === undefined) {
-      throw new Error(`No sidecar connected for agent "${agentAddress}"`);
-    }
-    const conn = connections.get(ws);
-    if (conn === undefined) {
-      throw new Error(`No sidecar connected for agent "${agentAddress}"`);
-    }
-
-    const transferId = `sync-${++packCounter}`;
-    conn.send({
-      type: "sync.request",
-      agentAddress,
-      transferId,
-    });
-  }
-
-  function sendSignalDeliver(opts: {
+  async function sendSignalDeliver(opts: {
     agentAddress: string;
     runId: string;
     signalName: string;
     signalId: string;
     payload: unknown;
-  }): void {
-    const ws = addressIndex.get(opts.agentAddress);
-    if (ws === undefined) {
+    correlationId?: string;
+  }): Promise<void> {
+    const routed = routedIncarnation(opts.agentAddress);
+    if (routed === undefined) {
       throw new Error(
         `No sidecar connected for deployment "${opts.agentAddress}"`,
       );
     }
-    const conn = connections.get(ws);
-    if (conn === undefined) {
-      throw new Error(
-        `No sidecar connected for deployment "${opts.agentAddress}"`,
-      );
-    }
-    conn.send({
-      type: "signal.deliver",
-      agentAddress: opts.agentAddress,
-      runId: opts.runId,
-      signalName: opts.signalName,
-      signalId: opts.signalId,
-      payload: opts.payload,
+    const { ws, conn, binding } = routed;
+    await withWorkflowWorkAdmission(ws, conn, opts.agentAddress, () => {
+      conn.send({
+        type: "signal.deliver",
+        agentAddress: opts.agentAddress,
+        generation: binding.generation,
+        runId: opts.runId,
+        signalName: opts.signalName,
+        signalId: opts.signalId,
+        payload: opts.payload,
+        ...(opts.correlationId !== undefined
+          ? { correlationId: opts.correlationId }
+          : {}),
+      });
+      return true;
     });
   }
 
@@ -3916,36 +6075,48 @@ export function createSidecarRouter(
       signalName: string;
       signalId: string;
       payload: unknown;
+      correlationId?: string;
     },
     signal?: AbortSignal,
   ): Promise<void> {
     signal?.throwIfAborted();
     const { ws, conn } = await getAllocatedConnection(target, "routing");
     signal?.throwIfAborted();
-    if (addressIndex.get(opts.agentAddress) !== ws) {
+    if (
+      addressIndex.get(opts.agentAddress) !== ws ||
+      conn.workflowAddresses.get(opts.agentAddress) !== target.allocationId
+    ) {
       throw new Error(
         `Address ${opts.agentAddress} is not routed on allocation ${target.allocationId}`,
       );
     }
-    conn.send({ type: "signal.deliver", ...opts });
+    await withWorkflowWorkAdmission(
+      ws,
+      conn,
+      opts.agentAddress,
+      () => {
+        conn.send({
+          type: "signal.deliver",
+          ...opts,
+          generation: target.generation,
+        });
+        return true;
+      },
+      signal,
+    );
   }
 
   function sendDrain(opts: { agentAddress: string; deadlineMs: number }): void {
-    const ws = addressIndex.get(opts.agentAddress);
-    if (ws === undefined) {
+    const routed = routedIncarnation(opts.agentAddress);
+    if (routed === undefined) {
       throw new Error(
         `No sidecar connected for deployment "${opts.agentAddress}"`,
       );
     }
-    const conn = connections.get(ws);
-    if (conn === undefined) {
-      throw new Error(
-        `No sidecar connected for deployment "${opts.agentAddress}"`,
-      );
-    }
-    conn.send({
+    routed.conn.send({
       type: "drain.deliver",
       agentAddress: opts.agentAddress,
+      generation: routed.binding.generation,
       deadlineMs: opts.deadlineMs,
     });
   }
@@ -3959,8 +6130,17 @@ export function createSidecarRouter(
     noteSenderDeployStarted,
     noteSenderDeploySettled,
     sendProbeToAllocation,
-    disconnectAllocation,
+    detachAllocation,
+    syncSidecar,
     sendAgentUndeploy,
+    undeployAllocation,
+    getCleanupConnection,
+    sendWorkflowControl,
+    retainAllocation,
+    getAllocationRetention,
+    getRetentionCandidates,
+    getSidecarInventory,
+    waitForSidecarInventory,
     sendSourcesUpdate,
     sendCredentialsUpdate,
     sendPackToAllocation,
@@ -3969,13 +6149,15 @@ export function createSidecarRouter(
     retireAllocation,
     waitForAllocatedSidecar,
     isAllocatedSidecarReady,
+    holdsAllocatedBinding,
     isAllocatedWorkflowActive,
+    reportedDeploymentFailure,
+    stoppedDeploymentHistory,
     sendAgentDeployToAllocation,
     bindAllocatedStepRoute,
     unbindAllocatedStepRoute,
     sendProvisionStepToAllocation,
     sendWorkflowRunDispatchToAllocation,
-    sendSyncRequest,
     sendSignalDeliver,
     sendSignalDeliverToAllocation,
     sendDrain,
@@ -3984,7 +6166,6 @@ export function createSidecarRouter(
     getConnectedSidecars,
     getRoutableAddresses,
     getConnectorState,
-    requestOAuthLogin,
     events,
   };
 }

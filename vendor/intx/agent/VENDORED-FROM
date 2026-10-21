@@ -1,4 +1,4 @@
 Source: https://github.com/faremeter/interchange (packages/agent)
-Commit: 9febf699e1c8a01fd329927e5a14be7f94e9919e (origin/main, v0.4.0)
+Commit: 0a4eb59b4276e6912082c9e3259b69ce4447869f (origin/main, v0.5.0)
 License: LGPL-2.1-only (see vendor/intx/LICENSE)
 Local modifications: exports map repointed from the upstream intx-src condition to direct TypeScript source resolution (types/default -> ./src/...); dist references removed. Upstream test files are not vendored (they import the unvendored @intx/inference-testing and @intx/test-harness test packages). No source delta (the CL-7190 ToolBundle.beforeToolExtension seam retired at the prior re-vendor: neither that pin nor HEAD agent/src carries it and nothing in the workbench references it).

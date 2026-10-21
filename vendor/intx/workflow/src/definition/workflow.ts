@@ -7,14 +7,14 @@
 // from its record key and applies the default-input convention so the
 // runtime sees a fully-specified definition with no implicit shape.
 
-import { canonicalizeForHash } from "@intx/agent";
+import { canonicalizeForHash } from "@intx/agent/canonicalize";
 import type { AgentDefinition, BaseEnv } from "@intx/agent";
 import type {
   CredentialBinding,
   GrantRequirement,
   SidecarCapabilityPolicy,
 } from "@intx/types";
-import type { InboundMailPolicy } from "@intx/types/runtime";
+import type { InboundMailPolicy } from "@intx/types/inbound-mail-policy";
 
 import { normalizeSingularShorthand } from "./shorthand";
 import {
@@ -53,11 +53,10 @@ export interface WorkflowDefinition {
   grantRequirements?: readonly GrantRequirement[];
   /**
    * The credential bindings a launch resolves against tenant-owned
-   * credentials, each mapping a tool package's declared handle to a
-   * concrete provider and authorizing the delegation against the
-   * binding's authority. The launch reads these from the folded body and
-   * materializes a consumer-scoped `credential:{id}` / `use` grant per
-   * binding.
+   * credentials. Each maps a tool package's or an action handler's
+   * declared handle to a provider. Ownership authorizes the use, and the
+   * launch stamps a consumer-scoped `credential:{id}` / `use` grant with
+   * `origin = 'system'`.
    */
   credentialBindings?: readonly CredentialBinding[];
   sidecarPlacement?: SidecarCapabilityPolicy;
@@ -436,11 +435,13 @@ function validateStepIds(steps: Record<string, Primitive>): void {
     // derives from it: an inline-body ref (`<workflowId>__<stepId>`, and under
     // nesting `<parentRef>__<stepId>`), a loop iteration body run id
     // (`<runId>__<loopId>__<index>`), and an onTrigger section body run id
-    // (`<sectionId>__<index>`, which is parsed back). A `__` inside a step id
-    // would make one of those ids ambiguous with a different chain -- and they
-    // key the durable store, so the collision is silent shared-state
-    // corruption. A body step id feeds those same joins, which is why this pass
-    // has to reach a body rather than trust it to have normalized itself.
+    // (`<parentRunId>__<sectionId>__<index>` via `sectionBodyRunId`, which is
+    // parsed back, as is a body already recorded as `<sectionId>__<index>`).
+    // A `__` inside a step id would make one of those ids ambiguous with a
+    // different chain -- and they key the durable store, so the collision is
+    // silent shared-state corruption. A body step id feeds those same joins,
+    // which is why this pass has to reach a body rather than trust it to have
+    // normalized itself.
     if (stepId.includes("__")) {
       throw new Error(
         `step id ${JSON.stringify(stepId)} must not contain "__"; ` +
@@ -548,6 +549,18 @@ function validateOnFailureStraddlers(steps: Record<string, Primitive>): void {
       if (!normalLive.has(straddlerId)) continue;
       const straddler = steps[straddlerId];
       if (straddler === undefined) continue;
+      if (
+        straddler.kind === "step" &&
+        straddler.inference !== undefined &&
+        unitOutputRefs(straddler.inference, unitId).length > 0
+      ) {
+        throw new Error(
+          `step ${straddlerId} straddles onFailure unit ${unitId} and its ` +
+            `handler ${handlerId} but its inference selector reads ` +
+            `steps.${unitId}.output; the failure sentinel is not valid ` +
+            `inference options`,
+        );
+      }
       const selector = straddlerOutputSelector(straddler);
       if (selector === undefined) continue;
       const refs = unitOutputRefs(selector, unitId);
@@ -793,6 +806,8 @@ function validateLoopBody(
       // input), so per-iteration "route and proceed" is incoherent -- a routed
       // body step yields no output to carry. Reject onFailure on any body
       // step, including a map's inner step reached through this walk.
+      // `onIterationFailure` is the loop's own policy for a failed iteration.
+      // It is not a body `onFailure`, and tolerate must not be rewritten as one.
       assertNoRoutableFailure(bodyStepId, bodyPrimitive);
     }
     // The body-only bans above run first so their message wins over a generic
@@ -973,29 +988,29 @@ function buildDependencyAdjacency(
 }
 
 /**
- * Reject a definition that lets two schedulable-concurrent `awaitSignal` steps
- * await the same signal name. `handleSignalReceived` is a FIFO single-consumer
- * scan keyed on the name, so two gates awaiting one name simultaneously make a
- * delivery's binding order-dependent, and on resume the consumed signal cannot
- * be durably re-bound to a specific gate. INTR-277 added a runtime fail-loud
- * guard for this topology; rejecting it here makes it unauthorable.
+ * Reject a definition that lets two schedulable-concurrent name-FIFO
+ * `awaitSignal` steps await the same signal name. A name-only delivery
+ * binds one such park, so two of them live at once make the binding
+ * order-dependent. The runtime guard rejects that topology for a
+ * name-addressed relay. A correlated park is outside this check.
  *
- * A loop or inline onTrigger body's awaitSignal park relays up into the parent
- * run over the body's own author signal name, so a container step contributes
- * its body's await names into the parent's concurrency set (recursively through
- * nested loop / inline onTrigger bodies). A childWorkflow runs as a separate
- * run with its own signal namespace, so its awaiters never collide with the
- * parent's and are excluded.
+ * A loop body's awaitSignal relays onto the parent under the body's
+ * author signal name and stays name-FIFO, so the loop contributes those
+ * names here, including through nested loops. An inline childWorkflow
+ * relays the same way and contributes its body's names, including a
+ * child nested in a loop. An onTrigger relay is correlated, so its await
+ * names are not added. Two sections, a section beside a parent gate, and
+ * a section beside a loop may share an author name.
+ * `validateOnTriggerBody` re-enters `validateSteps` on an inline body, so
+ * two name-FIFO awaiters inside one section body are still rejected.
  *
  * Two static-analysis limitations remain, both backstopped by the runtime
- * guard:
- *   - Conservative over-reject: two same-name awaiters on a gate's mutually
- *     exclusive then/else branches are rejected, because deciding they can
- *     never both be live is a dominator analysis whose permissive-direction
- *     error would re-admit the hazard.
- *   - Under-reject: a `{ ref }` onTrigger body is a separately-deployed asset
- *     not visible here, so an await name it relays is not collected; a
- *     collision with such a body is caught by the runtime guard, not here.
+ * guard for name-FIFO awaiters. Two same-name awaiters on a gate's
+ * mutually exclusive then/else branches are rejected: deciding they can
+ * never both be live is a dominator analysis whose permissive-direction
+ * error would re-admit the hazard. A `{ ref }` childWorkflow is a
+ * separate definition, so an await name it relays is not collected, and
+ * the runtime guard catches that collision.
  */
 function validateConcurrentAwaitSignalNames(
   steps: Record<string, Primitive>,
@@ -1034,11 +1049,15 @@ function validateConcurrentAwaitSignalNames(
 }
 
 /**
- * Collect the author signal names a loop or inline onTrigger body relays up to
- * the parent run, recursing through nested loop and inline onTrigger bodies. A
- * flat `steps` record keys gate branches and onTimeout targets as siblings, so
- * enumerating the record covers them without a graph walk. A childWorkflow body
- * runs in a separate signal namespace and is not relayed, so it is skipped.
+ * Collect the author signal names a loop body or an inline childWorkflow
+ * relays onto the parent run. The walk recurses through nested loops and
+ * nested inline children. Those names stay on the parent's name-FIFO
+ * concurrency check. An onTrigger body is not collected: its relay park
+ * is correlated and may share an author name with other parks. A flat
+ * `steps` record keys gate branches and onTimeout targets as siblings, so
+ * enumerating the record covers them without a graph walk. A `{ ref }`
+ * childWorkflow stays opaque: its names are not in this definition, and
+ * the runtime relay refuses a second name-FIFO awaiter of the same name.
  */
 function collectRelayedAwaitSignalNames(
   primitive: Primitive,
@@ -1046,8 +1065,11 @@ function collectRelayedAwaitSignalNames(
   let body: Record<string, Primitive> | undefined;
   if (primitive.kind === "loop") {
     body = primitive.body.steps;
-  } else if (primitive.kind === "onTrigger" && "inline" in primitive.body) {
-    body = primitive.body.inline.steps;
+  } else if (
+    primitive.kind === "childWorkflow" &&
+    "inline" in primitive.definition
+  ) {
+    body = primitive.definition.inline.steps;
   }
   if (body === undefined) return [];
   const names: { name: string; bodyStepId: string }[] = [];

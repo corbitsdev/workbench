@@ -19,11 +19,10 @@ import {
   resolveInstanceModelSources,
   getDescendantTenants,
   reresolveCurrentMaterials,
-  type ServingRefresh,
 } from "@intx/db";
 import type { DB } from "@intx/db";
 import type { CredentialCipher } from "@intx/types";
-import type { CredentialDelivery } from "@intx/types/sidecar";
+import type { CredentialDelivery } from "@intx/types/credential-delivery";
 
 import type { SidecarRouter } from "./ws/sidecar-handler";
 
@@ -52,17 +51,12 @@ export async function pushInstanceSourceUpdate(
     modelPreferences: unknown;
   },
   credentialCipher: CredentialCipher,
-  // CL-7505 local delta: optional serving-time refresh hook threaded to
-  // `resolveInstanceModelSources`, so an expiring `oauth_token` credential
-  // refreshes in place before this push delivers its material.
-  servingRefresh?: ServingRefresh,
 ): Promise<void> {
   const resolution = await resolveInstanceModelSources(
     db,
     instance.tenantId,
     instance,
     credentialCipher,
-    ...(servingRefresh !== undefined ? [{ servingRefresh }] : []),
   );
   if (!resolution.ok) return;
   const [head] = resolution.sources;
@@ -101,7 +95,6 @@ async function pushSourceUpdatesToTenants(
   sidecarRouter: SidecarRouter,
   tenantIds: string[],
   credentialCipher: CredentialCipher,
-  servingRefresh?: ServingRefresh,
 ): Promise<void> {
   if (tenantIds.length === 0) return;
 
@@ -152,7 +145,6 @@ async function pushSourceUpdatesToTenants(
             modelPreferences: instance.modelPreferences,
           },
           credentialCipher,
-          servingRefresh,
         );
       }),
     );
@@ -178,14 +170,12 @@ export async function pushSourceUpdates(
   sidecarRouter: SidecarRouter,
   tenantId: string,
   credentialCipher: CredentialCipher,
-  servingRefresh?: ServingRefresh,
 ): Promise<void> {
   await pushSourceUpdatesToTenants(
     db,
     sidecarRouter,
     [tenantId],
     credentialCipher,
-    servingRefresh,
   );
 }
 
@@ -200,7 +190,6 @@ export async function pushSourceUpdatesSubtree(
   sidecarRouter: SidecarRouter,
   tenantId: string,
   credentialCipher: CredentialCipher,
-  servingRefresh?: ServingRefresh,
 ): Promise<void> {
   let tenants: string[];
   try {
@@ -214,7 +203,6 @@ export async function pushSourceUpdatesSubtree(
     sidecarRouter,
     tenants,
     credentialCipher,
-    servingRefresh,
   );
 }
 

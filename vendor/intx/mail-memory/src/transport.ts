@@ -70,8 +70,19 @@ export interface HubTransport {
  */
 export class InMemoryTransport implements MessageTransport, HubTransport {
   readonly #entries = new Map<string, AddressEntry>();
+  readonly #relayOnly: boolean;
   #remoteSendHandler: RemoteSendHandler | undefined;
   readonly #messageSentHandlers = new Set<MessageSentHandler>();
+
+  /**
+   * `relayOnly` sends every recipient through the remote send handler,
+   * including addresses registered here, and keeps no local copy. A host
+   * that registers addresses only to sign their mail uses it, so mail
+   * between two of them takes the same route as mail to anyone else.
+   */
+  constructor(relayOnly: boolean) {
+    this.#relayOnly = relayOnly;
+  }
 
   /**
    * Set a handler for delivering messages to recipients not registered on
@@ -246,10 +257,10 @@ export class InMemoryTransport implements MessageTransport, HubTransport {
     throw new Error("Use getTransportFor(address) for per-address operations");
   }
 
-  watch(
+  async watch(
     _mailbox: string,
     _callback: (event: MailboxEvent) => void,
-  ): Unsubscribe {
+  ): Promise<Unsubscribe> {
     throw new Error("Use getTransportFor(address) for per-address operations");
   }
 
@@ -321,6 +332,11 @@ export class InMemoryTransport implements MessageTransport, HubTransport {
    * Throws if the address is not registered.
    */
   deliver(address: string, message: Uint8Array): void {
+    if (this.#relayOnly) {
+      throw new Error(
+        `Cannot deliver mail to "${address}": this transport relays all mail and keeps no mailboxes`,
+      );
+    }
     const entry = this.#entries.get(address);
     if (entry === undefined) {
       throw new Error(
@@ -399,6 +415,7 @@ export class InMemoryTransport implements MessageTransport, HubTransport {
     return new ScopedMessageTransport(
       address,
       this.#entries,
+      this.#relayOnly,
       () => this.#remoteSendHandler,
       () => this.#messageSentHandlers,
     );
@@ -412,17 +429,20 @@ export class InMemoryTransport implements MessageTransport, HubTransport {
 class ScopedMessageTransport implements MessageTransport {
   readonly #address: string;
   readonly #entries: Map<string, AddressEntry>;
+  readonly #relayOnly: boolean;
   readonly #getRemoteSendHandler: () => RemoteSendHandler | undefined;
   readonly #getMessageSentHandlers: () => Set<MessageSentHandler>;
 
   constructor(
     address: string,
     entries: Map<string, AddressEntry>,
+    relayOnly: boolean,
     getRemoteSendHandler: () => RemoteSendHandler | undefined,
     getMessageSentHandlers: () => Set<MessageSentHandler>,
   ) {
     this.#address = address;
     this.#entries = entries;
+    this.#relayOnly = relayOnly;
     this.#getRemoteSendHandler = getRemoteSendHandler;
     this.#getMessageSentHandlers = getMessageSentHandlers;
   }
@@ -475,6 +495,7 @@ class ScopedMessageTransport implements MessageTransport {
       this.#address,
       message,
       this.#entries,
+      this.#relayOnly,
       this.#getRemoteSendHandler(),
       aggregatedHandler,
     );
@@ -487,36 +508,8 @@ class ScopedMessageTransport implements MessageTransport {
     _signal?: AbortSignal,
   ): Promise<MessageRef> {
     const store = this.#requireMailbox(mailbox);
-    // For append, we need to convert InboundMessage back to raw bytes.
-    // Since InboundMessage may come from a prior fetchFull, we need the raw
-    // bytes. This is a design gap — append() takes InboundMessage but we
-    // need Uint8Array. We store a minimal representation.
-    //
-    // For now, serialize the InboundMessage as a minimal RFC 2822 message.
-    // The stored envelope keys the mailbox index on the id and serializes the
-    // date, so neither can be absent here. `deliver` refuses the same two on
-    // the same grounds. Checked before serializing so a message that cannot
-    // be stored is not encoded first and then discarded.
-    const { messageId, date } = message.headers;
-    if (messageId === undefined) {
-      throw new Error("Cannot append message: missing Message-ID header");
-    }
-    if (date === undefined) {
-      throw new Error("Cannot append message: missing Date header");
-    }
-    const raw = inboundMessageToRaw(message);
-    const envelope = {
-      messageId,
-      from: message.headers.from,
-      to: message.headers.to,
-      subject: message.headers.subject ?? "",
-      date: new Date(date),
-      inReplyTo: message.headers.inReplyTo,
-      references: message.headers.references ?? [],
-      interchangeType: message.headers.interchangeType,
-      interchangeCorrelationId: message.headers.interchangeCorrelationId,
-    };
-    const uid = store.append(raw, envelope, flags ?? []);
+    const stored = inboundMessageToRaw(message);
+    const uid = store.append(stored.raw, stored.envelope, flags ?? []);
     return { uid, mailbox };
   }
 
@@ -716,7 +709,13 @@ class ScopedMessageTransport implements MessageTransport {
     return { expungedUids: toExpunge.map((m) => m.uid) };
   }
 
-  watch(mailbox: string, callback: (event: MailboxEvent) => void): Unsubscribe {
+  async watch(
+    mailbox: string,
+    callback: (event: MailboxEvent) => void,
+  ): Promise<Unsubscribe> {
+    // Refuse before registering, and register before this method awaits.
+    // A missing mailbox must not arm a callback, and an acceptance that
+    // later becomes async must not miss an event delivered in the gap.
     this.#requireMailbox(mailbox);
     let callbacks = this.#entry.watchCallbacks.get(mailbox);
     if (callbacks === undefined) {
@@ -800,7 +799,41 @@ class ScopedMessageTransport implements MessageTransport {
   }
 }
 
-function inboundMessageToRaw(message: InboundMessage): Uint8Array {
+/**
+ * The bytes and envelope an `append` stores for an inbound message.
+ *
+ * `append` takes an `InboundMessage` and the mailbox stores RFC 2822 bytes, so
+ * this builds a minimal text/plain message from the headers plus `content` (or
+ * `JSON.stringify(payload)` when there is no content). Attachments are not
+ * copied into those bytes. The stored envelope keys the mailbox index on the
+ * id and serializes the date, so neither can be absent: both are refused
+ * before anything is encoded, on the same grounds `deliver` refuses them.
+ * A date string that does not parse is refused too. The index writes it with
+ * `toISOString`, and an Invalid Date would stay in the mirror after flush
+ * throws.
+ */
+export function inboundMessageToRaw(message: {
+  headers: MessageHeaders;
+  content?: string;
+  payload?: InboundMessage["payload"];
+}): {
+  raw: Uint8Array;
+  envelope: StoredEnvelope;
+} {
+  const { messageId, date } = message.headers;
+  if (messageId === undefined) {
+    throw new Error("Cannot append message: missing Message-ID header");
+  }
+  if (date === undefined) {
+    throw new Error("Cannot append message: missing Date header");
+  }
+  const parsedDate = new Date(date);
+  if (Number.isNaN(parsedDate.getTime())) {
+    throw new Error(
+      `Cannot append message: invalid Date header ${JSON.stringify(date)}`,
+    );
+  }
+
   const enc = new TextEncoder();
   const CRLF = "\r\n";
   let headers = "";
@@ -842,5 +875,18 @@ function inboundMessageToRaw(message: InboundMessage): Uint8Array {
     (message.payload !== undefined ? JSON.stringify(message.payload) : "");
   headers += `Content-Type: text/plain${CRLF}`;
   headers += `${CRLF}`;
-  return enc.encode(headers + body);
+  return {
+    raw: enc.encode(headers + body),
+    envelope: {
+      messageId,
+      from: message.headers.from,
+      to: message.headers.to,
+      subject: message.headers.subject ?? "",
+      date: parsedDate,
+      inReplyTo: message.headers.inReplyTo,
+      references: message.headers.references ?? [],
+      interchangeType: message.headers.interchangeType,
+      interchangeCorrelationId: message.headers.interchangeCorrelationId,
+    },
+  };
 }

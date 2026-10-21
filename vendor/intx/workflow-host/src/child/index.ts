@@ -1,12 +1,16 @@
 export {
   createCredentialsBackedAuthorize,
+  createGrantEvaluator,
+  type CredentialsSnapshotRef,
+  type GrantEvaluator,
+} from "./credentials-backed-authorize";
+
+export {
   hashGrants,
   runWorkflowChild,
   type ChildStepInvoker,
-  type CredentialsSnapshotRef,
   type CredentialWiring,
   type DrainController,
-  type GrantEvaluator,
   type RunWorkflowChildBindings,
   type RunWorkflowChildOpts,
   type RunWorkflowChildResult,
@@ -36,6 +40,14 @@ export {
 } from "./mailbox-mutation-bridge";
 
 export {
+  createChildMailboxCallBridge,
+  type ChildMailboxCallBridge,
+  type CreateChildMailboxCallBridgeOpts,
+  type MailboxCall,
+  type MailboxCallSuccess,
+} from "./mailbox-call-bridge";
+
+export {
   createSupervisorBackedTransport,
   type SupervisorBackedTransportInbound,
 } from "./supervisor-backed-transport";
@@ -44,11 +56,6 @@ export {
   createMailboxWatchRegistry,
   type MailboxWatchRegistry,
 } from "./mailbox-watch-registry";
-
-export {
-  createChildMailboxReader,
-  type ChildMailboxReader,
-} from "./child-mailbox-reader";
 
 export {
   createProxyWorkflowRunRepoStore,

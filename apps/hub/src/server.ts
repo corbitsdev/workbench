@@ -4,8 +4,10 @@ import {
   createPrincipalKeyStore,
   createSidecarAllocationStore,
   createWorkflowRunDispatchStore,
+  createWorkflowRunLaunchSpecStore,
   resolveFrameSenderKey,
   resolveSenderKey,
+  withExecutableWorkflowRun,
 } from "@intx/db";
 import {
   asset as assetTable,
@@ -14,7 +16,16 @@ import {
 } from "@intx/db/schema";
 import { and, eq } from "drizzle-orm";
 import { createEnvKeyCredentialCipher } from "@intx/crypto";
-import { hexDecode, hexEncode, type SidecarCapabilityRule } from "@intx/types";
+import {
+  type AdapterManifest,
+  hexDecode,
+  hexEncode,
+  LifecycleDuration,
+  lifecycleDurationMs,
+  parseAdapterManifestEnv,
+  type ResolvedWorkflowLifecyclePolicy,
+  type SidecarCapabilityRule,
+} from "@intx/types";
 import {
   createApp,
   createAuth,
@@ -23,6 +34,7 @@ import {
   type TenantEnv,
 } from "@intx/hub-api";
 import {
+  attachSidecarProvisioners,
   createAgentRepoStore,
   createAssetService,
   createEventCollectorRegistry,
@@ -36,6 +48,13 @@ import {
   createWorkflowAllocationService,
   createWorkflowDispatchService,
   createReconciliationScheduler,
+  createWorkflowLifecycleService,
+  createWorkflowDispatchProjection,
+  DEFAULT_WORKFLOW_PROJECTION_CONCURRENCY,
+  createWorkflowRunReader,
+  createParkedRunClassifier,
+  createWorkflowHistoryReceiveTracker,
+  recoverSenderDeploy,
   DEFAULT_SIDECAR_ALLOCATION_CONCURRENCY,
   pushCredentialReconcile,
   pushSourceUpdates,
@@ -160,6 +179,8 @@ export type CreateHubServerOpts = {
   readonly sidecarAllocationConcurrency?: number;
   /** Deadline for provider calls, allocation claims, lease validation, and connection waits. Defaults to 120 seconds. */
   readonly sidecarOperationTimeoutMs?: number;
+  /** Custom inference adapters every provisioned sidecar must load, forwarded on each ensure request. */
+  readonly sidecarAdapterManifest?: AdapterManifest;
 };
 
 export async function createHubServer({
@@ -170,6 +191,7 @@ export async function createHubServer({
   probeSidecarCapabilityRules = [],
   sidecarAllocationConcurrency = DEFAULT_SIDECAR_ALLOCATION_CONCURRENCY,
   sidecarOperationTimeoutMs,
+  sidecarAdapterManifest,
 }: CreateHubServerOpts = {}) {
   await setup();
 
@@ -235,6 +257,44 @@ export async function createHubServer({
   const hubSigningKey = await generateKeyPair();
   log.info("Generated hub deploy signing key");
 
+  function readOptionalPositiveIntEnv(name: string): number | undefined {
+    const raw = process.env[name];
+    if (raw === undefined || raw.trim() === "") return undefined;
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new Error(`${name} must be a positive integer; got ${JSON.stringify(raw)}`);
+    }
+    return value;
+  }
+
+  function readLifecycleDurationEnv(name: string, fallback: string): string {
+    const raw = process.env[name];
+    if (raw === undefined || raw.trim() === "") return fallback;
+    try {
+      return LifecycleDuration.assert(raw.trim());
+    } catch (cause) {
+      throw new Error(
+        `${name} must be a lifecycle duration such as 30m or 7d; got ${JSON.stringify(raw)}`,
+        { cause },
+      );
+    }
+  }
+
+  const defaultLifecyclePolicy: ResolvedWorkflowLifecyclePolicy = {
+    maxLifetime: readLifecycleDurationEnv("WORKFLOW_DEFAULT_MAX_LIFETIME", "7d"),
+    maxDisconnected: readLifecycleDurationEnv("WORKFLOW_DEFAULT_MAX_DISCONNECTED", "15m"),
+    capacityRetention: {
+      completed: readLifecycleDurationEnv("WORKFLOW_DEFAULT_RETENTION_COMPLETED", "30m"),
+      failed: readLifecycleDurationEnv("WORKFLOW_DEFAULT_RETENTION_FAILED", "24h"),
+      cancelled: readLifecycleDurationEnv("WORKFLOW_DEFAULT_RETENTION_CANCELLED", "1h"),
+    },
+  };
+  if (lifecycleDurationMs(defaultLifecyclePolicy.maxLifetime) === 0)
+    throw new Error("WORKFLOW_DEFAULT_MAX_LIFETIME must be greater than zero");
+  if (lifecycleDurationMs(defaultLifecyclePolicy.maxDisconnected) === 0) {
+    throw new Error("WORKFLOW_DEFAULT_MAX_DISCONNECTED must be greater than zero");
+  }
+
   const agentRepoStore = createAgentRepoStore({
     dataDir: hubDataDir,
     signingKey: hubSigningKey,
@@ -250,8 +310,13 @@ export async function createHubServer({
 
   const grantStore = createGrantStore(db);
 
+  const workflowHistoryReceives = createWorkflowHistoryReceiveTracker();
   const lookups: SidecarLookups = {
-    ...createHubSessionLookups({ db, agentRepoStore }),
+    ...createHubSessionLookups({
+      db,
+      agentRepoStore,
+      historyReceives: workflowHistoryReceives,
+    }),
     materializeMailTriggeredRunGrants: createMailTriggeredRunGrantsMaterializer({
       db,
       principalKeyStore,
@@ -263,12 +328,17 @@ export async function createHubServer({
   };
 
   const sidecarCredentials = createSidecarCredentialResolver({ db });
+  const probeTimeoutMs = readOptionalPositiveIntEnv("HUB_PROBE_TIMEOUT_MS");
 
   const sidecarRouter = createSidecarRouter({
     hubPublicKey: hexEncode(hubSigningKey.publicKey),
     authenticateSidecar: async ({ token }) => sidecarCredentials.resolve(token),
     validateSidecarIdentity: sidecarCredentials.isCurrent,
+    withExecutableWorkflowRun: (target, send, signal) =>
+      withExecutableWorkflowRun(db, target, send, signal),
+    resolveSidecarBindings: sidecarCredentials.resolveBindings,
     lookups,
+    ...(probeTimeoutMs !== undefined ? { probeTimeoutMs } : {}),
   });
 
   lookups.resyncCredentials = (agentAddress) => {
@@ -337,6 +407,8 @@ export async function createHubServer({
       ? { chooser: probeSidecarProvisionerChooser }
       : {}),
   });
+  const adapterManifest =
+    sidecarAdapterManifest ?? parseAdapterManifestEnv(process.env["SIDECAR_ADAPTER_MANIFEST"]);
   const workflowAllocationService = createWorkflowAllocationService({
     db,
     deploymentPlugins: sidecarPlugins,
@@ -346,11 +418,43 @@ export async function createHubServer({
     probeCapabilityRules: probeSidecarCapabilityRules,
     allocationRouter: sidecarRouter,
     hubWebSocketUrl: hubSidecarWebSocketUrl,
+    defaultLifecyclePolicy,
+    ...(adapterManifest !== undefined ? { adapterManifest } : {}),
     ...(sidecarOperationTimeoutMs !== undefined
       ? { operationTimeoutMs: sidecarOperationTimeoutMs }
       : {}),
   });
-  const sidecarAllocationStore = createSidecarAllocationStore(db);
+  const sidecarAllocationStore = createSidecarAllocationStore(db, {
+    getSidecarInventory: sidecarRouter.getSidecarInventory,
+  });
+  const workflowRunReader = createWorkflowRunReader(agentRepoStore.repoStore);
+  const launchSpecs = createWorkflowRunLaunchSpecStore(db);
+  const classifyParkedRun = createParkedRunClassifier({
+    runReader: workflowRunReader,
+    addressForAnchor: async (anchorRunId) => {
+      const row = await db.query.workflowRun.findFirst({
+        where: (run, { eq: equals }) => equals(run.id, anchorRunId),
+        columns: { address: true },
+      });
+      return row?.address ?? null;
+    },
+    projectionForAnchor: async (anchorRunId) => {
+      const spec = await launchSpecs.get(anchorRunId);
+      return spec?.frozenApprovalBundle.projection ?? null;
+    },
+  });
+  const workflowLifecycleService = createWorkflowLifecycleService({
+    db,
+    retentionRouter: sidecarRouter,
+    runReader: workflowRunReader,
+    historyReceives: workflowHistoryReceives,
+    sendControl: (target, command, timeoutMs) =>
+      sidecarRouter.sendWorkflowControl(target, command, timeoutMs),
+  });
+  const dispatchProjection = createWorkflowDispatchProjection({
+    db,
+    repoStore: agentRepoStore.repoStore,
+  });
   const workflowDispatchService = createWorkflowDispatchService({
     dispatchStore: createWorkflowRunDispatchStore(db),
     allocationStore: sidecarAllocationStore,
@@ -365,12 +469,17 @@ export async function createHubServer({
   });
   const sidecarAllocationReconciler = createSidecarAllocationReconciler({
     allocationStore: sidecarAllocationStore,
+    maxConcurrentClaims: sidecarAllocationConcurrency,
     plugins: sidecarPlugins,
     router: sidecarRouter,
     hubWebSocketUrl: hubSidecarWebSocketUrl,
+    ...(adapterManifest !== undefined ? { adapterManifest } : {}),
     ...(sidecarOperationTimeoutMs !== undefined
       ? { operationTimeoutMs: sidecarOperationTimeoutMs }
       : {}),
+    onInitializationRecovery: (allocation, reconciliation) =>
+      recoverSenderDeploy({ db, sidecarRouter, allocation, reconciliation }),
+    classifyParkedRun,
     onReady: async (allocation, reconciliation) => {
       await workflowAllocationService.deployReadyAllocation(allocation, reconciliation);
       reconciliation.signal.throwIfAborted();
@@ -380,11 +489,31 @@ export async function createHubServer({
 
   await workflowAllocationService.initialize?.();
   await sidecarAllocationReconciler.initialize();
-  sidecarRouter.events.on("sidecar.disconnect", ({ allocated }) => {
-    if (allocated === undefined) return;
-    return sidecarAllocationReconciler.handleDisconnect(allocated);
+  attachSidecarProvisioners({
+    provisioners: [...deploymentProvisioners, ...probeProvisioners],
+    retireProvisionerSidecar: sidecarAllocationStore.retireProvisionerSidecar,
+    isConnected: sidecarRouter.holdsAllocatedBinding,
+  });
+  sidecarRouter.events.on("sidecar.disconnect", async ({ allocated }) => {
+    await Promise.all(
+      allocated.map((target) =>
+        sidecarAllocationReconciler.handleDisconnect(target).catch((err: unknown) => {
+          log.error(
+            "Failed to handle the disconnect of allocation {allocationId} generation {generation}: {error}",
+            {
+              allocationId: target.allocationId,
+              generation: target.generation,
+              error: err instanceof Error ? err.message : String(err),
+            },
+          );
+        }),
+      ),
+    );
   });
   sidecarRouter.events.on("sidecar.allocated.connected", (allocated) =>
+    sidecarAllocationReconciler.handleConnected(allocated),
+  );
+  sidecarRouter.events.on("deployment.stopped", (allocated) =>
     sidecarAllocationReconciler.handleConnected(allocated),
   );
   sidecarRouter.events.on("mail.inbound.acknowledged", ({ messageId, allocated }) => {
@@ -406,11 +535,23 @@ export async function createHubServer({
       return false;
     },
   });
+  const lifecycleScheduler = createReconciliationScheduler({
+    name: "Workflow lifecycle",
+    reconcileNext: () => workflowLifecycleService.reconcileNext(),
+  });
   const dispatchScheduler = createReconciliationScheduler({
     name: "Workflow dispatch",
     concurrency: 1,
     reconcileNext: async () => {
-      workflowDispatchService.wake();
+      await workflowDispatchService.reconcileUntilIdle();
+      return false;
+    },
+  });
+  const dispatchProjectionScheduler = createReconciliationScheduler({
+    name: "Workflow dispatch projection",
+    concurrency: DEFAULT_WORKFLOW_PROJECTION_CONCURRENCY,
+    reconcileNext: async () => {
+      await dispatchProjection.reconcileNext();
       return false;
     },
   });
@@ -426,6 +567,8 @@ export async function createHubServer({
 
   allocationScheduler.start();
   probeCleanupScheduler.start();
+  lifecycleScheduler.start();
+  dispatchProjectionScheduler.start();
   dispatchScheduler.start();
   connectionRepairScheduler.start();
 
@@ -440,6 +583,7 @@ export async function createHubServer({
     sessionService,
     workflowAllocationService,
     workflowDispatchService,
+    workflowLifecycleService,
     eventCollectors,
     credentialCipher,
     principalKeyStore,
@@ -486,7 +630,11 @@ export async function createHubServer({
       upstream: createHubPersistMailWithSessionEnsure(
         db,
         eventCollectorsRef,
-        createHubSessionLookups({ db, agentRepoStore }).persistMail,
+        createHubSessionLookups({
+          db,
+          agentRepoStore,
+          historyReceives: workflowHistoryReceives,
+        }).persistMail,
       ),
       authorizeSender: createHubMailboxAuthorizeSender(db),
       bus: mailboxBus,
@@ -622,8 +770,20 @@ export async function createHubServer({
   // package boundary; this just narrows them back to `sidecarRouter`'s own
   // types on the way through, with no behavior change.
   const systemTriggerMailRouter: HookMailRouter = {
-    routeMail: (address, rawMessage, authenticatedSender, messageId) =>
-      sidecarRouter.routeMail(address, rawMessage, authenticatedSender, messageId),
+    routeMail: (address, rawMessage, authenticatedSender, messageId) => {
+      if (!sidecarRouter.getRoutableAddresses().includes(address)) {
+        return false;
+      }
+      void sidecarRouter
+        .routeMail(address, rawMessage, authenticatedSender, messageId)
+        .catch((error: unknown) => {
+          reportError(error, {
+            operation: "hub.systemTriggerMailRouter.routeMail",
+            extra: { address, authenticatedSender },
+          });
+        });
+      return true;
+    },
     sendRunGrants: (address, runId, stepGrants, senderIdentities) =>
       sidecarRouter.sendRunGrants(
         address,
@@ -865,6 +1025,8 @@ export async function createHubServer({
     async shutdown(): Promise<void> {
       allocationScheduler.stop();
       probeCleanupScheduler.stop();
+      lifecycleScheduler.stop();
+      dispatchProjectionScheduler.stop();
       dispatchScheduler.stop();
       connectionRepairScheduler.stop();
       cronTicker?.stop();

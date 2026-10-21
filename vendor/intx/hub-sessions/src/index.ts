@@ -1,4 +1,17 @@
 export {
+  createWorkflowLifecycleService,
+  type WorkflowLifecycleService,
+  type WorkflowLifecycleServiceDeps,
+} from "./workflow-lifecycle-service";
+export {
+  createWorkflowHistoryReceiveTracker,
+  type WorkflowHistoryReceiveTracker,
+} from "./workflow-history-receives";
+export {
+  createWorkflowDispatchProjection,
+  DEFAULT_WORKFLOW_PROJECTION_CONCURRENCY,
+} from "./workflow-dispatch-projection";
+export {
   createAgentRepoStore,
   type AgentRepoStore,
   type DeployContent,
@@ -37,16 +50,18 @@ export {
   type SidecarRouter,
   type SidecarRouterConfig,
   type SenderDeploySettledOutcome,
-  type OAuthLoginFinalOutcome,
-  type OAuthLoginGateOutcome,
-  type OAuthLoginRequestOutcome,
-  DEFAULT_OAUTH_LOGIN_TIMEOUT_MS,
   type AllocatedSenderDeployAttempt,
   type SidecarAuthIdentity,
   type SidecarAuthenticator,
   type AllocatedSidecarTarget,
   type SidecarAllocationRouter,
   SidecarIdentityValidationError,
+  WorkflowControlHistoryPendingError,
+  WorkflowControlInitializingError,
+  WorkflowControlRejectedError,
+  WorkflowControlTimeoutError,
+  WorkflowControlUnconfirmedError,
+  WorkflowControlUnreachableError,
   createSidecarCredentialResolver,
   createSidecarTokenAuthenticator,
   type CreateSidecarTokenAuthenticatorDeps,
@@ -65,7 +80,6 @@ export {
 export {
   createHubSessionLookups,
   findRoutableById,
-  parseAgentId,
   resolveRoutableAddress,
   resolveRunIdForSession,
   resolveRunSessionId,
@@ -87,6 +101,8 @@ export {
   pushCredentialReconcile,
 } from "./credential-push";
 export {
+  adapterManifestDigest,
+  attachSidecarProvisioners,
   chooseFirstSidecarProvisioner,
   createSidecarPluginRegistry,
   createSidecarAllocationReconciler,
@@ -97,16 +113,27 @@ export {
   type EnsureSidecarResult,
   type SidecarCredentialIdentity,
   type SidecarCredentialResolver,
+  type SidecarCredentials,
+  type SidecarIdentityUse,
   type SidecarOperationFailure,
   type SidecarPluginRegistry,
   type SidecarProvisioner,
   type SidecarProvisionerChooser,
+  type SidecarProvisionerHost,
+  type SidecarStoppedOptions,
+  type SidecarStoppedResult,
   type SidecarAllocationReconciler,
   type SidecarAllocationReconcilerDeps,
   type SidecarReconciliationContext,
 } from "./sidecar-allocation";
+export {
+  createParkedRunClassifier,
+  type ParkedRunClassification,
+  type ParkedRunClassifier,
+  type ParkedRunVerdict,
+} from "./parked-run";
 export { ensureWorkflowDefinitionForAsset } from "./workflow-definition-ensure";
-export { workflowSourceAssetMountPath } from "./workflow-closure-resolution";
+export { workflowSourceRepoKind } from "./workflow-source-repo-kind";
 export {
   createReconciliationScheduler,
   DEFAULT_SIDECAR_ALLOCATION_CONCURRENCY,
@@ -158,7 +185,6 @@ export {
 export {
   workflowKindHandler,
   workflowAuthorize,
-  workflowDefinitionEnvelopeSchema,
   WORKFLOW_JSON_PATH,
   CAPABILITY_DECLARATIONS_JSON_PATH,
   type WorkflowPrincipal,
@@ -177,6 +203,8 @@ export {
   scanRunsForBoot,
   readCommittedWorkflowRunLifecycle,
   readWorkflowRunLifecycle,
+  workflowRunRepoIdForAddress,
+  WORKFLOW_RUN_REF,
   replayProcessingToInbox,
   WORKFLOW_RUN_GITIGNORE_PATH,
   WORKFLOW_RUN_RUNS_PREFIX,
@@ -210,6 +238,7 @@ export {
   type WorkflowRunSupervisorPrincipal,
 } from "./workflow-run-kind";
 export {
+  readWorkflowRunRefTips,
   restoreWorkflowRunToAllocation,
   WORKFLOW_RUN_RESTORE_REFS,
 } from "./workflow-run-restore";

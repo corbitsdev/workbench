@@ -14,14 +14,20 @@ export function createWorkflowRunAuthenticator(deps: { db: DB["db"] }) {
   return {
     async resolve(token: string, runAddress: string) {
       if (token === "" || runAddress === "") return null;
-      const identity = await sidecars.resolve(token);
-      if (identity?.kind !== "allocated") return null;
+      const sidecar = await sidecars.resolve(token);
+      if (sidecar === null || sidecar.retired === true) return null;
+      const bindings = await sidecars.resolveBindings(sidecar.sidecarId);
       const run = await deps.db.query.workflowRun.findFirst({
         where: eq(workflowRun.address, runAddress),
       });
       if (run === undefined || run.principalId === null) return null;
-      if (run.tenantId !== identity.tenantId) return null;
-      if (run.anchorRunId !== identity.anchorRunId) return null;
+      const matches = bindings.some(
+        (identity) =>
+          identity.kind === "allocated" &&
+          identity.tenantId === run.tenantId &&
+          identity.anchorRunId === run.anchorRunId,
+      );
+      if (!matches) return null;
       return {
         tenantId: run.tenantId,
         principalId: run.principalId,

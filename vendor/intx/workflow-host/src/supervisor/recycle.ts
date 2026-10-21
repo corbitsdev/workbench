@@ -5,19 +5,13 @@
 // Recycle is the supervisor's "same deploy tree, fresh process" path.
 // It tears the existing workflow-process child down and stands a new
 // one up against the SAME deploy tree (same materialized source
-// closure, same per-step credential repos). It is STRICTLY ORTHOGONAL
-// TO REDEPLOY:
-//
-//   - Recycle  = same deploy tree, fresh process.
-//   - Redeploy = new deploy tree.
+// closure, same per-step credential repos). A deployment keeps its
+// deploy tree for its life; a different tree means a new deployment.
 //
 // Recycle does not refetch the deploy tree, does not consult an
-// updated workflow definition, does not re-resolve agents. If a
-// deploy-tree change is needed the host runs redeploy, which is a
-// different code path with different authorization and a different
-// rollback shape. The recycle module must never grow a "maybe also
-// refetch the deploy tree" mode -- that would erase the orthogonality
-// and let a recycle silently turn into a redeploy.
+// updated workflow definition, does not re-resolve agents. The recycle
+// module must never grow a "maybe also refetch the deploy tree" mode --
+// that would let a recycle silently change what a deployment runs.
 //
 // Six-step sequence (locked):
 //
@@ -96,15 +90,16 @@ import { generateKeyPair } from "@intx/crypto";
 
 import {
   createControlChannelSender,
-  generateChannelId,
-  generateHmacKey,
-  receiveControlChannel,
-  receiveEventChannel,
   type ControlChannelSender,
-  type ControlPayload,
+} from "../ipc/control-sender";
+import { generateChannelId, generateHmacKey } from "../ipc/crypto";
+import { receiveControlChannel } from "../ipc/control-receiver";
+import {
+  receiveEventChannel,
   type EventPayload,
   type ReceivedEvent,
-} from "../ipc/index";
+} from "../ipc/event-channel";
+import type { ControlPayload } from "../ipc/control-payloads";
 
 import {
   assembleCredentialsSnapshot,
@@ -515,11 +510,9 @@ export async function triggerRecycle(
 
 /**
  * Reap a respawned child that was spawned and wired but never installed
- * on `state`. Such a child is invisible to the supervisor's
- * recycle-failure teardown -- that path reaps the PRIOR cohort
- * (`state.handle` during `recycling`) -- so a respawn that fails after
- * the spawn must reap the new child here or it leaks its OS process and
- * both IPC channels.
+ * on `state`. Recycle owns startup-failure cleanup even when invoked
+ * without a supervisor. A supervisor also tracks this handle so a
+ * concurrent shutdown can stop it before the startup failure settles.
  *
  * Kill FIRST, then finalize the pumps: process death drives EOF on both
  * channels, which unparks `waitForReady`'s in-flight `iter.next()`

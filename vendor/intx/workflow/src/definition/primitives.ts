@@ -7,18 +7,22 @@
 // reuse the same constructor result under different keys without
 // repeating themselves.
 //
-// `drainBehavior` defaults differ per primitive: `sleep` and
-// `childWorkflow` default to `"cancel"` because long compute should not
-// block a redeploy past `drainTimeout`; `awaitSignal` defaults to
-// `"wait"` because human-in-the-loop pauses are the canonical case the
-// spec calls out and operators do not want them silently cancelled at
-// redeploy. A `step` defaults to `"cancel"` when its trigger budget is
+// `drainBehavior` defaults differ per primitive: `sleep` defaults to
+// `"cancel"` because long compute should not block a redeploy past
+// `drainTimeout`. `childWorkflow` defaults to `"wait"`: drain consults
+// the spawn step for the whole time it is in flight, including a parked
+// relay and a child that is still mid-step, and a local abort would tear
+// that child down. `awaitSignal` defaults to `"wait"` because
+// human-in-the-loop pauses are the canonical case the spec calls out and
+// operators do not want them silently cancelled at redeploy. A `step`
+// defaults to `"cancel"` when its trigger budget is
 // `1` (batch) and `"wait"` when the budget is larger (multi-turn or
 // unbounded) -- a long-lived step is definitionally interactive.
 // `map`'s outer node carries no `drainBehavior` -- its inner step
 // carries its own.
 
 import type { AgentDefinition, BaseEnv } from "@intx/agent";
+import { ToolCredentialHandle } from "@intx/types/package-json";
 import type { Type } from "arktype";
 
 // Type-only import: an action handler's `ctx` parameter is the runtime's
@@ -77,6 +81,13 @@ export interface StepPrimitive extends PrimitiveBase {
   kind: "step";
   agent: AgentDefinition<BaseEnv>;
   input?: Selector;
+  /**
+   * Per-call inference options for this step's model call, resolved beside
+   * `input`. Must resolve to `null`, `undefined`, or an object limited to
+   * `PerCallInferenceOptions` keys; anything else fails the step as a
+   * selector error. Absent means the agent's defaults.
+   */
+  inference?: Selector;
   reads?: readonly Selector[];
   writes?: readonly Selector[];
   retry?: RetryPolicy;
@@ -140,11 +151,11 @@ export interface GatePrimitive extends PrimitiveBase {
  * run and is valid anywhere.
  *
  * An untimed gate has the one exit, so it can only end where something outside
- * the run can deliver -- a run the control plane can address, or a container
- * relaying a decision down. In a run tree with neither, the runtime refuses the
- * gate at the park, before any suspension is recorded, rather than waiting on a
- * signal that can never arrive. A `childWorkflow` child is the boundary that
- * produces such a tree; see {@link ChildWorkflowPrimitive}.
+ * the run can deliver. A run the control plane can address delivers directly.
+ * A loop body, an `onTrigger` section, and a `childWorkflow` child relay the
+ * park onto that run. The runtime refuses the gate at the park, before any
+ * suspension is recorded, only when this run's env says nothing upstream can
+ * answer it. A timed gate is exempt: its own timer resolves it.
  *
  * The same refusal covers the parks the runtime takes on a step's behalf, so
  * this rule is not confined to a gate an author writes here.
@@ -171,21 +182,36 @@ export interface SleepPrimitive extends PrimitiveBase {
  * approved surface and no separately-deployed asset is read. `input`
  * selects the child run's launch payload.
  *
- * The child is driven to its terminal, not across parks, and carries no
- * address of its own, so nothing upstream can answer a park inside it. Every
- * untimed park beneath this boundary -- at any depth, including inside a
- * `loop` body in the child -- is refused at the park and fails the child. That
- * is an untimed {@link AwaitSignalPrimitive}, and also the parks the runtime
- * takes on a step's behalf without the author writing one: an agent step
- * suspending on a tool declared `approval: "ask"`, and the input park a step
- * with a trigger budget takes between deliveries. A child containing no
- * `awaitSignal` is not thereby safe. Give such a gate a `timeout`, or hold it
- * in a run the control plane can address.
+ * The child carries no address of its own. The spawning step drives it
+ * across parks and relays each one onto the parent run: an approval, with
+ * the body's snapshot, an author {@link AwaitSignalPrimitive}, and the input
+ * park a trigger budget takes between turns. A gate inside a `loop` in the
+ * child climbs the same way, one layer at a time, until it reaches the
+ * deployment's addressable run. The hub approval is registered on that run.
+ * The spawn step awaits one signal at a time. A second park that is already
+ * live in the child stays queued until the decision for the first is relayed
+ * down. A queued park whose gate has already moved on is not given a signal
+ * that arrived while it waited.
  *
- * The refusal surfaces to the parent as an ordinary child failure. Routing it
- * with `onFailure` is available only where `onFailure` is honored at all: on a
- * direct entry of a workflow root. A spawn inside a `loop` body may not carry
- * `onFailure`, so there the failure surfaces unrouted.
+ * A parked child survives a process restart. Resume reattaches the same
+ * child run from its log and reestablishes the relay on the spawn step.
+ * The child stays unaddressable; the parent is the resume root. On drain
+ * the relay sits on this step. The step defaults to `"wait"`, so the drain
+ * signal does not abort it. That covers the whole time the step is in
+ * flight, including a parked relay and a child that is still mid-step. An
+ * explicit `"cancel"` still aborts the child through `localAbort`. The
+ * child's own `drainBehavior` is not what drain consults.
+ *
+ * A run whose env says nothing upstream can answer refuses an untimed
+ * relay before that run writes a suspension. The child may already have
+ * recorded its own await, because its spawner forces the flag true; the
+ * refusal then tears the child down. A gate carrying a `timeout` is
+ * exempt: its own timer resolves it.
+ *
+ * A child that ends `failed` or `cancelled` fails the spawn step.
+ * `onFailure` routes a failed child and does not route a cancelled one, and
+ * only where `onFailure` is honored at all: a direct entry of a workflow
+ * root. A spawn inside a `loop` body may not carry `onFailure`.
  */
 export interface ChildWorkflowPrimitive extends PrimitiveBase {
   kind: "childWorkflow";
@@ -251,6 +277,18 @@ export interface ActionPrimitive extends PrimitiveBase {
   drainBehavior?: DrainBehavior;
   /** See {@link StepPrimitive.onFailure}. */
   onFailure?: string;
+  /**
+   * The credential handles this action declares for its handler. The scope
+   * is per handler: inside `perform`'s `run`, the handler may resolve any
+   * handle a step running that handler declares and a root binding names for
+   * it. Deploy refuses a declared handle with no binding, and a binding for a
+   * handle no such step declares. `action()` validates each handle's
+   * format and rejects a duplicate, rejects a non-empty list without an
+   * `effect.requires` capability, and omits the field when the list is
+   * empty. The handles are part of the approved projection and the
+   * definition hash, in the order the author wrote them.
+   */
+  credentials?: readonly string[];
 }
 
 /**
@@ -262,12 +300,15 @@ export interface ActionPrimitive extends PrimitiveBase {
  *
  * A deployed handler is a BARE MODULE EXPORT of the module named by the
  * package's `interchange.actions` field, resolved by export name. It
- * receives exactly these three parameters and nothing else: no injected
- * services, and no opportunity to close over host configuration, because
- * nothing in the deployment constructs it. `ctx` carries one method,
- * `perform`. Per-deployment configuration must therefore arrive through
- * `input`, which in practice means the author selects it out of the
- * trigger payload via the action's {@link ActionPrimitive.input} selector.
+ * receives exactly these three parameters and nothing else, and has no
+ * opportunity to close over host configuration, because nothing in the
+ * deployment constructs it. `ctx` carries `perform`, and `perform` gives each
+ * `run` the one host service: the consumer-scoped `credentials` capability,
+ * which resolves the handles the action declares and works only until that
+ * `run` settles.
+ * Per-deployment configuration must therefore arrive through `input`, which
+ * in practice means the author selects it out of the trigger payload via the
+ * action's {@link ActionPrimitive.input} selector.
  */
 export type ActionHandler = (
   input: unknown,
@@ -300,15 +341,25 @@ export type ActionHandler = (
  * `{ outcome, iterations, carry, final }`:
  *
  * - `outcome` is `"converged"` or `"exhausted"`, the arm the loop routed to.
- * - `iterations` is how many iterations ran.
- * - `carry` is the LAST iteration's INPUT. The loop settles the instant
- *   `while` goes false, before `carry` runs on that iteration, so this is
- *   the state the converging iteration worked from, not a state derived
- *   from its result.
- * - `final` is the LAST iteration's OUTPUT -- the body's per-step output
- *   record, keyed by step id, exactly as `while` received it. This is where
- *   a `while` that judges the iteration output leaves its answer; the
- *   scoped iteration step ids are not selector paths.
+ * - `iterations` counts every attempt, including a tolerated failure.
+ * - `carry` is the last attempt's INPUT. The loop settles the instant
+ *   `while` goes false, before `carry` runs on that iteration, so on
+ *   convergence this is the state that iteration worked from. A tolerated
+ *   failure does not call `carry`, so the input does not advance.
+ * - `final` is the last completed attempt's OUTPUT -- the body's per-step
+ *   output record, keyed by step id -- or `null` when every attempt was a
+ *   tolerated failure. A tolerated failure records no output, so `final`
+ *   and `carry` can describe different attempts. The scoped iteration step
+ *   ids are not selector paths, so `final` is how a downstream step reaches
+ *   inside a completed iteration.
+ *
+ * `onIterationFailure` is absent or `"end"` unless the author opts in.
+ * `"tolerate"` records a genuine iteration failure and continues with the
+ * same input, without calling `while` or `carry`. The attempt still counts
+ * toward `maxIterations`. A cancelled attempt, or a failure that is an
+ * abort teardown, fails the loop either way. The field stays off the
+ * primitive when unset, so a default loop's hash is unchanged. See
+ * {@link BodyFailurePolicy}.
  *
  * That record is persisted on the loop's `StepCompleted`, and a run that
  * crashes after the loop settles replays the persisted value rather than
@@ -331,6 +382,7 @@ export interface LoopPrimitive extends PrimitiveBase {
   input?: Selector;
   maxIterations: number;
   onExhausted: string;
+  onIterationFailure?: BodyFailurePolicy;
   drainBehavior?: DrainBehavior;
 }
 
@@ -405,6 +457,8 @@ export type Primitive =
 export interface StepOpts<EnvReq extends BaseEnv> {
   agent: AgentDefinition<EnvReq>;
   input?: Selector;
+  /** See {@link StepPrimitive.inference}. */
+  inference?: Selector;
   reads?: readonly Selector[];
   writes?: readonly Selector[];
   retry?: RetryPolicy;
@@ -497,6 +551,7 @@ export function step<EnvReq extends BaseEnv>(
     agent,
     drainBehavior,
     ...(opts.input !== undefined ? { input: opts.input } : {}),
+    ...(opts.inference !== undefined ? { inference: opts.inference } : {}),
     ...(opts.reads !== undefined ? { reads: opts.reads } : {}),
     ...(opts.writes !== undefined ? { writes: opts.writes } : {}),
     ...(opts.retry !== undefined ? { retry: opts.retry } : {}),
@@ -612,7 +667,9 @@ export interface ChildWorkflowOpts {
 }
 
 export function childWorkflow(opts: ChildWorkflowOpts): ChildWorkflowPrimitive {
-  const drainBehavior: DrainBehavior = opts.drainBehavior ?? "cancel";
+  // Stored on the primitive, so the value is part of the definition hash.
+  // Omitting the option selects `"wait"`.
+  const drainBehavior: DrainBehavior = opts.drainBehavior ?? "wait";
   return {
     kind: "childWorkflow",
     id: "",
@@ -650,10 +707,35 @@ export interface ActionOpts {
   after?: readonly string[];
   /** See {@link StepPrimitive.onFailure}. */
   onFailure?: string;
+  /** See {@link ActionPrimitive.credentials}. */
+  credentials?: readonly string[];
 }
 
 export function action(opts: ActionOpts): ActionPrimitive {
   const drainBehavior: DrainBehavior = opts.drainBehavior ?? "cancel";
+  const credentials = opts.credentials ?? [];
+  const seen = new Set<string>();
+  for (const handle of credentials) {
+    if (!ToolCredentialHandle.allows(handle)) {
+      throw new Error(
+        `action ${JSON.stringify(opts.handler)} declares credential handle ${JSON.stringify(handle)}, which does not match ${ToolCredentialHandle.expression}`,
+      );
+    }
+    if (seen.has(handle)) {
+      throw new Error(
+        `action ${JSON.stringify(opts.handler)} declares credential handle ${JSON.stringify(handle)} more than once`,
+      );
+    }
+    seen.add(handle);
+  }
+  // Credentials resolve only inside `perform`'s `run`, and `perform` accepts
+  // only a capability the action requires. Without one, the declared handles
+  // could never be used.
+  if (credentials.length > 0 && (opts.effect?.requires.length ?? 0) === 0) {
+    throw new Error(
+      `action ${JSON.stringify(opts.handler)} declares credential handles but no effect.requires; its credentials resolve only inside perform, which needs a declared capability`,
+    );
+  }
   return {
     kind: "action",
     id: "",
@@ -664,6 +746,7 @@ export function action(opts: ActionOpts): ActionPrimitive {
     ...(opts.timeout !== undefined ? { timeout: opts.timeout } : {}),
     ...(opts.after !== undefined ? { after: opts.after } : {}),
     ...(opts.onFailure !== undefined ? { onFailure: opts.onFailure } : {}),
+    ...(credentials.length > 0 ? { credentials } : {}),
   };
 }
 
@@ -674,6 +757,7 @@ export interface LoopOpts {
   input?: Selector;
   maxIterations: number;
   onExhausted: string;
+  onIterationFailure?: BodyFailurePolicy;
   drainBehavior?: DrainBehavior;
   after?: readonly string[];
 }
@@ -693,6 +777,13 @@ export function loop(opts: LoopOpts): LoopPrimitive {
     onExhausted: opts.onExhausted,
     drainBehavior,
     ...(opts.input !== undefined ? { input: opts.input } : {}),
+    // Conditional passthrough (NOT resolved to a default like drainBehavior):
+    // an absent policy must leave the field off so a default loop's inert
+    // projection -- and therefore its approval hash -- is unchanged. An
+    // explicit "end" stays on the object; only absence is omitted.
+    ...(opts.onIterationFailure !== undefined
+      ? { onIterationFailure: opts.onIterationFailure }
+      : {}),
     ...(opts.after !== undefined ? { after: opts.after } : {}),
   };
 }

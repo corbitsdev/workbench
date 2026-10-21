@@ -81,15 +81,21 @@ describe("listChatAgents self-heal join", () => {
     expect(redeployMode(await agent())).toBe("manual");
   });
 
-  test("a fresh deployment whose run is not addressed yet is starting, not redeployed again", async () => {
+  test("a pending deployment whose anchor run already carries an address is starting, not live yet", async () => {
     hub(
       [
         { id: "r2", status: "pending", createdAt: T1H },
         { id: "r1", status: "released", createdAt: T0 },
       ],
-      [{ id: "r1", status: "error", createdAt: T0, updatedAt: T1H, endedAt: T1H }],
+      [
+        { id: "r2", status: "deployed", createdAt: T1H, updatedAt: T1H },
+        { id: "r1", status: "error", createdAt: T0, updatedAt: T1H, endedAt: T1H },
+      ],
     );
-    expect(redeployMode(await agent())).toBeUndefined();
+    const listed = await agent();
+    expect(listed.liveAddress).toBeNull();
+    expect(listed.latest).toBe("starting");
+    expect(redeployMode(listed)).toBeUndefined();
   });
 
   test("a failed redeploy caps the agent", async () => {

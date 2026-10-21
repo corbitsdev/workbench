@@ -1,6 +1,11 @@
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 
+import type { TenantConfigInvalidError } from "@intx/db";
+import { getLogger } from "@intx/log";
+
+const log = getLogger(["hub", "errors"]);
+
 // The hub's canonical error envelope: `{ error: { code, message } }`, with
 // the HTTP status paired to the machine-readable code. Every route returns
 // this shape for non-2xx responses so clients can switch on `code` without
@@ -14,6 +19,7 @@ const STATUS_BY_CODE: Readonly<Record<string, ContentfulStatusCode>> = {
   forbidden: 403,
   payload_too_large: 413,
   invalid_workflow: 409,
+  invalid_tenant_config: 409,
   sidecar_unavailable: 502,
   workflow_run_not_running: 409,
   deployment_unreachable: 409,
@@ -22,6 +28,7 @@ const STATUS_BY_CODE: Readonly<Record<string, ContentfulStatusCode>> = {
   invalid_request: 400,
   unavailable: 503,
   unsupported_source: 400,
+  asset_kind_mismatch: 409,
   anchor_run_missing: 500,
   reserved_signal_name: 400,
   unaddressable_run: 400,
@@ -48,4 +55,17 @@ export function errorResponse(
     );
   }
   return c.json({ error: { code, message } }, status);
+}
+
+/** Inherited config can belong to a tenant the caller cannot read. */
+export function tenantConfigErrorResponse(
+  c: Context,
+  error: TenantConfigInvalidError,
+): Response {
+  log.warn`${error.message}`;
+  return errorResponse(
+    c,
+    "invalid_tenant_config",
+    "The tenant or an ancestor has invalid configuration",
+  );
 }

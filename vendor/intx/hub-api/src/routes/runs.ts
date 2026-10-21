@@ -10,12 +10,12 @@ import {
   workflowRun,
 } from "@intx/db/schema";
 import type { DB, ApprovalStore, PrincipalKeyStore } from "@intx/db";
-import { authorize } from "@intx/authz";
 import type { ConditionRegistry, GrantStore } from "@intx/types/authz";
 import { extractPartByPath } from "@intx/mime";
 
 import {
   WorkflowRunResponse,
+  WorkflowLifecycleResponse,
   ErrorResponse,
   WorkflowRunHealth,
   RunAuthorizationResponse,
@@ -23,10 +23,12 @@ import {
   OfferingDetail,
   SendMessage,
   MailResponse,
+  RecoverWorkflowCapacityRequest,
   paginatedSchema,
 } from "@intx/types";
 import {
   createWorkflowRunReader,
+  type WorkflowLifecycleService,
   findRoutableById,
   resolveRunIdForSession,
   runRowToRoutableRecord,
@@ -36,6 +38,7 @@ import {
   type SessionService,
   type SidecarRouter,
   type WorkflowDispatchService,
+  WORKFLOW_RUN_REF,
 } from "@intx/hub-sessions";
 import { formatOffering } from "./offerings";
 import { formatApproval } from "./approvals";
@@ -48,10 +51,10 @@ import { WorkflowRunEventsResponse, formatRunEvent } from "./run-events-view";
 
 import type { TenantEnv } from "../context";
 import { errorResponse } from "../error-response";
-import { idResource } from "../middleware/grant";
+import { createAuthorizeGrant, idResource } from "../middleware/grant";
 import type { RequireGrant } from "../middleware/grant";
 import { loadCommittedRunGrants } from "../run-grant-materialization";
-import { workflowRunRepoId, WORKFLOW_RUN_REF } from "../workflow-run-lifecycle";
+import { workflowRunRepoId } from "../workflow-run-lifecycle";
 import {
   createWorkflowRunTrigger,
   MAX_MAIL_BODY_BYTES,
@@ -66,13 +69,7 @@ import {
 } from "../pagination";
 import { jsonResponse } from "../openapi";
 
-// Stop and mail history are not yet wired onto a workflow (anchor) run. They
-// were built for the retired folded-launch surface and need genuinely new
-// backing (INTR-454): stop is a forced early-cancel with no author yet, and a
-// run has no durable mail archive. Each such route returns this not-implemented
-// signal (kept mounted, not 404, so the admin UI gets a clean answer) until its
-// mapping lands. Mail SEND is wired: it routes through the run's workflow-native
-// Trigger path.
+// Durable workflow mail history is not implemented on this route yet.
 function workflowRunOperationUnsupported(
   c: Context<TenantEnv>,
   operation: string,
@@ -162,6 +159,7 @@ export type CreateRunRoutesDeps = {
   // Absent when the hub runs without durable dispatch; the trigger then 503s a
   // provisioned send, exactly as the deployment Trigger route does.
   workflowDispatchService?: WorkflowDispatchService;
+  workflowLifecycleService?: WorkflowLifecycleService;
   grantStore: GrantStore;
   conditionRegistry: ConditionRegistry;
   requireGrant: RequireGrant;
@@ -176,18 +174,24 @@ export function createRunRoutes({
   eventCollectors,
   repoStore,
   workflowDispatchService,
+  workflowLifecycleService,
   grantStore,
   conditionRegistry,
   requireGrant,
   approvalStore,
 }: CreateRunRoutesDeps): Hono<TenantEnv> {
   const app = new Hono<TenantEnv>();
+  const authorizeGrant = createAuthorizeGrant({
+    grantStore,
+    conditionRegistry,
+  });
 
   // The run-event log reader is available only when the workflow-run substrate
   // is; a null reader makes the turns/events routes answer 503, never an empty
   // log masquerading as real state.
   const runReader =
     repoStore !== null ? createWorkflowRunReader(repoStore) : null;
+  const lifecycleService = workflowLifecycleService ?? null;
 
   // The mail-send trigger fires the run through its workflow-native Trigger
   // path. It needs the run-event substrate (terminal-state read), so a null
@@ -395,16 +399,14 @@ export function createRunRoutes({
 
       const principal = c.get("principal");
 
-      const authResult = await authorize(
-        grantStore,
-        principal.id,
-        tenant.id,
-        `workflow-run:${resolvedRunId}`,
-        "read",
-        conditionRegistry,
-      );
+      const allowed = await authorizeGrant({
+        principalId: principal.id,
+        tenantId: tenant.id,
+        resource: `workflow-run:${resolvedRunId}`,
+        action: "read",
+      });
 
-      if (authResult.effect !== "allow") {
+      if (!allowed) {
         return errorResponse(
           c,
           "forbidden",
@@ -632,6 +634,173 @@ export function createRunRoutes({
     },
   );
 
+  app.get(
+    "/:runId/lifecycle",
+    requireGrant(idResource("workflow-run", "runId"), "read"),
+    describeRoute({
+      tags: ["Runs"],
+      summary: "Get workflow lifecycle status",
+      description:
+        "Returns the deployment's saved policy, deadlines, and allocation cleanup status. Policy edits apply to new deployments.",
+      responses: {
+        200: jsonResponse("Lifecycle status", WorkflowLifecycleResponse),
+        404: jsonResponse("Run not found", ErrorResponse),
+        503: jsonResponse(
+          "Workflow lifecycle service unavailable",
+          ErrorResponse,
+        ),
+      },
+    }),
+    async (c) => {
+      if (lifecycleService === null)
+        return errorResponse(
+          c,
+          "unavailable",
+          "Workflow lifecycle service unavailable",
+        );
+      const status = await lifecycleService.getStatus(
+        c.get("tenant").id,
+        c.req.param("runId"),
+      );
+      if (status === null)
+        return errorResponse(c, "not_found", "Run not found");
+      return c.json(status);
+    },
+  );
+
+  app.post(
+    "/:runId/capacity/release",
+    requireGrant(idResource("workflow-run", "runId"), "manage"),
+    describeRoute({
+      tags: ["Runs"],
+      summary: "Release workflow capacity",
+      description:
+        "Durably requests release of a terminal top-level run's allocation. Poll the Location header for cleanup status. Stopped cleanup returns 409. After a cleanup disconnect timeout, automatic cleanup resumes only if the sidecar reconnects. If the sidecar has been destroyed, operator recovery is required. Exhausted retries, permanent provider rejections, `provisioner_unavailable`, and `sidecar_cleanup_preparation_timeout` require operator recovery. Reconnects and this request do not restart exhausted cleanup. Once removal is confirmed outside the Hub, `POST .../capacity/recover` releases the allocation. Returns 503 while accepted run history cannot yet be reconciled; retry later.",
+      responses: {
+        202: { description: "Release requested" },
+        204: { description: "Capacity already released or absent" },
+        404: jsonResponse("Run not found", ErrorResponse),
+        409: jsonResponse(
+          "Run is live or automatic cleanup has stopped",
+          ErrorResponse,
+        ),
+        503: jsonResponse(
+          "Workflow lifecycle service or run history unavailable",
+          ErrorResponse,
+        ),
+      },
+    }),
+    async (c) => {
+      if (lifecycleService === null)
+        return errorResponse(
+          c,
+          "unavailable",
+          "Workflow lifecycle service unavailable",
+        );
+      const tenantId = c.get("tenant").id;
+      const runId = c.req.param("runId");
+      const result = await lifecycleService.releaseCapacity(tenantId, runId);
+      switch (result) {
+        case "not_found":
+          return errorResponse(c, "not_found", "Run not found");
+        case "live":
+          return errorResponse(
+            c,
+            "conflict",
+            "Only terminal top-level runs can release their allocation",
+          );
+        case "history_pending":
+          return errorResponse(
+            c,
+            "unavailable",
+            "The run's accepted history is not reconciled yet; retry later",
+          );
+        case "cleanup_exhausted":
+          return errorResponse(
+            c,
+            "conflict",
+            "Automatic cleanup retries are exhausted; operator intervention is required",
+          );
+        case "cleanup_failed":
+          return errorResponse(
+            c,
+            "conflict",
+            "Capacity cleanup failed permanently; operator intervention is required",
+          );
+        case "cleanup_disconnected":
+          return errorResponse(
+            c,
+            "conflict",
+            "Cleanup timed out waiting for the sidecar; capacity remains reserved. Automatic cleanup resumes only if the sidecar reconnects. If the sidecar has been destroyed, operator recovery is required.",
+          );
+        case "released":
+          return c.body(null, 204);
+        case "pending":
+          c.header(
+            "Location",
+            `/api/tenants/${tenantId}/workflows/runs/${runId}/lifecycle`,
+          );
+          return c.body(null, 202);
+      }
+    },
+  );
+
+  app.post(
+    "/:runId/capacity/recover",
+    requireGrant(idResource("workflow-run", "runId"), "recover"),
+    describeRoute({
+      tags: ["Runs"],
+      summary: "Release capacity whose cleanup stopped",
+      description:
+        "Releases a `destroy_failed` allocation on the caller's word that its deployment copy and provider hold are gone. The Hub does not verify this. Use it only after confirming removal outside the Hub, since a copy that is still running keeps using the sidecar while the Hub places other work there. Send the allocation generation read from the lifecycle status. Requires the `recover` action on the run, which only the owner role holds by default. Repeating a successful request returns 204. The allocation keeps `sidecar_cleanup_operator_released` with the caller and the stopped cleanup's reason as its failure record.",
+      responses: {
+        204: { description: "Capacity released" },
+        404: jsonResponse("Run or allocation not found", ErrorResponse),
+        409: jsonResponse(
+          "Cleanup has not stopped, or the allocation generation changed",
+          ErrorResponse,
+        ),
+        503: jsonResponse(
+          "Workflow lifecycle service unavailable",
+          ErrorResponse,
+        ),
+      },
+    }),
+    validator("json", RecoverWorkflowCapacityRequest),
+    async (c) => {
+      if (lifecycleService === null)
+        return errorResponse(
+          c,
+          "unavailable",
+          "Workflow lifecycle service unavailable",
+        );
+      const result = await lifecycleService.releaseStoppedCleanup(
+        c.get("tenant").id,
+        c.req.param("runId"),
+        c.req.valid("json").generation,
+        c.get("principal").id,
+      );
+      switch (result) {
+        case "not_found":
+          return errorResponse(c, "not_found", "Run or allocation not found");
+        case "not_stopped":
+          return errorResponse(
+            c,
+            "conflict",
+            "Only an allocation whose automatic cleanup stopped can be recovered",
+          );
+        case "generation_mismatch":
+          return errorResponse(
+            c,
+            "conflict",
+            "The allocation generation changed; read the lifecycle status again",
+          );
+        case "released":
+          return c.body(null, 204);
+      }
+    },
+  );
+
   app.delete(
     "/:runId",
     requireGrant(idResource("workflow-run", "runId"), "manage"),
@@ -639,24 +808,40 @@ export function createRunRoutes({
       tags: ["Runs"],
       summary: "Stop a run",
       description:
-        "Stops a live workflow run and releases its sidecar allocation.",
+        "Durably requests cancellation of a live top-level run. Its saved cancellation retention policy controls subsequent capacity release. Poll the Location header for progress.",
       responses: {
-        204: {
-          description: "Run stopped",
-        },
+        202: { description: "Cancellation requested" },
         404: jsonResponse("Run not found", ErrorResponse),
-        409: jsonResponse("Run already stopped", ErrorResponse),
-        502: jsonResponse("Sidecar unavailable", ErrorResponse),
+        409: jsonResponse("Run is already terminal", ErrorResponse),
+        503: jsonResponse(
+          "Workflow lifecycle service unavailable",
+          ErrorResponse,
+        ),
       },
     }),
     async (c) => {
-      // Stopping a run is a forced early-cancel that a workflow (anchor) run
-      // has no backing for yet -- it needs a hub-side CancelRequested author
-      // and a lease-free allocation-release seam. The stop is gated to
-      // not-implemented until that mapping lands (tracked as INTR-454). A
-      // `markTerminal`-only stop would lie -- it would desync the child and its
-      // allocation -- so no partial stop is shipped.
-      return workflowRunOperationUnsupported(c, "Stopping a run");
+      if (lifecycleService === null)
+        return errorResponse(
+          c,
+          "unavailable",
+          "Workflow lifecycle service unavailable",
+        );
+      const tenantId = c.get("tenant").id;
+      const runId = c.req.param("runId");
+      const result = await lifecycleService.requestCancellation(
+        tenantId,
+        runId,
+        `Cancellation requested by ${c.get("principal").id}`,
+      );
+      if (result === "not_found")
+        return errorResponse(c, "not_found", "Run not found");
+      if (result === "terminal")
+        return errorResponse(c, "conflict", "Run is already terminal");
+      c.header(
+        "Location",
+        `/api/tenants/${tenantId}/workflows/runs/${runId}/lifecycle`,
+      );
+      return c.body(null, 202);
     },
   );
 
@@ -691,12 +876,12 @@ export function createRunRoutes({
           WorkflowRunTriggerResponse,
         ),
         400: jsonResponse(
-          "Attachment validation error. Each variant carries a structured code (oversize_attachment, disallowed_mime_type, malformed_base64, oversize_total) with the offending index and limits. A malformed request body that fails SendMessage validation returns the generic error shape instead.",
+          "Attachment validation error. Each variant carries a structured code (too_many_attachments, oversize_attachment, disallowed_mime_type, invalid_attachment_name, malformed_base64, oversize_total) with the offending index and limits. A malformed request body that fails SendMessage validation returns the generic error shape instead.",
           ErrorResponse,
         ),
         404: jsonResponse("Run not found", ErrorResponse),
         409: jsonResponse(
-          "Run address is not routable, its allocation is no longer active, or the run is terminal",
+          "Run address is not routable, its allocation is no longer active, or the run is stopping or terminal",
           ErrorResponse,
         ),
         413: jsonResponse(

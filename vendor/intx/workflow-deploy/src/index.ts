@@ -4,7 +4,9 @@
 // Surfaces today:
 //   - capability walk: structural lift of `getRequiredEnvKeys` that
 //     emits the grant-shape declarations the operator-approval gate
-//     consumes.
+//     consumes, plus the child-grant cap that narrows a parent's
+//     grants to the resources and credential consumers the child
+//     body declares.
 //   - approval gate: consumes the walk's output plus an operator-
 //     supplied `ApprovalSet` and yields a per-step pending delta.
 //   - deploy derivation + source pinning: pure address derivation
@@ -22,6 +24,11 @@ export {
   type PluginToolDefinitions,
 } from "./capability-walk";
 export {
+  collectDeclaredCredentialConsumers,
+  collectDeclaredResources,
+  filterGrantsToDeclaredResources,
+} from "./child-grant-filter";
+export {
   approvalItemsFromSet,
   approvalSetFromItems,
   createApprovalSet,
@@ -33,6 +40,11 @@ export {
   type ApprovalSource,
   type CapabilityApprovalGate,
 } from "./capability-approval";
+export {
+  checkCredentialBindings,
+  describeCredentialBindingViolation,
+  type CredentialBindingViolation,
+} from "./credential-binding-check";
 export { extractFoldedBody, type FoldedBody } from "./fold-synthesis";
 export {
   enumerateInertBodies,
@@ -49,12 +61,14 @@ export {
   buildInertProjectionStepSources,
   buildInertBodyStepSources,
   buildSingleStepAgentDefinition,
+  WorkflowDefinitionInvalidError,
+  type DeployContent,
+} from "./orchestrator";
+export {
   deriveRunAddress,
   deriveRunAgentId,
   deriveStepAddress,
   resolveStepAddress,
   deriveStepAgentId,
   deriveWorkflowRunRepoId,
-  WorkflowDefinitionInvalidError,
-  type DeployContent,
-} from "./orchestrator";
+} from "./addresses";

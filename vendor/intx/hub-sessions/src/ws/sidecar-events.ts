@@ -21,9 +21,10 @@
 
 import type {
   PackRejectReason,
-  RepoId,
   RunGrantsFrame,
+  WorkflowRunRefTips,
 } from "@intx/types/sidecar";
+import type { RepoId } from "@intx/types/repo";
 import type {
   ApprovalSnapshot,
   ConnectorThreadState,
@@ -58,11 +59,14 @@ export type WorkflowRunPackSource = {
  * Outcome of reserving a mail-triggered run's grants. `skip` means the
  * recipient names no workflow deployment; `rejected` means the deployment's
  * stable run is terminal or its requirements cannot be authorized;
+ * `notReady` means credential resolution is not recorded yet, so nothing
+ * was committed and the caller should retry after initialization;
  * `materialized` carries the canonical persisted wire rows.
  */
 export type MailTriggeredRunGrantsResult =
   | { outcome: "skip" }
   | { outcome: "rejected"; status: 403 | 409; code: string; message: string }
+  | { outcome: "notReady" }
   | {
       outcome: "materialized";
       stepGrants: RunGrantsFrame["stepGrants"];
@@ -80,17 +84,17 @@ export type SidecarEventMap = {
     childRunId?: string;
   };
 
-  /** Notification. Emitted once when a sidecar's connection closes,
-   * carrying every address the connection owned -- session addresses
-   * and hub-minted workflow-substrate deployment addresses alike --
-   * so lifecycle teardown covers both. */
+  /** Notification. Emitted when a sidecar's connection closes, and when
+   * one allocation leaves a connection that stays open for others,
+   * carrying every workflow address that lost its route: deployment
+   * addresses and the step addresses staged for them. */
   "sidecar.disconnect": {
     ownedAddresses: string[];
-    /** Present only when the closing socket was the current allocated owner. */
-    allocated?: {
+    /** Allocation generations whose current connection this was. */
+    allocated: {
       allocationId: string;
       generation: number;
-    };
+    }[];
   };
 
   /** Notification after the exact authenticated allocation generation registers. */
@@ -99,10 +103,20 @@ export type SidecarEventMap = {
     generation: number;
   };
 
-  /** Notification. Emitted when a mail.outbound frame from a sidecar
-   * names recipients that the wire layer could not deliver locally and
-   * could not enqueue for a disconnected agent. The host is free to
-   * relay it onto an external transport or drop it. */
+  /**
+   * Notification after the sidecar reports that the current generation's
+   * deployment stopped though the Hub did not stop it.
+   */
+  "deployment.stopped": {
+    allocationId: string;
+    generation: number;
+  };
+
+  /** Notification. Emitted for mail the Hub gives up on: recipients no
+   * connection routes, un-acked mail it stops redelivering that no
+   * dispatch row stands behind, and mail held for a sender key that never
+   * arrived. The host is free to relay it onto an external transport or
+   * drop it. */
   "mail.outbound.undelivered": {
     rawMessage: string;
     recipients: string[];
@@ -180,6 +194,7 @@ export function createSidecarEmitter(): SidecarEventEmitter {
     "agent.event": new Set(),
     "sidecar.disconnect": new Set(),
     "sidecar.allocated.connected": new Set(),
+    "deployment.stopped": new Set(),
     "mail.outbound.undelivered": new Set(),
     "mail.persisted": new Set(),
     "mail.inbound.acknowledged": new Set(),
@@ -281,7 +296,7 @@ export type SidecarLookups = {
   resolveSenderKey?: (address: string) => Promise<string | null>;
 
   /** Strict sibling of `resolveSenderKey` for the reconnect reconciliation. The
-   * register/reconnect handler re-resolves each reported cached sender and acts
+   * `hello` handler re-resolves each cached sender a hello reports and acts
    * on the three-way outcome the best-effort resolver collapses:
    *   - returns the hex key when the sender resolves -> push `sender.key.refresh`;
    *   - returns `null` for a CONFIRMED absence (no matching principal = a deleted
@@ -361,4 +376,15 @@ export type SidecarLookups = {
   ) => Promise<
     { accepted: true } | { accepted: false; reason: PackRejectReason }
   >;
+
+  /** Reads the Hub's tip of each authoritative ref of the deployment's
+   * workflow-run repo, `null` for a ref it has not received. A stop is
+   * confirmed only once the worker reports the same tips. */
+  readWorkflowRunRefTips?: (
+    agentAddress: string,
+  ) => Promise<WorkflowRunRefTips>;
+  /** The terminal anchor's admission cutoff is closed and earlier receives settled. */
+  isWorkflowRunHistoryFinal?: (
+    source: WorkflowRunPackSource,
+  ) => Promise<boolean>;
 };

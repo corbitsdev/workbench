@@ -26,7 +26,7 @@
       "path": "../db/tsconfig.src.json"
     },
     {
-      "path": "../inference/tsconfig.src.json"
+      "path": "../hub-common/tsconfig.src.json"
     },
     {
       "path": "../mime/tsconfig.src.json"

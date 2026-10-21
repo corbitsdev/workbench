@@ -37,7 +37,6 @@ export {
 export {
   createInMemorySpawnChild,
   createInMemorySpawnSuspendableChild,
-  type ChildTerminalStatus,
   type RunChildWorkflow,
   type RunSuspendableChild,
 } from "./adapters/spawn-child";
@@ -116,7 +115,6 @@ export {
 export {
   ControlPayload,
   DEFAULT_EVENT_BUFFER_LIMIT,
-  EventPayload,
   FrameEnvelope,
   IPC_CRYPTO,
   MailboxNotifyHeaders,
@@ -143,15 +141,17 @@ export {
   type EventChannelReceiverOpts,
   type EventChannelSender,
   type EventChannelSenderOpts,
+  type EventPayload,
   type FrameReader,
   type FrameWriter,
   type NdjsonReader,
   type NdjsonWriter,
+  type ReceivedEvent,
 } from "./ipc";
 
 export {
   EVENT_CHANNEL_FD,
-  createChildMailboxReader,
+  createChildMailboxCallBridge,
   createChildMailboxMutationBridge,
   createChildOutboundMailBridge,
   createChildSubstrateWriteBridge,
@@ -164,8 +164,8 @@ export {
   parseSpawnTimeEnv,
   runWorkflowChild,
   runWorkflowChildFromProcessEnv,
+  type ChildMailboxCallBridge,
   type ChildMailboxMutationBridge,
-  type ChildMailboxReader,
   type ChildOutboundMailBridge,
   type ChildStepInvoker,
   type ChildSubstrateWriteBridge,
@@ -206,3 +206,14 @@ export {
   type SignalChannelHandle,
   type SignalChannelOpts,
 } from "./seams/index";
+export {
+  createDurableConversationRegistry,
+  createDurableConversationStore,
+  reconstructDurableConversation,
+  type DurableConversationRegistry,
+  type DurableConversationRegistryOpts,
+  type DurableConversationStore,
+  type DurableConversationStoreOpts,
+  type ReconstructedConversation,
+} from "./conversation-state";
+export { readRunGrants, runGrantsPath } from "./run-grants";

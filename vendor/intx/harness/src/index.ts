@@ -27,9 +27,24 @@ export {
 } from "./credential-capability";
 export type {
   CredentialCapabilityDeps,
-  HostCredentialCapability,
   ResolvedCredentialBinding,
 } from "./credential-capability";
+
+export {
+  buildConsumerCredentialCapability,
+  buildCredentialCapabilities,
+  createInferenceCredentialResolver,
+} from "./step-credential-capabilities";
+export type {
+  CredentialMaterialCell,
+  StepCredentialWiring,
+} from "./step-credential-capabilities";
+
+export { createActionCredentialsFactory } from "./action-credential-capability";
+export type {
+  ActionCredentialRequest,
+  ActionCredentialWiring,
+} from "./action-credential-capability";
 
 export {
   createConnectorRouter,

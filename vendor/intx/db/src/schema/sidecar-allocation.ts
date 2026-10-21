@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
+  boolean,
   check,
   index,
   integer,
@@ -27,7 +29,7 @@ export const sidecarAllocation = pgTable(
       .references(() => tenant.id, { onDelete: "restrict" }),
     provisionerId: text("provisioner_id").notNull(),
     provisionerApiVersion: integer("provisioner_api_version")
-      .$type<1>()
+      .$type<2>()
       .notNull(),
     provisionerBindingFingerprint: text(
       "provisioner_binding_fingerprint",
@@ -35,6 +37,11 @@ export const sidecarAllocation = pgTable(
     sidecarId: text("sidecar_id").references(() => sidecar.id, {
       onDelete: "restrict",
     }),
+    // The digest of the adapter manifest that the Hub sent, or will send, in
+    // the ensure for this generation. For a row with a sidecar, it is the
+    // manifest that the sidecar booted with. The Hub uses it to place new
+    // work only on a sidecar that loaded the manifest the work needs.
+    adapterManifestDigest: text("adapter_manifest_digest").notNull(),
     status: text("status")
       .$type<SidecarAllocationStatus>()
       .notNull()
@@ -48,7 +55,21 @@ export const sidecarAllocation = pgTable(
     initializationLeaseId: text("initialization_lease_id"),
     ensureAttempts: integer("ensure_attempts").notNull().default(0),
     destroyAttempts: integer("destroy_attempts").notNull().default(0),
+    deploymentCleanupConfirmed: boolean("deployment_cleanup_confirmed")
+      .notNull()
+      .default(false),
+    providerHoldReleased: boolean("provider_hold_released")
+      .notNull()
+      .default(false),
     connectDeadline: timestamp("connect_deadline"),
+    // How long the sidecar may stay disconnected before the Hub fails the
+    // deployment, from the deployment's lifecycle policy.
+    maxDisconnectedMs: bigint("max_disconnected_ms", {
+      mode: "number",
+    }).notNull(),
+    // When the deployment's first deploy first failed before its deploy frame
+    // was sent; the Hub stops retrying it a while after.
+    firstDeployFailedAt: timestamp("first_deploy_failed_at"),
     failureCode: text("failure_code"),
     failureMessage: text("failure_message"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -56,22 +77,26 @@ export const sidecarAllocation = pgTable(
   },
   (t) => [
     uniqueIndex("sidecar_allocation_anchor_run_idx").on(t.anchorRunId),
-    uniqueIndex("sidecar_allocation_active_sidecar_idx")
-      .on(t.sidecarId)
-      .where(
-        sql`${t.status} in ('provisioning', 'allocated', 'replacing', 'releasing', 'destroy_failed')`,
-      ),
     index("sidecar_allocation_sidecar_idx").on(t.sidecarId),
     index("sidecar_allocation_reconciliation_idx")
       .on(t.nextAttemptAt, t.createdAt)
       .where(
         sql`${t.status} in ('pending', 'provisioning', 'allocated', 'replacing', 'releasing') and ${t.nextAttemptAt} is not null`,
       ),
+    index("sidecar_allocation_dispatchable_anchor_idx")
+      .on(t.anchorRunId)
+      .where(
+        sql`${t.status} in ('pending', 'provisioning', 'allocated', 'replacing')`,
+      ),
     check(
       "sidecar_allocation_status_check",
       sql`${t.status} in ('pending', 'provisioning', 'allocated', 'replacing', 'releasing', 'destroy_failed', 'released', 'failed')`,
     ),
     check("sidecar_allocation_generation_check", sql`${t.generation} >= 0`),
+    check(
+      "sidecar_allocation_max_disconnected_check",
+      sql`${t.maxDisconnectedMs} > 0`,
+    ),
     check(
       "sidecar_allocation_accepted_generation_check",
       sql`${t.ensureAcceptedGeneration} is null or ${t.ensureAcceptedGeneration} <= ${t.generation}`,

@@ -38,8 +38,8 @@
     "@corbits/deferred-tools": "workspace:*",
     "@corbits/mcp": "^0.3.0",
     "@corbits/memory": "github:corbitsdev/corbits-memory#8be608becc749fa0795a899826277823dca6db3e",
-    "@intx/tools-mail": "0.4.0",
-    "@intx/tools-posix": "0.4.0"
+    "@intx/tools-mail": "0.5.0",
+    "@intx/tools-posix": "0.5.0"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

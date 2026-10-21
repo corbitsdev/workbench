@@ -23,6 +23,9 @@
       "path": "../agent/tsconfig.src.json"
     },
     {
+      "path": "../authz/tsconfig.src.json"
+    },
+    {
       "path": "../types/tsconfig.src.json"
     },
     {

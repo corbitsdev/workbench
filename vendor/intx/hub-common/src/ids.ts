@@ -1,4 +1,4 @@
-import { hexEncode } from "@intx/types";
+import { hexEncode } from "@intx/types/hex";
 
 const PREFIXES = {
   tenant: "tnt_",
@@ -28,6 +28,7 @@ const PREFIXES = {
   signal: "sig_",
   workflowDefinition: "wfd_",
   workflowDefinitionVersion: "wdv_",
+  workflowPendingProjection: "wpp_",
 } as const;
 
 type IDKind = keyof typeof PREFIXES;

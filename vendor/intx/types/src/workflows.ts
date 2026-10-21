@@ -13,6 +13,7 @@ export type WorkflowDefinitionVersionStatus =
   (typeof workflowDefinitionVersionStatuses)[number];
 
 import { type } from "arktype";
+import { WorkflowLifecyclePolicy } from "./workflow-lifecycle";
 
 const WorkflowDefinitionStatusType = type.enumerated(
   ...workflowDefinitionStatuses,
@@ -35,6 +36,7 @@ export const WorkflowDefinitionResponse = type({
   name: "string",
   "description?": "string | null",
   currentVersion: "string",
+  "lifecycle?": WorkflowLifecyclePolicy,
   status: WorkflowDefinitionStatusType.describe(
     "Lifecycle state of the definition: `deployed` (a launchable version is active) or `stopped` (deactivated).",
   ),
@@ -46,6 +48,10 @@ export const WorkflowDefinitionResponse = type({
 export const WorkflowRollbackRequest = type({
   version: "string",
 });
+
+export const UpdateWorkflowDefinitionLifecycle = type({
+  lifecycle: WorkflowLifecyclePolicy,
+}).onUndeclaredKey("reject");
 
 export const WorkflowDeploymentStatus = type.enumerated(
   "deployed",
@@ -63,7 +69,7 @@ export const WorkflowDeploymentResponse = type({
   tenantId: "string",
   definitionAssetId: "string",
   status: WorkflowDeploymentStatus.describe(
-    "Deployment lifecycle status. `failed` is a terminal failure with no infrastructure. `destroy_failed` is a permanent cleanup failure where infrastructure may remain and require operator cleanup.",
+    "Deployment lifecycle status. `recovering` means the Hub is replacing deployment capacity. `failed` is a terminal allocation failure with no infrastructure. `destroy_failed` means automatic cleanup stopped. Read `GET /api/tenants/:tenantId/workflows/runs/:runId/lifecycle` for the allocation's failure code and message.",
   ),
   createdAt: "string",
 });
