@@ -7,6 +7,7 @@ import { WorkflowDeploymentResponse } from "@intx/types";
 import type { APIQuery } from "@/lib/api-query";
 import { ApiQueryError, UnauthenticatedError, toAPIQuery } from "@/lib/api-query";
 import { listTopLevelRuns } from "@/agents-api";
+import { apiRequest, type Validator } from "@/api";
 import { deploymentLiveness } from "@/chat/deployment-liveness";
 import { isAgentDeploySourceAssetName } from "@/agent-deploy";
 import { WORKER_SOURCE_CONFIG } from "@/worker-source";
@@ -107,15 +108,15 @@ async function setScheduleEnabled(
   action: "pause" | "resume",
 ): Promise<CronSchedule> {
   const path = `${cronPath(tenantId)}/${encodeURIComponent(id)}/${action}`;
-  const response = await fetch(path, { method: "POST", headers: { accept: "application/json" } });
-  if (response.status === 401) throw new UnauthenticatedError();
-  if (!response.ok) {
-    throw new ApiQueryError(`The server answered ${response.status}.`, response.status, path);
-  }
-  const parsed = CreatedCronSchedule(await response.json());
-  if (parsed instanceof type.errors) {
-    throw new ApiQueryError(`Unexpected response shape: ${parsed.summary}`, undefined, path);
-  }
+  const parsed = await apiRequest(
+    path,
+    CreatedCronSchedule,
+    undefined,
+    ApiQueryError,
+    { method: "POST" },
+    fetch,
+    { throwUnauthenticatedOn401: true },
+  );
   return parsed.schedule;
 }
 
@@ -158,17 +159,10 @@ export async function listCronSchedules(tenantId: string): Promise<readonly Cron
   return parsed.schedules;
 }
 
-async function fetchJSON<T>(path: string, schema: (data: unknown) => T | type.errors): Promise<T> {
-  const response = await fetch(path, { headers: { accept: "application/json" } });
-  if (response.status === 401) throw new UnauthenticatedError();
-  if (!response.ok) {
-    throw new ApiQueryError(`The server answered ${response.status}.`, response.status, path);
-  }
-  const parsed = schema(await response.json());
-  if (parsed instanceof type.errors) {
-    throw new ApiQueryError(`Unexpected response shape: ${parsed.summary}`, undefined, path);
-  }
-  return parsed;
+function fetchJSON<T>(path: string, schema: Validator<T>): Promise<T> {
+  return apiRequest(path, schema, undefined, ApiQueryError, undefined, fetch, {
+    throwUnauthenticatedOn401: true,
+  });
 }
 
 // Worker and every deployed agent are `workflow`-kind assets too, but they're

@@ -10,7 +10,8 @@ import {
 } from "@intx/types";
 export { credentialTypes } from "@intx/types";
 
-import { apiRequest, requestVoid, type Validator } from "./api-request";
+import { ApiQueryError } from "@/lib/api-query";
+import { apiRequest, requestVoid, type Validator } from "../api";
 
 export type Credential = typeof CredentialResponse.infer;
 export type Provider = typeof ProviderResponse.infer;
@@ -18,12 +19,10 @@ export type Provider = typeof ProviderResponse.infer;
 const CredentialsPage = paginatedSchema(CredentialResponse);
 const ProvidersPage = paginatedSchema(ProviderResponse);
 
-export class CredentialsApiError extends Error {
-  constructor(
-    message: string,
-    readonly status?: number,
-  ) {
-    super(message);
+export class CredentialsApiError extends ApiQueryError {
+  constructor(message: string, status?: number, path?: string) {
+    super(message, status, path);
+    this.name = "CredentialsApiError";
   }
 }
 

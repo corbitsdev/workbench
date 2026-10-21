@@ -2,9 +2,9 @@
 // routes. Those carry only metadata, so `description` always reads back
 // empty and there is no update/scope/version-history route yet.
 import { type } from "arktype";
-import type { ArkErrors } from "arktype";
 
 import { ApiQueryError } from "@/lib/api-query";
+import { apiRequest, type Validator } from "./api";
 
 const SkillSummary = type({
   assetId: "string",
@@ -30,60 +30,27 @@ type Asset = typeof AssetResponse.infer;
 
 const AssetListResponse = AssetResponse.array();
 
-const ErrorEnvelope = type({
-  error: { code: "string", message: "string" },
-});
-
-type Validator<T> = (data: unknown) => T | ArkErrors;
-
 function base(tenantId: string): string {
   return `/api/tenants/${tenantId}/assets`;
 }
 
-async function request<T>(
+function request<T>(
   path: string,
   schema: Validator<T>,
   init: { method?: string; body?: unknown } = {},
 ): Promise<T> {
-  let response: Response;
-  try {
-    response =
-      init.body === undefined
-        ? await fetch(path, {
-            method: init.method ?? "GET",
-            headers: { accept: "application/json" },
-          })
-        : await fetch(path, {
-            method: init.method ?? "GET",
-            headers: {
-              accept: "application/json",
-              "content-type": "application/json",
-            },
-            body: JSON.stringify(init.body),
-          });
-  } catch (cause) {
-    throw new ApiQueryError(
-      cause instanceof Error ? cause.message : String(cause),
-      undefined,
-      path,
-    );
-  }
-  const json: unknown = await response.json().catch(() => undefined);
-  if (!response.ok) {
-    const envelope = ErrorEnvelope(json);
-    throw new ApiQueryError(
-      envelope instanceof type.errors
-        ? `The server answered ${String(response.status)}.`
-        : envelope.error.message,
-      response.status,
-      path,
-    );
-  }
-  const parsed = schema(json);
-  if (parsed instanceof type.errors) {
-    throw new ApiQueryError(`Unexpected response shape: ${parsed.summary}`, undefined, path);
-  }
-  return parsed;
+  return apiRequest(
+    path,
+    schema,
+    undefined,
+    ApiQueryError,
+    init.body === undefined
+      ? { method: init.method ?? "GET" }
+      : {
+          method: init.method ?? "GET",
+          body: JSON.stringify(init.body),
+        },
+  );
 }
 
 function toSkillSummary(asset: Asset): SkillSummary {
