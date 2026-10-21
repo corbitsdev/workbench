@@ -8,7 +8,7 @@ import { Hash, Plus, Robot } from "@/lib/icons";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { AgentRedeployer } from "../agent-redeployer";
-import { redeployMode, workerState } from "@/chat/deployment-liveness";
+import { redeployMode } from "@/chat/deployment-liveness";
 import type { ChatAgent } from "@/chat/threads-api";
 import { WorkbenchAvatar } from "@/chat/avatar";
 import { useRestartAgent } from "../use-restart-agent";
@@ -16,6 +16,7 @@ import { useBench } from "../bench-context";
 import type { HubTenant } from "../needs-converge";
 import { useSidebarSections } from "../shell/sidebar-sections";
 import { useBenchWorkers, type BenchWorker } from "../worker-benches";
+import { workerStatus, type WorkerTone } from "../worker-status";
 import { Link, useNavigate } from "../navigation";
 import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
@@ -24,25 +25,6 @@ import { WORKERS_PATH_PREFIX } from "../path-ids";
 import { NEW_WORKBENCH_PATH } from "../routes";
 import { useWorkerRole } from "../worker-role-query";
 import "./workers-page.css";
-
-export type WorkerTone = "working" | "ready" | "idle";
-
-/** What a worker is doing right now, from its deployment alone: coming up
- * (including a dead one about to be redeployed) is working, stopped is
- * waiting on the person to restart it, live and waiting for mail is idle. */
-export function workerStatus(agent: Pick<ChatAgent, "liveAddress" | "latest" | "capped">): {
-  readonly tone: WorkerTone;
-  readonly text: string;
-} {
-  switch (workerState(agent)) {
-    case "live":
-      return { tone: "idle", text: "Waiting for mail" };
-    case "stopped":
-      return { tone: "ready", text: "Stopped. Restart it to put it back to work." };
-    case "starting":
-      return { tone: "working", text: "Starting up" };
-  }
-}
 
 export function workerPath(agentId: string): string {
   return `${WORKERS_PATH_PREFIX}/${encodeURIComponent(agentId)}`;

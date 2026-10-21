@@ -1,12 +1,8 @@
-// Fetch/query plumbing over the native tenant-scoped `GET /workflows/runs`
-// listing. See docs/insights-native-runs.md for the cutover from the
-// deleted run-scope/insights packages and what was dropped.
-
 import { type } from "arktype";
 import { RunApprovalsResponse, WorkflowRunResponse, paginatedSchema } from "@intx/types";
 
-// `routineId`/`routineName` are this app's own additions, absent on the
-// native feed — see docs/insights-native-runs.md.
+// `routineId`/`routineName` are optional client-side attribution fields,
+// absent on the native `GET /workflows/runs` feed.
 export const InsightsRunSchema = WorkflowRunResponse.and(
   type({
     "routineId?": "string | null",
@@ -15,15 +11,12 @@ export const InsightsRunSchema = WorkflowRunResponse.and(
 );
 export type InsightsRun = typeof InsightsRunSchema.infer;
 
-/** Native `GET /workflows/runs` envelope. */
 export const TopLevelRunsSchema = paginatedSchema(InsightsRunSchema);
 
 // The REST pagination ceiling — same limit `agents-api.ts`'s
 // `listTopLevelRuns` uses for this route.
 const TOP_LEVEL_RUNS_LIMIT = 100;
 
-// The native listing already excludes every non-top-level run. See
-// docs/insights-native-runs.md for the accepted-loss differences.
 export function insightsTopLevelRunsPath(tenantId: string): string {
   return `/api/tenants/${tenantId}/workflows/runs?limit=${TOP_LEVEL_RUNS_LIMIT}`;
 }
@@ -53,13 +46,19 @@ export function runFailureMessage(events: readonly RunEvent[]): string | null {
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i];
     if (event === undefined) continue;
-    if (event.type !== "RunFailed" && event.type !== "StepFailed") continue;
+    if (!/error|fail/i.test(event.type)) continue;
     const body = event.body;
     if (typeof body !== "object" || body === null) continue;
-    const error = (body as Record<string, unknown>)["error"];
-    if (typeof error !== "object" || error === null) continue;
-    const message = (error as Record<string, unknown>)["message"];
-    if (typeof message === "string") return message;
+    const record = body as Record<string, unknown>;
+    const error = record["error"];
+    if (typeof error === "object" && error !== null) {
+      const nestedMessage = (error as Record<string, unknown>)["message"];
+      if (typeof nestedMessage === "string" && nestedMessage !== "") return nestedMessage;
+    }
+    if (typeof record["message"] === "string" && record["message"] !== "") {
+      return record["message"];
+    }
+    if (typeof error === "string" && error !== "") return error;
   }
   return null;
 }

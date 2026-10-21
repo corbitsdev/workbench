@@ -7,10 +7,12 @@ import { useEffect } from "react";
 import { useQueries, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 
 import type { AvatarStatus } from "@/chat/avatar";
+import { workerState } from "@/chat/deployment-liveness";
 import {
   listWorkbenchParticipants,
   readWorkbench,
   sameAddress,
+  type ChatAgent,
   type WorkbenchMessage,
   type WorkbenchParticipant,
 } from "@/chat/threads-api";
@@ -20,10 +22,29 @@ import { createFetchStockHub } from "./needs-converge";
 import { pendingApprovalsPath } from "./pending-approvals";
 import { tenantKeys } from "./query-client";
 
+export type WorkerTone = "working" | "ready" | "idle";
+
 export type WorkerStatus = {
   readonly tone: AvatarStatus;
   readonly text: string;
 };
+
+/** What a worker is doing right now, from its deployment alone: coming up
+ * (including a dead one about to be redeployed) is working, stopped is
+ * waiting on the person to restart it, live and waiting for mail is idle. */
+export function workerStatus(agent: Pick<ChatAgent, "liveAddress" | "latest" | "capped">): {
+  readonly tone: WorkerTone;
+  readonly text: string;
+} {
+  switch (workerState(agent)) {
+    case "live":
+      return { tone: "idle", text: "Waiting for mail" };
+    case "stopped":
+      return { tone: "ready", text: "Stopped. Restart it to put it back to work." };
+    case "starting":
+      return { tone: "working", text: "Starting up" };
+  }
+}
 
 type PendingTurn = { readonly sentAt: number };
 type Bench = { readonly id: string; readonly domain: string };

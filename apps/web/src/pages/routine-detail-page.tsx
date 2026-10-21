@@ -1,13 +1,20 @@
 import { RichEmptyState, RunNowButton, Skeleton } from "@corbits/react-ui";
-import { type } from "arktype";
 import { useState } from "react";
 import { Clock } from "@/lib/icons";
 
 import { useAPIQuery } from "../api";
 import { useGlobalRoutines, useRoutineActions } from "../global-routines";
 import type { GlobalRoutineRow } from "../global-routines";
+import { insightsRunEventsPath, RunEventsSchema, runFailureMessage } from "../insights-api";
 import { useNavigate } from "../navigation";
 import { WORKFLOWS_PATH_PREFIX } from "../path-ids";
+import {
+  isRunActive,
+  isRunFailed,
+  routineRunLabel,
+  routineRunTone,
+  routineState,
+} from "../run-outcome";
 import { PageLayout } from "../shell/page-layout";
 import { ListCard } from "./library-list";
 import { StageTopBar } from "../shell/stage-top-bar";
@@ -15,60 +22,29 @@ import {
   PauseResumeButton,
   RoutinePill,
   formatWhen,
-  routineState,
   useRoutineDescription,
   useRoutineRuns,
 } from "./routine-ui";
 import type { RunRow } from "./routine-ui";
 import { scheduleSentence } from "./routines-page";
 
-const RunEventSchema = type({ seq: "number", type: "string", body: "Record<string, unknown>" });
-const RunEventsSchema = type({ runId: "string", events: RunEventSchema.array() });
-type RunEvent = typeof RunEventSchema.infer;
-
-function runEventsPath(tenantId: string, runId: string): string {
-  return `/api/tenants/${tenantId}/workflows/runs/${encodeURIComponent(runId)}/events`;
-}
-
-function runTone(status: RunRow["status"]): "live" | "failed" | "info" | "idle" {
-  if (status === "error") return "failed";
-  if (status === "running" || status === "updating") return "info";
-  return status === "deployed" ? "live" : "idle";
-}
-
-function runLabel(status: RunRow["status"]): string {
-  if (status === "error") return "failed";
-  return status === "deployed" ? "ok" : status;
-}
-
 const FAILED_WITHOUT_MESSAGE = "The run failed without reporting an error.";
-
-/** The run's own failure text: the newest error-ish event's message. */
-function failureMessage(events: readonly RunEvent[]): string | null {
-  for (const event of events.toReversed()) {
-    if (!/error|fail/i.test(event.type)) continue;
-    const { message, error } = event.body;
-    if (typeof message === "string") return message;
-    if (typeof error === "string") return error;
-    return event.type;
-  }
-  return null;
-}
 
 /** The Result cell: what the run came to, the failure's own message when it failed. */
 function RunResult({ tenantId, run }: { readonly tenantId: string; readonly run: RunRow }) {
+  const failed = isRunFailed(run.status);
   const eventsQuery = useAPIQuery(
-    run.status === "error" ? runEventsPath(tenantId, run.id) : "",
+    failed ? insightsRunEventsPath(tenantId, run.id) : "",
     RunEventsSchema,
   );
-  if (run.status === "error") {
+  if (failed) {
     const failure =
       eventsQuery.kind === "ready"
-        ? (failureMessage(eventsQuery.data.events) ?? FAILED_WITHOUT_MESSAGE)
+        ? (runFailureMessage(eventsQuery.data.events) ?? FAILED_WITHOUT_MESSAGE)
         : "…";
     return <span title={failure}>{failure}</span>;
   }
-  if (run.status === "running" || run.status === "updating") return <span>Running…</span>;
+  if (isRunActive(run.status)) return <span>Running…</span>;
   return <span>{run.status === "deployed" ? "Succeeded" : run.status}</span>;
 }
 
@@ -81,17 +57,18 @@ function RunDetail({
   readonly run: RunRow;
   readonly onRetry: () => Promise<void>;
 }) {
-  const eventsQuery = useAPIQuery(runEventsPath(tenantId, run.id), RunEventsSchema);
+  const eventsQuery = useAPIQuery(insightsRunEventsPath(tenantId, run.id), RunEventsSchema);
   if (eventsQuery.kind === "loading") return <Skeleton className="skeleton-card" />;
   if (eventsQuery.kind === "error") {
     return <RichEmptyState title="Couldn't load events" description={eventsQuery.message} />;
   }
   if (eventsQuery.kind === "unauthenticated") return null;
   const events = eventsQuery.data.events;
-  const failure = run.status === "error" ? failureMessage(events) : null;
+  const failed = isRunFailed(run.status);
+  const failure = failed ? runFailureMessage(events) : null;
   return (
     <div className="routine-run-detail">
-      {run.status === "error" ? (
+      {failed ? (
         <>
           <p className="routine-error">{failure ?? FAILED_WITHOUT_MESSAGE}</p>
           <div>
@@ -156,7 +133,9 @@ function RoutineRunsSection({
                 <RunResult tenantId={tenantId} run={run} />
               </span>
               <span className="lib-cell">
-                <RoutinePill tone={runTone(run.status)}>{runLabel(run.status)}</RoutinePill>
+                <RoutinePill tone={routineRunTone(run.status)}>
+                  {routineRunLabel(run.status)}
+                </RoutinePill>
               </span>
               {selectedRunId === run.id ? (
                 <RunDetail tenantId={tenantId} run={run} onRetry={onRetry} />

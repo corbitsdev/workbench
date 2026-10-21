@@ -9,17 +9,12 @@ import { useGlobalRoutines, useRoutineActions } from "../global-routines";
 import type { GlobalRoutineRow } from "../global-routines";
 import { routineDetailPath } from "../global-routines";
 import { Link } from "../navigation";
+import { routineState } from "../run-outcome";
 import { benchLink, useFromBench } from "../shell/page-crumbs";
 import { PageLayout } from "../shell/page-layout";
 import { StageTopBar } from "../shell/stage-top-bar";
 import { ListCard, ListFilter } from "./library-list";
-import {
-  PauseResumeButton,
-  RoutinePill,
-  formatWhen,
-  routineState,
-  useRoutineRuns,
-} from "./routine-ui";
+import { PauseResumeButton, RoutinePill, formatWhen, useRoutineRuns } from "./routine-ui";
 
 export type { GlobalRoutineRow } from "../global-routines";
 

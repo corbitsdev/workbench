@@ -2,7 +2,7 @@
 // routines). No new analytics backend — I1 is an honest live surface on
 // existing endpoints.
 
-import { runOutcomeStatus } from "./run-outcome";
+import { isRunFailed, runOutcomeStatus } from "./run-outcome";
 
 import { isAgentDeploySourceAssetName } from "./agent-deploy";
 import type { Approval } from "./api";
@@ -132,7 +132,7 @@ type Bucket = "ok" | "fail" | "other";
 function bucketOf(run: InsightsRun): Bucket {
   const outcome = runOutcomeStatus(run);
   if (outcome === "completed") return "ok";
-  if (outcome === "failed" || outcome === "error") return "fail";
+  if (isRunFailed(outcome)) return "fail";
   return "other";
 }
 
