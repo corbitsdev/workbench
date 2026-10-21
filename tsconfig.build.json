@@ -14,9 +14,6 @@
       "path": "./packages/error-sink/tsconfig.src.json"
     },
     {
-      "path": "./packages/workflows/tsconfig.src.json"
-    },
-    {
       "path": "./vendor/intx/agent/tsconfig.src.json"
     },
     {

@@ -3,8 +3,7 @@
 `apps/web/src/routines-api.ts` reads stock deployments (`GET
 /workflows/deployments`) joined against the tenant's workflow assets (`GET
 /assets?kind=workflow`) for a display name — the two stock reads
-`vendor/intx/hub-api/src/routes/workflows.ts` exposes. The old
-`@corbits/workflows` scheduled-route and its hub backing are gone.
+`vendor/intx/hub-api/src/routes/workflows.ts` exposes.
 
 ## Schedule column
 

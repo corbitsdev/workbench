@@ -7,7 +7,7 @@ import type { DB } from "@intx/db";
 import { tenant as tenantTable } from "@intx/db/schema";
 import type { AuthorizeMailboxSender, MailboxPersistArgs } from "@corbits/mailbox";
 import { resolveRoutableAddress } from "@intx/hub-sessions";
-import { ensureRunSession, type EventCollectorPort } from "@corbits/workflows";
+import { ensureRunSession, type EventCollectorPort } from "./lazy-run-collector";
 import { reportError } from "@corbits/error-sink";
 import { getLogger } from "@intx/log";
 

@@ -24,7 +24,6 @@
     "@corbits/memory": "github:corbitsdev/corbits-memory#8be608becc749fa0795a899826277823dca6db3e",
     "@corbits/oauth-core": "^0.3.0",
     "@corbits/webhooks": "github:corbitsdev/webhooks#3f4f83147fd826d3aec5bcac7ef4b0ae7f75c00d",
-    "@corbits/workflows": "workspace:*",
     "@corbits/xai-provider": "0.1.2",
     "@intx/authz": "0.4.0",
     "@intx/crypto": "0.4.0",

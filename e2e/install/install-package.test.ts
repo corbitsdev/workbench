@@ -7,7 +7,7 @@ import "fake-indexeddb/auto";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import path from "node:path";
 import { type } from "arktype";
-import { renderBundledWorkflowSourceTree } from "../../packages/workflows/src/client";
+import { renderBundledWorkflowSourceTree } from "../../apps/web/src/workflow-source";
 import { installPackage } from "../../apps/web/src/install-package";
 import { dbGate } from "../lib/db-gate";
 import { bootHub } from "../lib/hub";

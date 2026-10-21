@@ -1,10 +1,7 @@
 // No stock file-read route exists for a workflow asset (only
 // package-registry tarballs get one), so this fetches `main` over the
 // asset's smart-HTTP git remote with a short-lived read-only token.
-import {
-  parseWorkflowSourceDefinition,
-  WORKFLOW_SOURCE_DEFINITION_PATH,
-} from "@corbits/workflows/client";
+import { parseWorkflowSourceDefinition, WORKFLOW_SOURCE_DEFINITION_PATH } from "./workflow-source";
 import { MCP_TOOLS_PACKAGE } from "@corbits/worker/workflow-ids";
 import { type } from "arktype";
 

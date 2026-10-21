@@ -1,8 +1,7 @@
 // The env-gate half of e2e/harness.ts, split out so a DB-gated
 // unit suite (every package's migrations.test.ts / *.drizzle.test.ts)
 // can resolve DATABASE_URL without pulling in harness.ts's process-
-// spawning machinery — which imports @corbits/workflows, and with it
-// the full @intx/* module graph.
+// spawning machinery and the full @intx/* module graph.
 // That import chain costs over a second per test file purely to load,
 // paid by every package's build-test run whether or not the suite
 // ever runs (most don't: no DATABASE_URL locally, and build-test never

@@ -3,7 +3,7 @@
 // agent never calls the hub; anything else is a plain file list.
 
 import { Button } from "@corbits/react-ui";
-import { cronSentence } from "@corbits/workflows/client";
+import { cronSentence } from "../cron-sentence";
 
 import { WarningCircle } from "@/lib/icons";
 

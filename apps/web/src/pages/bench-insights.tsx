@@ -2,7 +2,7 @@
 // stock `GET /workflows/runs` listing of the bench's own tenant.
 
 import { RichEmptyState, Skeleton } from "@corbits/react-ui";
-import { cronSentence } from "@corbits/workflows/client";
+import { cronSentence } from "../cron-sentence";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 

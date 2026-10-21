@@ -19,7 +19,7 @@ import {
   type RunStatus,
 } from "@corbits/react-ui";
 import { ChartBar } from "@/lib/icons";
-import { runOutcomeStatus, runStatusLabel, withListingAbandoned } from "@corbits/workflows/client";
+import { runOutcomeStatus, runStatusLabel, withListingAbandoned } from "../run-outcome";
 import type * as React from "react";
 import { useState } from "react";
 

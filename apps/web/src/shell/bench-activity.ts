@@ -6,8 +6,6 @@ import { listWorkbenches, type Workbench } from "@/chat/workbench-tenants";
 
 import { listAgentDefinitions, type AgentDefinition } from "../agents-api";
 import { tenantKeys } from "../query-client";
-import { listRoutineActivity } from "./routine-activity";
-import type { RoutineActivityItem } from "./routine-activity";
 
 export type BenchActivityQuery =
   | { readonly kind: "loading" }
@@ -17,7 +15,6 @@ export type BenchActivityQuery =
       readonly kind: "ready";
       readonly workbenches: readonly Workbench[];
       readonly agents: readonly AgentDefinition[];
-      readonly routines: readonly RoutineActivityItem[];
     };
 
 function errorMessage(cause: unknown): string {
@@ -36,11 +33,6 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
     enabled,
     queryFn: () => listWorkbenches(key),
   });
-  const routinesQuery = useQuery({
-    queryKey: tenantKeys.routineActivity(key),
-    enabled,
-    queryFn: () => listRoutineActivity(),
-  });
   const agentsQuery = useQuery({
     queryKey: tenantKeys.visibleAgents(key),
     enabled,
@@ -49,14 +41,10 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
 
   if (tenantId === null) return { kind: "empty" };
 
-  for (const query of [workbenchesQuery, routinesQuery, agentsQuery]) {
+  for (const query of [workbenchesQuery, agentsQuery]) {
     if (query.isError) return { kind: "error", message: errorMessage(query.error) };
   }
-  if (
-    workbenchesQuery.data === undefined ||
-    routinesQuery.data === undefined ||
-    agentsQuery.data === undefined
-  ) {
+  if (workbenchesQuery.data === undefined || agentsQuery.data === undefined) {
     return { kind: "loading" };
   }
 
@@ -64,6 +52,5 @@ export function useBenchActivity(tenantId: string | null): BenchActivityQuery {
     kind: "ready",
     workbenches: workbenchesQuery.data,
     agents: agentsQuery.data,
-    routines: routinesQuery.data,
   };
 }

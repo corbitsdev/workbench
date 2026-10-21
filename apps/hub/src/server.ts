@@ -45,7 +45,7 @@ import {
   type SidecarProvisionerChooser,
   type WsHandle,
 } from "@intx/hub-sessions";
-import { withLazyRunCollector } from "@corbits/workflows";
+import { withLazyRunCollector } from "./lazy-run-collector";
 import { generateKeyPair } from "@intx/crypto";
 import { timeWindowEvaluator } from "@intx/authz";
 import type { ConditionRegistry } from "@intx/types/authz";

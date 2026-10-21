@@ -2,7 +2,7 @@
 // routines). No new analytics backend — I1 is an honest live surface on
 // existing endpoints.
 
-import { runOutcomeStatus, withListingAbandoned } from "@corbits/workflows/client";
+import { runOutcomeStatus, withListingAbandoned } from "./run-outcome";
 
 import { isAgentDeploySourceAssetName } from "./agent-deploy";
 import type { Approval } from "./api";
