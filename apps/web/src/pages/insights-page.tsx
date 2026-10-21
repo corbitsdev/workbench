@@ -19,7 +19,7 @@ import {
   type RunStatus,
 } from "@corbits/react-ui";
 import { ChartBar } from "@/lib/icons";
-import { runOutcomeStatus, runStatusLabel, withListingAbandoned } from "../run-outcome";
+import { runOutcomeStatus, runStatusLabel } from "../run-outcome";
 import type * as React from "react";
 import { useState } from "react";
 
@@ -143,8 +143,8 @@ function onRowActivate(onActivate: () => void) {
   };
 }
 
-function insightsRunStatus(run: InsightsRun, now: number = Date.now()): string {
-  return runOutcomeStatus(withListingAbandoned(run, now), now) ?? run.status;
+function insightsRunStatus(run: InsightsRun): string {
+  return runOutcomeStatus(run);
 }
 
 export function runDurationLabel(run: InsightsRun): string {

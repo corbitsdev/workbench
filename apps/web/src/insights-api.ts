@@ -5,19 +5,12 @@
 import { type } from "arktype";
 import { RunApprovalsResponse, WorkflowRunResponse, paginatedSchema } from "@intx/types";
 
-export const ListingTurnSchema = type({
-  status: "string",
-  "endedAt?": "string | null",
-});
-
-// `routineId`/`routineName` and `turns`/`hasInFlightTurn` are this app's
-// own additions, absent on the native feed — see docs/insights-native-runs.md.
+// `routineId`/`routineName` are this app's own additions, absent on the
+// native feed — see docs/insights-native-runs.md.
 export const InsightsRunSchema = WorkflowRunResponse.and(
   type({
     "routineId?": "string | null",
     "routineName?": "string | null",
-    "hasInFlightTurn?": "boolean",
-    "turns?": ListingTurnSchema.array(),
   }),
 );
 export type InsightsRun = typeof InsightsRunSchema.infer;

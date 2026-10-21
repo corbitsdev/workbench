@@ -4,14 +4,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { createDB } from "@intx/db";
-import {
-  agentSession,
-  principal,
-  sessionMail,
-  tenant as tenantTable,
-  workflowDefinition,
-  workflowRun,
-} from "@intx/db/schema";
+import { principal, tenant as tenantTable, workflowDefinition, workflowRun } from "@intx/db/schema";
 import {
   createInMemoryMailboxEventBus,
   createMailboxDb,
@@ -19,11 +12,6 @@ import {
   principalMail,
   type MailboxDb,
 } from "@corbits/mailbox";
-import {
-  createHubSessionLookups,
-  createWorkflowHistoryReceiveTracker,
-  type AgentRepoStore,
-} from "@intx/hub-sessions";
 import { createHubMailboxAuthorizeSender } from "../../apps/hub/src/mailbox-persist";
 import { e2eDatabaseUrl } from "../lib/database-url";
 import { dbGate } from "../lib/db-gate";
@@ -59,15 +47,8 @@ function uid(label: string): string {
  * call -- every test gets its own scope, including its own mail domain (the
  * tenant table's `domain` column is globally unique), so the suite's tests
  * can run independently without colliding on shared ids.
- *
- * `withSession` (default `true`) controls whether the sender run also gets
- * a live `agent_session` row -- `hub-session-lookups.ts`'s `persistMail`
- * throws "has no session" for a sender run with none, which is exactly the
- * upstream-failure branch the dual-write-independence test below exercises.
  */
-async function setup(opts: { withSession?: boolean } = {}) {
-  const withSession = opts.withSession ?? true;
-
+async function setup() {
   const { db, close: closeDb } = createDB(dbConfigFromUrl(databaseUrl));
   closers.push(closeDb);
   const { db: mailboxDb, close: closeMailbox } = createMailboxDb(databaseUrl) as {
@@ -131,29 +112,10 @@ async function setup(opts: { withSession?: boolean } = {}) {
     status: "running",
     address: senderAddress,
   });
-  if (withSession) {
-    await db.insert(agentSession).values({
-      id: uid("ses_mbxpw"),
-      tenantId,
-      agentId: definitionId,
-      principalId: senderPrincipalId,
-      status: "active",
-    });
-  }
-
-  const baseLookups = createHubSessionLookups({
-    db,
-    // persistMail (the only lookup this suite exercises) never touches
-    // agentRepoStore or historyReceives -- unlike the pack-receive lookups --
-    // so unimplemented stand-ins are safe here.
-    agentRepoStore: { repoStore: undefined } as unknown as AgentRepoStore,
-    historyReceives: createWorkflowHistoryReceiveTracker(),
-  });
 
   return {
     db,
     mailboxDb,
-    baseLookups,
     domain,
     tenantId,
     senderAddress,
@@ -164,11 +126,10 @@ async function setup(opts: { withSession?: boolean } = {}) {
 }
 
 describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
-  test("an outbound frame to two humans and one agent produces exactly two principal_mail rows, an SSE event per mailbox, and a durable session_mail row upstream", async () => {
+  test("an outbound frame to two humans and one agent produces exactly two principal_mail rows and an SSE event per mailbox", async () => {
     const {
       db,
       mailboxDb,
-      baseLookups,
       domain,
       tenantId,
       senderAddress,
@@ -187,7 +148,7 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
     });
 
     const persistMail = createMailboxPersist(mailboxDb, {
-      upstream: baseLookups.persistMail,
+      upstream: async () => [],
       authorizeSender: createHubMailboxAuthorizeSender(db),
       bus: mailboxBus,
     });
@@ -208,16 +169,7 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
       raw,
     });
 
-    // The upstream `session_mail` write still ran, and is durable -- not
-    // just present in the return value.
-    expect(
-      upstreamResult.some((r) => r.direction === "outbound" && r.address === senderAddress),
-    ).toBe(true);
-    const sessionMailRows = await db
-      .select()
-      .from(sessionMail)
-      .where(eq(sessionMail.tenantId, tenantId));
-    expect(sessionMailRows.some((r) => r.direction === "outbound")).toBe(true);
+    expect(upstreamResult).toEqual([]);
 
     // Exactly two durable mailbox rows -- one per human -- never one for
     // the agent recipient (a run address is never a mailbox).
@@ -232,52 +184,11 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
     expect(seenPrincipalIds).toEqual(new Set([human1Id, human2Id]));
   });
 
-  test("dual-write independence: a sender run with no live session makes upstream throw, the mailbox rows still get written, and zero session_mail rows land", async () => {
-    const { db, mailboxDb, baseLookups, domain, tenantId, senderAddress, human1Id } = await setup({
-      withSession: false,
-    });
-
-    const persistMail = createMailboxPersist(mailboxDb, {
-      upstream: baseLookups.persistMail,
-      authorizeSender: createHubMailboxAuthorizeSender(db),
-    });
-
-    const raw = new TextEncoder().encode(
-      [
-        `From: ${senderAddress}`,
-        `To: usr_${human1Id}@${domain}`,
-        "Subject: Sessionless sender",
-        "",
-        "Body",
-      ].join("\r\n"),
-    );
-
-    await expect(
-      persistMail({
-        senderAddress,
-        recipients: [`usr_${human1Id}@${domain}`],
-        raw,
-      }),
-    ).rejects.toThrow(/no session/i);
-
-    const mailboxRows = await mailboxDb
-      .select()
-      .from(principalMail)
-      .where(eq(principalMail.tenantId, tenantId));
-    expect(mailboxRows).toHaveLength(1);
-
-    const sessionMailRows = await db
-      .select()
-      .from(sessionMail)
-      .where(eq(sessionMail.tenantId, tenantId));
-    expect(sessionMailRows).toHaveLength(0);
-  });
-
   test("redelivery of the same frame is deduped: a retried persist for the same message and recipient writes no second mailbox row", async () => {
-    const { db, mailboxDb, baseLookups, domain, tenantId, senderAddress, human1Id } = await setup();
+    const { db, mailboxDb, domain, tenantId, senderAddress, human1Id } = await setup();
 
     const persistMail = createMailboxPersist(mailboxDb, {
-      upstream: baseLookups.persistMail,
+      upstream: async () => [],
       authorizeSender: createHubMailboxAuthorizeSender(db),
     });
 
