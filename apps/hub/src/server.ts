@@ -616,17 +616,11 @@ export async function createHubServer({
   const corbitsDatabaseUrl = `postgres://${encodeURIComponent(process.env["DB_USER"] ?? "postgres")}:${encodeURIComponent(process.env["DB_PASSWORD"] ?? "postgres")}@${process.env["DB_HOST"] ?? "localhost"}:${String(Number(process.env["DB_PORT"] ?? 5432))}/${process.env["DB_NAME"] ?? "interchange"}`;
   const { db: mailboxDb } = createMailboxDb(corbitsDatabaseUrl);
   const mailboxBus = createInMemoryMailboxEventBus();
-  const mailboxLookups = {
-    ...lookups,
-    persistMail: createMailboxPersist(mailboxDb, {
-      upstream: async () => [],
-      authorizeSender: createHubMailboxAuthorizeSender(db),
-      bus: mailboxBus,
-    }),
-  };
-  // The sidecar router captured `lookups` before this wrapper existed; an
-  // agent's outbound mail must also land in principal inboxes.
-  lookups.persistMail = mailboxLookups.persistMail;
+  lookups.persistMail = createMailboxPersist(mailboxDb, {
+    upstream: async () => [],
+    authorizeSender: createHubMailboxAuthorizeSender(db),
+    bus: mailboxBus,
+  });
 
   const artifactContentStore = InlineContentStore;
 
@@ -744,7 +738,7 @@ export async function createHubServer({
         // before replying, so the canonical stamped form is lowercase.
         return `${principalRow.refId}@${tenantRow.domain}`.toLowerCase();
       },
-      deliver: createMailboxDeliver({ app, persistMail: mailboxLookups.persistMail }),
+      deliver: createMailboxDeliver({ app, persistMail: lookups.persistMail }),
     });
     app.route(`${TENANT_PREFIX}/mailbox`, mailboxApp);
   }
