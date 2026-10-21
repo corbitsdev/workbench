@@ -6,7 +6,7 @@ import { insertEveryoneSections, resolveSettingsSectionGroups } from "@/settings
 import type { SettingsSectionGroup, TenancyAccess } from "@/settings";
 
 import { InsightsRoute } from "./pages/insights-page";
-import { SETTINGS_INSIGHTS_PATH } from "./settings-insights-path";
+import { INSIGHTS_RUNS_PATH } from "./path-ids";
 
 export function resolveAppSettingsSectionGroups(
   access: TenancyAccess,
@@ -17,7 +17,11 @@ export function resolveAppSettingsSectionGroups(
       id: "insights",
       title: "Insights",
       icon: ChartBar,
-      render: () => <InsightsRoute path={SETTINGS_INSIGHTS_PATH} embedded />,
+      // InsightsRoute falls back to the browser URL when given no path, and
+      // the dialog's own `/settings/insights` parses as an Insights landing
+      // page — landing renders a redirect to a top-level route, which unmounts
+      // the dialog. Hand it the runs history instead: that mode renders inline.
+      render: () => <InsightsRoute path={INSIGHTS_RUNS_PATH} embedded />,
     },
   ]);
 }

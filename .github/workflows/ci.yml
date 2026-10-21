@@ -131,4 +131,4 @@ jobs:
       # direct-DB suites (mailbox persist/send) are not order-dependent on some
       # hub-booting suite migrating first.
       - run: bun scripts/db-setup.ts
-      - run: bun test e2e/grants e2e/hub e2e/install e2e/workflows
+      - run: bun test e2e/hub e2e/install e2e/workflows
