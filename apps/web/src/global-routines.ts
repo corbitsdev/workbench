@@ -11,7 +11,7 @@ import type { APIQuery } from "@/lib/api-query";
 import { useBench } from "./bench-context";
 import { useFromBench } from "./shell/page-crumbs";
 import { WORKFLOWS_PATH_PREFIX } from "./path-ids";
-import { tenantKeys } from "./query-client";
+import { invalidateRoutineQueries, tenantKeys } from "./query-client";
 import { listScheduledWorkflows, runScheduledWorkflowNow } from "./routines-api";
 import type { ScheduledWorkflowDefinition } from "./routines-api";
 
@@ -86,9 +86,7 @@ export function useGlobalRoutines(): APIQuery<readonly GlobalRoutineRow[]> {
 export function useInvalidateRoutines(): (tenantId: string) => void {
   const queryClient = useQueryClient();
   return (tenantId: string) => {
-    void queryClient.invalidateQueries({
-      queryKey: [...tenantKeys.routines(tenantId), ROUTINES_QUERY_SCOPE],
-    });
+    invalidateRoutineQueries(queryClient, tenantId);
   };
 }
 

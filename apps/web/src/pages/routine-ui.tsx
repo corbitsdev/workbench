@@ -7,6 +7,7 @@ import { WorkflowDefinitionResponse, WorkflowRunResponse, paginatedSchema } from
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { describeApiError } from "@/lib/api-query";
 import { tenantKeys } from "../query-client";
+import type { RoutineTone } from "../run-outcome";
 import { pauseSchedule, resumeSchedule } from "../routines-api";
 import { useAPIQuery } from "../api";
 import type { APIQuery } from "@/lib/api-query";
@@ -55,27 +56,11 @@ export function formatWhen(iso: string | null | undefined): string {
   });
 }
 
-type Tone = "live" | "failed" | "info" | "idle";
-
-/** The row's state: the newest run's failure outranks the deployment's own. */
-export function routineState(
-  row: GlobalRoutineRow,
-  lastRun: RunRow | undefined,
-): { readonly tone: Tone; readonly label: string } {
-  if (lastRun?.status === "error") return { tone: "failed", label: "failed" };
-  if (row.definition.status === "stopped" || !row.definition.scheduleEnabled)
-    return { tone: "idle", label: "paused" };
-  if (lastRun?.status === "running" || lastRun?.status === "updating") {
-    return { tone: "info", label: "running" };
-  }
-  return { tone: "live", label: "live" };
-}
-
 export function RoutinePill({
   tone,
   children,
 }: {
-  readonly tone: Tone;
+  readonly tone: RoutineTone;
   readonly children: string;
 }) {
   return (

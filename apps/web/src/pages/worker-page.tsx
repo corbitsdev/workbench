@@ -39,8 +39,9 @@ import { StageTopBar } from "../shell/stage-top-bar";
 import { WORKERS_PATH_PREFIX } from "../path-ids";
 import { workbenchPath } from "../workbench-path";
 import { useBenchWorkers } from "../worker-benches";
+import { workerStatus } from "../worker-status";
 import type { HubTenant } from "../needs-converge";
-import { StatusPill, workerStatus } from "./workers-page";
+import { StatusPill } from "./workers-page";
 
 import "./worker-page.css";
 

@@ -19,7 +19,7 @@ import {
   type RunStatus,
 } from "@corbits/react-ui";
 import { ChartBar } from "@/lib/icons";
-import { runOutcomeStatus, runStatusLabel } from "../run-outcome";
+import { isRunFailed, runOutcomeStatus, runStatusLabel } from "../run-outcome";
 import type * as React from "react";
 import { useState } from "react";
 
@@ -343,7 +343,7 @@ export function InsightsRunDetail({
   readonly embedded?: boolean;
   readonly onBack?: () => void;
 }) {
-  const failed = run !== null && insightsRunStatus(run) === "failed";
+  const failed = run !== null && isRunFailed(insightsRunStatus(run));
   return (
     <div className="page-frame">
       <StageTopBar

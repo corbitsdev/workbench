@@ -22,10 +22,11 @@ import {
   workflowRunIdFromSource,
 } from "@/library";
 import type { ArtifactSummary } from "@/library";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowSquareOut, LinkSimple as LinkIcon, Stack, X } from "@/lib/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
+import { listWorkbenches } from "@/chat/workbench-tenants";
 import { describeApiError, ListSkeleton, QueryView, SignedOutNotice } from "@/lib/api-query";
 
 import {
@@ -44,7 +45,6 @@ import { resolveLibraryWorkbenchScope } from "../library-workbench-scope";
 import { Link } from "../navigation";
 import { ARTIFACTS_PATH_PREFIX } from "../path-ids";
 import { tenantKeys } from "../query-client";
-import { useBenchActivity } from "../shell/bench-activity";
 import { useFromBench } from "../shell/page-crumbs";
 import {
   artifactUploadToast,
@@ -448,15 +448,21 @@ export function LibraryRoute({ path }: { readonly path: string }) {
   const kindSegment = deepLinkedArtifactId === null ? libraryKindSegmentFromPath(path) : "";
 
   // The workbench the person just came from, if `last-workbench.ts`
-  // recorded one — resolved via the same activity listing other
-  // bench-scoped surfaces already fetch.
-  const activity = useBenchActivity(selectedTenantId);
+  // recorded one — resolved via the shared workbench listing query.
+  const workbenchesQuery = useQuery({
+    queryKey:
+      selectedTenantId === null
+        ? (["tenant", "none", "workbenches"] as const)
+        : tenantKeys.workbenches(selectedTenantId),
+    queryFn: () => listWorkbenches(selectedTenantId as string),
+    enabled: selectedTenantId !== null,
+  });
   const fromBench = useFromBench();
   const lastWorkbenchId =
     fromBench ?? (selectedTenantId === null ? null : readLastWorkbenchId(selectedTenantId));
   const workbenchScope =
-    activity.kind === "ready"
-      ? resolveLibraryWorkbenchScope(activity.workbenches, lastWorkbenchId)
+    workbenchesQuery.data !== undefined
+      ? resolveLibraryWorkbenchScope(workbenchesQuery.data, lastWorkbenchId)
       : null;
   const scopeTenantId = workbenchScope !== null ? workbenchScope.tenantId : selectedTenantId;
 

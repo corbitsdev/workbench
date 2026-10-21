@@ -79,19 +79,11 @@ export const tenantKeys = {
   routines: (tenantId: string) => ["tenant", tenantId, "routines"] as const,
   schedules: (tenantId: string) => ["tenant", tenantId, "schedules"] as const,
   skills: (tenantId: string) => ["tenant", tenantId, "skills"] as const,
-  routineRuns: (tenantId: string, routineId: string) =>
-    ["tenant", tenantId, "routines", routineId, "runs"] as const,
-  routineRunHistories: (tenantId: string) => ["tenant", tenantId, "routine-run-histories"] as const,
   resolvedCatalog: (tenantId: string) => ["tenant", tenantId, "resolved-catalog"] as const,
-  definitions: (tenantId: string) => ["tenant", tenantId, "definitions"] as const,
-  agentDirectory: (tenantId: string) => ["tenant", tenantId, "agents", "directory"] as const,
   // The deploy roster (deployments -> runs -> assets join): every surface
   // that names an agent by address shares this one cached read. Previously
   // `chatKeys.agents`, re-homed here when standalone chats were removed.
   agents: (tenantId: string) => ["tenant", tenantId, "agents", "roster"] as const,
-  // Kept apart from `agentDirectory` above, which is a different
-  // surface's own key.
-  visibleAgents: (tenantId: string) => ["tenant", tenantId, "agents", "visible"] as const,
   assets: (tenantId: string) => ["tenant", tenantId, "assets"] as const,
   artifacts: (tenantId: string) => ["tenant", tenantId, "artifacts"] as const,
   credentials: (tenantId: string) => ["tenant", tenantId, "credentials"] as const,
@@ -105,25 +97,11 @@ export const tenantKeys = {
   // Delegates to `@/chat`'s own key builder so every workbench-listing
   // surface keys against one shape, not a copy that could drift apart.
   workbenches: (tenantId: string) => workbenchesQueryKey(tenantId),
-  /** A workbench's own timeline reads: `tenantId` is the owning
-   * bench chat's workbench-tenancy addresses these routes at (see
-   * docs/workbench-tenancy.md), `workbenchId` the workbench's own id. */
-  workbenchMessages: (tenantId: string, workbenchId: string) =>
-    ["tenant", tenantId, "chat", "workbenches", workbenchId, "messages"] as const,
-  workbenchThreads: (tenantId: string, workbenchId: string) =>
-    ["tenant", tenantId, "chat", "workbenches", workbenchId, "threads"] as const,
-  workbenchTimelineRoutineRuns: (tenantId: string, workbenchId: string) =>
-    ["tenant", tenantId, "workbench-timeline-routine-runs", workbenchId] as const,
 };
 
-// Both reads must refresh together or one goes stale while the other
-// doesn't.
 export function invalidateRoutineQueries(queryClient: QueryClient, tenantId: string): void {
   void queryClient.invalidateQueries({
     queryKey: tenantKeys.routines(tenantId),
-  });
-  void queryClient.invalidateQueries({
-    queryKey: tenantKeys.routineRunHistories(tenantId),
   });
 }
 

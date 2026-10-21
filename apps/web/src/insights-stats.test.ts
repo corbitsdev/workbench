@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
-import { groupRunsByDefinition, purposeRunsForInsights, runDisplayName } from "./insights-stats";
+import {
+  computeBenchInsights,
+  groupRunsByDefinition,
+  medianMs,
+  purposeRunsForInsights,
+  runDisplayName,
+} from "./insights-stats";
 import type { InsightsRun } from "./insights-api";
 
 function run(partial: Partial<InsightsRun> & Pick<InsightsRun, "id" | "status">): InsightsRun {
@@ -175,5 +181,56 @@ describe("runDisplayName", () => {
     delete native.routineId;
     delete native.routineName;
     expect(runDisplayName(native)).toBe("researcher");
+  });
+});
+
+describe("medianMs", () => {
+  test("averages the middle pair of an even set", () => {
+    expect(medianMs([4, 1, 3, 2])).toBe(2.5);
+    expect(medianMs([])).toBeNull();
+  });
+});
+
+describe("computeBenchInsights", () => {
+  const now = Date.parse("2026-09-10T12:00:00");
+
+  test("windows, buckets by outcome and day, and takes median duration", () => {
+    const stats = computeBenchInsights(
+      [
+        run({
+          id: "a",
+          status: "running",
+          createdAt: "2026-09-10T09:00:00",
+          endedAt: "2026-09-10T09:01:00",
+        }),
+        run({
+          id: "b",
+          status: "error",
+          createdAt: "2026-09-10T10:00:00",
+          endedAt: "2026-09-10T10:03:00",
+        }),
+        run({
+          id: "c",
+          status: "running",
+          createdAt: "2026-09-09T10:00:00",
+          endedAt: "2026-09-09T10:02:00",
+        }),
+        run({
+          id: "old",
+          status: "running",
+          createdAt: "2026-08-01T10:00:00",
+          endedAt: "2026-08-01T10:02:00",
+        }),
+      ],
+      7,
+      now,
+    );
+    expect(stats.total).toBe(3);
+    expect(stats.ok).toBe(2);
+    expect(stats.fail).toBe(1);
+    expect(stats.medianMs).toBe(120_000);
+    expect(stats.days.at(-1)).toMatchObject({ ok: 1, fail: 1 });
+    expect(stats.days.at(-2)).toMatchObject({ ok: 1, fail: 0 });
+    expect(stats.failures.map((r) => r.id)).toEqual(["b"]);
   });
 });
