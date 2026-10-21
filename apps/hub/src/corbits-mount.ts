@@ -1,9 +1,3 @@
-// Corbits mount block — the single composition point where Workbench adds
-// Corbits libraries (@corbits/artifacts, @corbits/agent-token, @corbits/mailbox,
-// @corbits/cron, @corbits/memory, @corbits/oauth-core, @corbits/mcp,
-// @corbits/webhooks) and live workflow-run SSE streaming on top of stock
-// @intx/hub-api routes. See AGENTS.md: any other hub mount is cutover debt,
-// never a pattern to extend.
 import { createAgentTokenVerifier, mountAgentTokens } from "@corbits/agent-token";
 import {
   InlineContentStore,
@@ -66,11 +60,7 @@ import {
   createRequireGrant,
   type TenantEnv,
 } from "@intx/hub-api";
-import {
-  pushSourceUpdates,
-  type SidecarLookups,
-  type SidecarRouter,
-} from "@intx/hub-sessions";
+import { pushSourceUpdates, type SidecarLookups, type SidecarRouter } from "@intx/hub-sessions";
 import { getLogger } from "@intx/log";
 import type { ConditionRegistry } from "@intx/types/authz";
 import { and, eq } from "drizzle-orm";
@@ -80,10 +70,6 @@ import { captureMailboxRequest, createMailboxDeliver } from "./mailbox-send";
 import { createWorkflowRunStreamRoutes } from "./run-stream";
 import { createWorkflowRunAuthenticator } from "./workflow-run-authenticator";
 
-// The same condition registry `mountHubRoutes` builds by default when no
-// registry is supplied -- kept as one local constant so every Corbits
-// route factory below shares the identical registry rather than each
-// re-deriving stock's own default.
 const grantConditionRegistry: ConditionRegistry = {
   time_window: timeWindowEvaluator,
 };
@@ -130,6 +116,8 @@ export async function mountCorbits({
     authorizeSender: createHubMailboxAuthorizeSender(db),
     bus: mailboxBus,
   });
+  // `createSidecarRouter` captured `lookups` before this wrapper existed;
+  // mutating it in place ensures agent outbound mail also lands in principal inboxes.
   lookups.persistMail = persistMail;
 
   {
@@ -152,16 +140,13 @@ export async function mountCorbits({
   );
 
   {
-    // Minting an agent token is minting a credential, so it is gated by the
-    // same stock grant the credential routes are, not by tenant membership.
     const agentTokensApp = new Hono<TenantEnv>();
     mountAgentTokens(agentTokensApp, {
       db,
       requireGrant: requireGrant("credential:*", "create"),
       resolveTenantId: (ctx) => (ctx as { get(key: "tenant"): { id: string } }).get("tenant").id,
-      // A token is scoped to the agent's `workflow` source asset: the
-      // tenant-owned thing that already exists when the workbench mints the
-      // token, before the deploy that would create a run.
+      // Scoped to the `workflow` source asset so the workbench can mint the
+      // token before the deploy that creates the run.
       resolveDefinition: async (tenantId, definitionId) => {
         const row = await db.query.asset.findFirst({
           where: and(
@@ -176,9 +161,6 @@ export async function mountCorbits({
     app.route(TENANT_PREFIX, agentTokensApp);
   }
 
-  // A deployed agent has no sidecar token; it presents the bearer this hub
-  // minted for its definition and is scoped to the run it names. One
-  // verifier and one run lookup serve every run-scoped Corbits mount.
   const verifyAgentToken = createAgentTokenVerifier({ db });
   const resolveAgentRun = async (runAddress: string) => {
     if (runAddress === "") return null;
@@ -186,7 +168,11 @@ export async function mountCorbits({
       where: eq(workflowRun.address, runAddress),
     });
     if (run === undefined || run.principalId === null) return null;
-    return { tenantId: run.tenantId, principalId: run.principalId, runId: run.id };
+    return {
+      tenantId: run.tenantId,
+      principalId: run.principalId,
+      runId: run.id,
+    };
   };
 
   {
@@ -196,24 +182,27 @@ export async function mountCorbits({
       db,
       contentStore: InlineContentStore,
       resolveRunScope: (token, runAddress) => workflowRunAuthenticator.resolve(token, runAddress),
-      agentToken: { verify: (ctx) => verifyAgentToken(ctx), resolveRun: resolveAgentRun },
+      agentToken: {
+        verify: (ctx) => verifyAgentToken(ctx),
+        resolveRun: resolveAgentRun,
+      },
     });
     app.route("/api/workflow-artifacts", workflowArtifactsApi);
   }
 
   {
     const mailboxApp = new Hono<TenantEnv>();
-    // Registered before the routes: Hono runs handlers in registration order.
     mailboxApp.use("/me/inbox/send", captureMailboxRequest());
     mountMailbox(mailboxApp, {
       db: mailboxDb,
       bus: mailboxBus,
       resolvePrincipal: (ctx) => {
         const c = ctx as { get(key: "tenant" | "principal"): { id: string } };
-        return { tenantId: c.get("tenant").id, principalId: c.get("principal").id };
+        return {
+          tenantId: c.get("tenant").id,
+          principalId: c.get("principal").id,
+        };
       },
-      // The address stock itself stamps on a person's outbound mail, so a
-      // Sent copy and the agent's reply share one identity.
       senderAddressFor: async (principal) => {
         const [tenantRow] = await db
           .select({ domain: tenantTable.domain })
@@ -231,8 +220,7 @@ export async function mountCorbits({
         if (principalRow === undefined) {
           throw new Error(`no principal "${principal.principalId}" to address a mailbox sender as`);
         }
-        // A person's refId is mixed case; a small model lowercases an address
-        // before replying, so the canonical stamped form is lowercase.
+        // Small models lowercase addresses before replying, so stamp lowercase canonically.
         return `${principalRow.refId}@${tenantRow.domain}`.toLowerCase();
       },
       deliver: createMailboxDeliver({ app, persistMail }),
@@ -240,10 +228,6 @@ export async function mountCorbits({
     app.route(`${TENANT_PREFIX}/mailbox`, mailboxApp);
   }
 
-  // The router every system-originated trigger (webhook, cron) goes
-  // through. `HookMailRouter` types its payloads as `unknown` at the
-  // package boundary; this just narrows them back to `sidecarRouter`'s own
-  // types on the way through, with no behavior change.
   const systemTriggerMailRouter: HookMailRouter = {
     routeMail: (address, rawMessage, authenticatedSender, messageId) => {
       if (!sidecarRouter.getRoutableAddresses().includes(address)) {
@@ -276,11 +260,8 @@ export async function mountCorbits({
     }),
   );
 
-  // A due schedule fires with nobody signed in, so it cannot ride the
-  // mailbox persist path, which authorizes its sender against a live
-  // routable endpoint. It is a system trigger like an inbound webhook,
-  // so it takes the same route: the run is the authenticated sender of
-  // its own signed trigger mail, with its grants materialized first.
+  // Due schedules fire without a signed-in user, so they use the system-trigger
+  // path rather than mailbox persist (which requires a live routable sender).
   const cronTicker = createCronTicker({
     db,
     intervalMs: 60_000,
@@ -304,8 +285,6 @@ export async function mountCorbits({
           return tenantRow.domain;
         },
         senderLocalPart: "cron",
-        // A durable per-tenant key the recipient can verify against;
-        // the sidecar rejects trigger mail from an unknown sender.
         systemSender: createTenantSystemSender({ db, principalKeyStore }),
       }),
     ),
@@ -315,8 +294,6 @@ export async function mountCorbits({
         extra: { scheduleId: schedule.id, tenantId: schedule.tenantId },
       });
     },
-    // Waiting is the ordinary gap between an agent's runs, not a fault —
-    // it resolves itself the moment the agent comes back.
     onScheduleWaiting: (schedule) => {
       log.info("Cron schedule waiting for agent {definitionName}", {
         scheduleId: schedule.id,
@@ -324,8 +301,6 @@ export async function mountCorbits({
         definitionName: schedule.definitionName,
       });
     },
-    // A stopped schedule never fires again and no redeploy resumes it, so
-    // the one report it gets has to be durable.
     onScheduleStopped: (schedule) => {
       reportError(
         new Error(`cron schedule stopped: ${schedule.reason} (${schedule.definitionName})`),
@@ -353,36 +328,32 @@ export async function mountCorbits({
     });
     app.route("/", memoryApp);
 
-    // The same plane, reached by a deployed agent's bearer rather than a
-    // browser session, and scoped to the run the bearer names.
     const workflowMemoryApi = new Hono<WorkflowMemoryEnv>();
     mountWorkflowMemory(workflowMemoryApi, {
       memory,
-      agentToken: { verify: (ctx) => verifyAgentToken(ctx), resolveRun: resolveAgentRun },
+      agentToken: {
+        verify: (ctx) => verifyAgentToken(ctx),
+        resolveRun: resolveAgentRun,
+      },
     });
     app.route("/api/workflow-memory", workflowMemoryApi);
   }
 
   const hubPublicUrl = process.env["HUB_PUBLIC_URL"] ?? `http://127.0.0.1:${String(port)}`;
-  // A loopback hub is local development, where MCP servers may be plain-http
-  // loopback too; a public hub keeps discovery https-only.
   const hubHost = new URL(hubPublicUrl).hostname;
   const localDevHub = hubHost === "localhost" || hubHost.startsWith("127.") || hubHost === "[::1]";
 
-  // "Continue with Codex"/"Continue with xAI": the whole loopback PKCE
-  // flow runs here, so the verifier and the callback listener never
-  // leave this process and the browser only learns a credential id.
   const oauthLoginApi = new Hono<TenantEnv>();
   const oauthProviders: OAuthLoginProviders = {
     [CODEX_PROVIDER]: {
       oauthConfig: codexOAuthConfig,
       exchange: (code: string, verifier: string, now: number) =>
         exchangeCodexCode(code, verifier, now),
-      // The account id the refresher carries forward lives on the
-      // credential, so the prior tokens need only supply the secret.
       refresh: (refreshSecret: string, now: number) =>
-        refreshCodexTokens(refreshSecret, now, { access: "", refresh: refreshSecret }),
-      // The Codex backend rejects inference without this header value.
+        refreshCodexTokens(refreshSecret, now, {
+          access: "",
+          refresh: refreshSecret,
+        }),
       metadata: (tokens) =>
         "accountId" in tokens && typeof tokens.accountId === "string"
           ? { accountId: tokens.accountId }
@@ -395,12 +366,12 @@ export async function mountCorbits({
       refresh: (refreshSecret: string, now: number) => refreshXaiTokens(refreshSecret, now),
     },
   };
-  // Resource-URL logins (MCP servers) redirect back to a hub-root route
-  // outside any tenant; it shares the login store with the tenant routes.
   const oauthLoginStore = createOAuthLoginStore();
-  // The mount takes a plain Hono, so it rides its own router on the root.
   const oauthCallbackApi = new Hono();
-  mountOAuthCallback(oauthCallbackApi, { store: oauthLoginStore, path: "/api/oauth/callback" });
+  mountOAuthCallback(oauthCallbackApi, {
+    store: oauthLoginStore,
+    path: "/api/oauth/callback",
+  });
   app.route("/", oauthCallbackApi);
   mountOAuthLogin(oauthLoginApi, {
     store: oauthLoginStore,
@@ -411,22 +382,20 @@ export async function mountCorbits({
     requireGrant: requireGrant("credential:*", "create"),
     providers: oauthProviders,
     onError: (error, { provider }) => {
-      reportError(error, { operation: "hub.oauth-login", extra: { provider } });
+      reportError(error, {
+        operation: "hub.oauth-login",
+        extra: { provider },
+      });
     },
   });
   app.route(TENANT_PREFIX, oauthLoginApi);
 
-  // Stock Interchange has no serving-time refresh hook, so a subscription
-  // token that lapses between inference calls would simply fail the next
-  // one; this renews it a little before expiry instead.
   const oauthTokenRefresher = createOAuthTokenRefresher({
     db,
     cipher: credentialCipher,
     providers: oauthProviders,
     intervalMs: 60_000,
     onRefreshed: ({ tenantId, credentialId }) => {
-      // The same push the stock credentials route fires after a secret
-      // rotation, so running sidecars get the new material.
       void pushSourceUpdates(db, sidecarRouter, tenantId, credentialCipher).catch(
         (error: unknown) => {
           reportError(error, {
@@ -439,15 +408,16 @@ export async function mountCorbits({
     onError: (error, { provider, credentialId }) => {
       reportError(error, {
         operation: "hub.oauth-refresh",
-        extra: { provider: provider ?? "", credentialId: credentialId ?? "" },
+        extra: {
+          provider: provider ?? "",
+          credentialId: credentialId ?? "",
+        },
       });
     },
   });
   oauthTokenRefresher.start();
 
   {
-    // The browser never holds an MCP server's token, so the one place a
-    // catalog can be read is here, with the secret decrypted in-process.
     const mcpApi = new Hono<TenantEnv>();
     mountMcpDiscovery(mcpApi, {
       allowLoopback: localDevHub,

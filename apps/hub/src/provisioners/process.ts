@@ -1,6 +1,3 @@
-// Process sidecar provisioner: spawns one apps/sidecar child process per
-// allocation on the hub host and fences generations on disk so concurrent
-// or out-of-order ensure()/destroy() calls and hub restarts stay sound.
 import { randomBytes } from "node:crypto";
 import {
   mkdir,
@@ -29,10 +26,8 @@ import { type } from "arktype";
 
 const log = getLogger(["hub", "process-provisioner"]);
 
-// The sidecar entry this provisioner spawns, relative to this file's own
-// directory: the same `apps/sidecar/src/index.ts` that `bun run dev`
-// starts. Resolved from `import.meta.dir` rather than the process cwd so
-// the hub can be launched from anywhere on the host.
+// Resolved from `import.meta.dir` rather than cwd so the hub can be launched
+// from any working directory on the host.
 const DEFAULT_SIDECAR_ENTRY = resolve(
   import.meta.dir,
   "..",
@@ -52,37 +47,20 @@ const Environment = type({
 });
 
 export type ProcessProvisionerConfig = {
-  /** The executable that runs the sidecar entry — `bun` by default. */
   readonly runtimePath: string;
-  /** Absolute path to the sidecar entry point this backend spawns. */
   readonly sidecarEntryPath: string;
-  /**
-   * Hub-side root for per-allocation directories. Each allocation gets
-   * `<allocationsDir>/<allocationId>/`, holding the pid file this backend
-   * recovers units from after a hub restart plus the sidecar's own
-   * `SIDECAR_DATA_DIR`. Destroying an allocation removes that directory.
-   */
   readonly allocationsDir: string;
-  /** Where the allocation state store keeps generation fences. */
   readonly stateFilePath: string;
-  /** The ws(s):// URL provisioned sidecars dial back on. */
   readonly hubWebSocketUrl: string;
-  /** The operator key every spawned sidecar seals its at-rest credentials under. */
   readonly sidecarCredentialEncryptionKey: string;
 };
 
 export type ReadProcessProvisionerConfigArgs = {
   readonly env: Record<string, string | undefined>;
-  /**
-   * The HUB's own state directory for this backend, derived from
-   * `HUB_DATA_DIR` by the caller — never an environment variable an
-   * operator could point somewhere unrelated.
-   */
   readonly dataDir: string;
   readonly hubWebSocketUrl: string;
 };
 
-/** The entry and runtime keys are optional: unconfigured, this spawns the repo's own apps/sidecar with the running bun. */
 export function readProcessProvisionerConfig(
   args: ReadProcessProvisionerConfigArgs,
 ): ProcessProvisionerConfig {
@@ -114,18 +92,12 @@ export type SpawnSidecarProcessArgs = {
   readonly env: Record<string, string>;
 };
 
-/** Injected so tests exercise the full ensure/destroy lifecycle without starting a real sidecar. */
 export interface SidecarProcessRunner {
   spawn(args: SpawnSidecarProcessArgs): number;
   isAlive(pid: number): boolean;
   signal(pid: number, signal: "SIGTERM" | "SIGKILL"): void;
 }
 
-/**
- * Stdio inherited so a local operator sees sidecar logs in the same
- * terminal; unref()ed so a hub shutdown doesn't wait on it — a still-running
- * sidecar is reconciled from its pid file on the next boot.
- */
 export function createBunSidecarProcessRunner(): SidecarProcessRunner {
   return {
     spawn(args) {
@@ -136,6 +108,8 @@ export function createBunSidecarProcessRunner(): SidecarProcessRunner {
         stdout: "inherit",
         stderr: "inherit",
       });
+      // Unref so hub shutdown does not block on running sidecars; surviving
+      // sidecars are recovered from their pid files on the next boot.
       child.unref();
       return child.pid;
     },
@@ -145,10 +119,6 @@ export function createBunSidecarProcessRunner(): SidecarProcessRunner {
         process.kill(pid, 0);
         return true;
       } catch (error) {
-        // A signal-0 probe answers the liveness question through its
-        // errno: ESRCH means no such process, EPERM means the process
-        // exists but belongs to another user. Anything else is a real
-        // failure and must not be read as "dead".
         if (isErrnoCode(error, "ESRCH")) return false;
         if (isErrnoCode(error, "EPERM")) return true;
         throw error;
@@ -247,7 +217,9 @@ export function createAllocationStateStore(statePath: string): AllocationStateSt
         initialized = true;
         return;
       }
-      throw new Error(`Unable to read sidecar allocation state ${statePath}`, { cause });
+      throw new Error(`Unable to read sidecar allocation state ${statePath}`, {
+        cause,
+      });
     }
     let parsedJSON: unknown;
     try {
@@ -413,8 +385,7 @@ async function writeFileAtomic(path: string, contents: string): Promise<void> {
 const PID_FILE_NAME = "sidecar.pid";
 const SIDECAR_DATA_DIR_NAME = "data";
 const UNIT_DIR_PREFIX = "gen-";
-// An allocation id names a directory on the hub host, so it may only be
-// the id-shaped text Interchange actually issues — never a traversal.
+// Allocation ids name directories on disk, so reject path traversal characters.
 const ALLOCATION_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
 const TERMINATION_GRACE_MS = 5_000;
 const TERMINATION_POLL_MS = 100;
@@ -427,7 +398,6 @@ type StartUnitArgs = {
   readonly hubWebSocketUrl: string;
 };
 
-/** A sidecar learns everything else over the wire; nothing else of the hub's env is inherited. */
 function sidecarEnvFor(
   args: StartUnitArgs,
   sidecarDataDir: string,
@@ -446,8 +416,6 @@ function sidecarEnvFor(
   }
   const home = process.env["HOME"];
   const tmpdir = process.env["TMPDIR"];
-  // Operator config, not tenant data: without it a sidecar has no adapter
-  // for a provider the stock runtime does not serve (Codex, xAI).
   const adapterManifest = process.env["SIDECAR_ADAPTER_MANIFEST"];
   return {
     SIDECAR_DATA_DIR: sidecarDataDir,
@@ -462,11 +430,6 @@ function sidecarEnvFor(
   };
 }
 
-/**
- * Sends SIGTERM and waits out the grace period so the sidecar can flush
- * its own state, escalating to SIGKILL only if it is still alive. A pid
- * that is already gone is success — destroy has to stay idempotent.
- */
 async function terminate(runner: SidecarProcessRunner, pid: number): Promise<void> {
   if (!runner.isAlive(pid)) return;
   runner.signal(pid, "SIGTERM");
@@ -561,12 +524,9 @@ const PROCESS_CAPABILITIES: readonly SidecarCapabilityDeclaration[] = [
   { capability: "isolation:vm", state: "blocked" },
 ];
 
-/**
- * Interchange adopts a probe's allocation for the deployment when both
- * provisioners share id/apiVersion/fingerprint, which skips redeploying at
- * the current pin — so the hub runs a probe instance whose fingerprint
- * never matches.
- */
+// Interchange adopts a probe's allocation for the deployment when both
+// provisioners share id/apiVersion/fingerprint, which skips redeploying at
+// the current pin — so the hub runs a probe instance with a distinct role.
 export type ProcessProvisionerRole = "deployment" | "probe";
 
 export type CreateProcessSidecarProvisionerOpts = {
@@ -576,12 +536,8 @@ export type CreateProcessSidecarProvisionerOpts = {
   readonly store?: AllocationStateStore;
 };
 
-/**
- * The binding fingerprint names the backend kind and role only. Hub port,
- * install path, and sidecar entry location change across restarts without
- * changing what the backend can host; pinning them strands every existing
- * allocation, which the reconciler can neither release nor replace.
- */
+// The binding fingerprint names the backend kind and role only; pinning port
+// or install path would strand existing allocations across hub restarts.
 export function createProcessSidecarProvisioner(
   opts: CreateProcessSidecarProvisionerOpts,
 ): SidecarProvisioner {
@@ -673,9 +629,8 @@ export function createProcessSidecarProvisioner(
     const unitDir = unitDirOf(unit.allocationId, unit.generation);
     try {
       await rm(unitDir, { recursive: true, force: true });
-      // The allocation's own directory goes once its last unit does;
-      // a still-running newer generation keeps it, which is why this
-      // is an rmdir and not a recursive remove.
+      // Non-recursive rmdir so a still-running newer generation under the
+      // same allocation keeps the parent directory.
       await rmdir(allocationDirOf(unit.allocationId)).catch(ignoreNonEmptyOrMissing);
     } catch (error) {
       throw operationalFailure(
@@ -731,10 +686,8 @@ export function createProcessSidecarProvisioner(
     }
   }
 
-  // Coalesces concurrent ensure() calls for the same allocation so two
-  // callers racing the reconciler's ~1s retry loop cannot both pass
-  // observeEnsure() before either has recorded a unit, each starting its
-  // own compute unit.
+  // Coalesce concurrent ensure() calls for the same allocation so racing
+  // reconciler retries cannot spawn duplicate processes.
   const inFlightEnsures = new Map<string, Promise<EnsureSidecarResult>>();
 
   async function ensureOnce(request: EnsureSidecarRequest): Promise<EnsureSidecarResult> {
