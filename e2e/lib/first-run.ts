@@ -21,8 +21,8 @@ export async function clickText(page: Page, selector: string, label: string): Pr
 
 /**
  * Types `message` into the /new composer and starts the workbench. The
- * composer and its send button stay disabled until workspace roles have
- * loaded (CL-9780), so typing or clicking earlier is silently lost.
+ * composer and its send button stay disabled until the workbench list has
+ * loaded, so typing or clicking earlier is silently lost.
  */
 export async function startWorkbench(page: Page, message: string): Promise<void> {
   await page.waitForFunction(
@@ -33,14 +33,12 @@ export async function startWorkbench(page: Page, message: string): Promise<void>
     { timeout: STEP_TIMEOUT },
   );
   await page.type("textarea", message);
-  await page.waitForFunction(
-    `(() => {
-      const send = document.querySelector("button[aria-label='Start this workbench']");
-      return send instanceof HTMLButtonElement && !send.disabled;
-    })()`,
-    { timeout: STEP_TIMEOUT },
-  );
-  await page.click("button[aria-label='Start this workbench']");
+  const sendScript = `(() => {
+    const send = document.querySelector("button[aria-label='Start this workbench']");
+    return send instanceof HTMLButtonElement && !send.disabled ? send : null;
+  })()`;
+  await page.waitForFunction(sendScript, { timeout: STEP_TIMEOUT });
+  await page.evaluate(`(${sendScript}).click()`);
 }
 
 export async function runFirstRunFlow(page: Page, origin: string): Promise<void> {
