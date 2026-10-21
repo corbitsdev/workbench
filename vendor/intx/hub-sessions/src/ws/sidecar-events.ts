@@ -81,7 +81,6 @@ export type SidecarEventMap = {
     agentAddress: string;
     sessionId: string;
     event: unknown;
-    childRunId?: string;
   };
 
   /** Notification. Emitted when a sidecar's connection closes, and when

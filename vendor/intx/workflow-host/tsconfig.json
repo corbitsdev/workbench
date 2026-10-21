@@ -31,15 +31,6 @@
       "path": "../inference/tsconfig.src.json"
     },
     {
-      "path": "../mail-memory/tsconfig.src.json"
-    },
-    {
-      "path": "../mailbox/tsconfig.src.json"
-    },
-    {
-      "path": "../mime/tsconfig.src.json"
-    },
-    {
       "path": "../types/tsconfig.src.json"
     },
     {

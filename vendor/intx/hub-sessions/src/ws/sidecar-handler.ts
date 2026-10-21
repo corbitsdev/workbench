@@ -1862,9 +1862,6 @@ export function createSidecarRouter(
           agentAddress: frame.agentAddress,
           sessionId: frame.sessionId,
           event: frame.event,
-          ...(frame.childRunId !== undefined
-            ? { childRunId: frame.childRunId }
-            : {}),
         });
         dispatchToSubscribers(frame.agentAddress, frame.event);
         return;

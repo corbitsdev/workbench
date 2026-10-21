@@ -146,7 +146,6 @@ export {
   type FrameWriter,
   type NdjsonReader,
   type NdjsonWriter,
-  type ReceivedEvent,
 } from "./ipc";
 
 export {

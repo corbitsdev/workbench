@@ -1058,7 +1058,7 @@ export async function deployCodeSourcedWorkflow(
  * verbatim when present; when absent the key stays absent so the
  * empty/undefined skip inside `stageWorkflowStep` is preserved bit-for-bit.
  */
-export function preparedStepStageArgs(params: {
+function preparedStepStageArgs(params: {
   anchorRunId: string;
   deploymentDomain: string;
   stepId: string;

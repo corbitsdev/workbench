@@ -25,13 +25,7 @@
       "path": "../db/tsconfig.src.json"
     },
     {
-      "path": "../hub-common/tsconfig.src.json"
-    },
-    {
       "path": "../hub-sessions/tsconfig.src.json"
-    },
-    {
-      "path": "../mime/tsconfig.src.json"
     },
     {
       "path": "../types/tsconfig.src.json"

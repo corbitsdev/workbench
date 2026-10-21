@@ -20,7 +20,7 @@
   "dependencies": {
     "@intx/authz": "workspace:*",
     "@intx/crypto": "0.5.0",
-    "@intx/hub-common": "workspace:*",
+    "@intx/hub-common": "0.5.0",
     "@intx/log": "0.5.0",
     "@intx/types": "workspace:*",
     "arktype": "catalog:",

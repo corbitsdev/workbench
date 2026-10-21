@@ -37,16 +37,6 @@ import { verifyHmac } from "./crypto";
 
 export type EventPayload = InferenceEvent;
 
-/**
- * One verified event-channel frame. `childRunId` is the occurrence the
- * body child stamped (`turn__<n>`); omitted for a top-level step event
- * that is not an occurrence, and for a child that never stamped one.
- */
-export type ReceivedEvent = {
-  readonly event: EventPayload;
-  readonly childRunId?: string;
-};
-
 export interface FrameReader {
   read(): AsyncIterableIterator<Uint8Array>;
 }
@@ -67,19 +57,18 @@ export interface EventChannelReceiverOpts {
 
 /**
  * Construct the supervisor-side event-channel receiver. Yields one
- * verified, in-order `ReceivedEvent` per call — the `EventPayload` plus
- * `childRunId` when the sender stamped it. Any frame that fails
+ * verified, in-order `EventPayload` per call. Any frame that fails
  * HMAC verification, carries a non-current channelId, arrives out
  * of order, or arrives faster than the consumer drains -- triggers
  * `onCrash` and ends the iterator.
  */
 export async function* receiveEventChannel(
   opts: EventChannelReceiverOpts,
-): AsyncGenerator<ReceivedEvent, void, void> {
+): AsyncGenerator<EventPayload, void, void> {
   const limit = opts.bufferLimit ?? DEFAULT_EVENT_BUFFER_LIMIT;
   let highestSeq = 0;
 
-  const buffer: ReceivedEvent[] = [];
+  const buffer: EventPayload[] = [];
   let crashed = false;
   let producerDone = false;
   let waiter: (() => void) | null = null;
@@ -235,12 +224,7 @@ export async function* receiveEventChannel(
         wake();
         return true;
       }
-      buffer.push({
-        event: payload,
-        ...(maced.envelope.childRunId !== undefined
-          ? { childRunId: maced.envelope.childRunId }
-          : {}),
-      });
+      buffer.push(payload);
       wake();
       return false;
     }

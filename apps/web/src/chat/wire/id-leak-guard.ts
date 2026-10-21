@@ -1,4 +1,4 @@
-// Mirrors PREFIXES in vendor/intx/hub-common/src/ids.ts.
+// Mirrors PREFIXES in @intx/hub-common.
 
 // Matches `_`, space, or `-` as separator so both the raw id and
 // `humanizeSlug`'s Title-Cased reading of one ("Run 737a058d…") trip it.

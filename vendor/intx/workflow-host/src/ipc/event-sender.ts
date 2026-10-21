@@ -19,7 +19,7 @@ export interface EventChannelSenderOpts {
 }
 
 export interface EventChannelSender {
-  send(payload: EventPayload, childRunId?: string): Promise<void>;
+  send(payload: EventPayload): Promise<void>;
   readonly seq: number;
 }
 
@@ -46,7 +46,7 @@ export function createEventChannelSender(
     get seq() {
       return seq;
     },
-    send(payload: EventPayload, childRunId?: string): Promise<void> {
+    send(payload: EventPayload): Promise<void> {
       const previous = tail;
       let release: () => void = () => undefined;
       tail = new Promise<void>((resolve) => {
@@ -60,7 +60,6 @@ export function createEventChannelSender(
             seq,
             channelId: opts.channelId,
             payload,
-            ...(childRunId !== undefined ? { childRunId } : {}),
           };
           const envelopeBytes = encodeEnvelope(envelope);
           const tag = await signHmac(envelopeBytes, opts.hmacKey);

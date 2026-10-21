@@ -335,7 +335,6 @@ export const AgentEventFrame = type({
   generation: Generation,
   sessionId: "string",
   event: InferenceEvent,
-  "childRunId?": "string",
 });
 export type AgentEventFrame = typeof AgentEventFrame.infer;
 
