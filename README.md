@@ -32,7 +32,6 @@ local [Ollama](https://ollama.com) works with no key, see
 | ------------- | ---------------------------------------------------------------- |
 | `apps/`       | `hub` (API), `web` (React client), `sidecar` (execution host)    |
 | `packages/`   | Corbits libraries, and `worker`, the default agent harness       |
-| `workflows/`  | Deployable workflow packages                                     |
 | `vendor/intx` | Hand-copied Interchange packages, see [VENDORED.md](VENDORED.md) |
 
 ## Develop

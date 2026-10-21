@@ -1,6 +1,6 @@
-// See docs/chat-mail-threading.md for the roster mechanism. `stripRoster`
-// is the inverse, used to keep the block out of a person's echoed-back sent
-// message.
+// See ARCHITECTURE.md (§ Workbench mail) for the roster mechanism.
+// `stripRoster` is the inverse, used to keep the block out of a person's
+// echoed-back sent message.
 
 const ROSTER_HEADING = "Participants:";
 

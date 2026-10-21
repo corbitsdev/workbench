@@ -1,5 +1,3 @@
-// See docs/settings-sections.md for the grouping rationale.
-
 import { Cpu, Key, ListBullets, Shield, Star, User, Users } from "@/lib/icons";
 
 import { AccountSection } from "./account-section";

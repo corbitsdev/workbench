@@ -1,5 +1,5 @@
-// See docs/chat-mail-threading.md. The bench pill opens a drawer that pushes
-// the thread left; the drawer's Information tab carries the bench overview.
+// The bench pill opens a drawer that pushes the thread left; the drawer's
+// Information tab carries the bench overview.
 
 import { Button, EmptyState, PageShell, Skeleton } from "@corbits/react-ui";
 import { PanelLeft, WarningCircle } from "@/lib/icons";

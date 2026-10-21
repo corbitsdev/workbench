@@ -146,8 +146,7 @@ export type ForkSubThreadInput = {
 };
 
 /** Replays by native Message-ID when parent + subject + recipients + body
- * match an already-recorded fork; any difference sends anew. See
- * docs/chat-mail-threading.md. */
+ * match an already-recorded fork; any difference sends anew. */
 export async function forkSubThread(
   storage: StringStorage,
   hub: StockHub,

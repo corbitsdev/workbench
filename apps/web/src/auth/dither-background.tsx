@@ -22,8 +22,9 @@ const STRENGTH_LERP = 0.08; // cursor influence easing per frame
 const FRAME_MS = 1000 / 30; // animation cap (~30fps) to spare the CPU
 const ASSET = "/images/hero-dither.png"; // same-origin source image
 
-// Renders on a plain 2D canvas, not WebGL — see
-// docs/auth-dither-background.md for why.
+// Renders on a plain 2D canvas, not WebGL: a WebGL layer failed to composite
+// behind the auth panel, whereas 2D canvas is CPU-rasterized and retains its
+// last frame when requestAnimationFrame pauses on a hidden tab.
 export function DitherBackground({ className }: { className?: string }) {
   // The animation belongs to the canvas element, so it starts and stops with
   // it: a ref callback with a cleanup, never an effect reaching for a ref.
