@@ -43,15 +43,6 @@ surfaced tools, qwen2.5:7b does not, so deferral needs 14b or better.
 
 ## Deployment
 
-Deployment mechanics are not yet settled:
+The root `Dockerfile` builds a single-origin production image on `oven/bun:1.4.2`: it installs workspace dependencies, builds `apps/web` (which also bundles `@corbits/worker`), sets `WEB_DIST_DIR=/app/apps/web/dist`, and starts `apps/hub/src/index.ts` on port `3000`. When `WEB_DIST_DIR` (or `PORTAL_DIR`) is set, the hub serves the compiled web bundle and SPA fallback alongside `/api/*`, `/status`, and `/openapi.json`, and derives `DB_HOST`/`DB_PORT`/`DB_USER`/`DB_PASSWORD`/`DB_NAME` from `DATABASE_URL`. Sidecars run as child processes of the hub (`apps/sidecar/src/index.ts`) with durable state under `HUB_DATA_DIR`.
 
-- Target hosting platform and process topology (one hub, how many
-  sidecars, where they run) are undecided. Sidecars run as child
-  processes of the hub; there is no other provisioner backend.
-- Secrets management for `CREDENTIAL_ENCRYPTION_KEY` and
-  `PRINCIPAL_KEY_ENCRYPTION_KEY` in a real deployment is undecided.
-- Migration/rollout ordering across `hub`, `sidecar`, and `web` on deploy
-  is undecided.
-- Backup/restore for `HUB_DATA_DIR` and the database is undecided.
-
-Do not assume any of the above from this document alone.
+`compose.yml` pairs that image with `pgvector/pgvector:pg17` and persistent volumes for Postgres and `HUB_DATA_DIR`. See [docs/SELF_HOST.md](docs/SELF_HOST.md) for Docker Compose, cloud container hosts, required secrets, and backups.

@@ -7,6 +7,20 @@ worker builds whatever workflows, tools, or skills a job needs.
 
 ## Run it
 
+### Docker Compose
+
+Run Postgres 17 (with `pgvector`) and the hub (serving the web client on port 3000) in containers:
+
+```sh
+cp .env.example .env   # set the encryption keys outside a laptop: openssl rand -hex 32 each
+docker compose up --build -d
+docker compose logs -f hub
+```
+
+Open `http://localhost:3000`. For cloud deployment, environment variables, and backups, see [docs/SELF_HOST.md](docs/SELF_HOST.md).
+
+### Local development
+
 Needs [Bun](https://bun.sh) (version in `.bun-version`) and Postgres 17
 with pgvector. `docker compose -f compose.test.yml up -d` gives you the
 same Postgres CI uses.
@@ -45,6 +59,7 @@ bun run test:e2e   # end-to-end suites, need DATABASE_URL
 ## Read next
 
 - [PRODUCT.md](PRODUCT.md): what a workbench, its worker, tools, and skills are.
+- [docs/SELF_HOST.md](docs/SELF_HOST.md): self-hosting with Docker Compose or any container host.
 - [ARCHITECTURE.md](ARCHITECTURE.md) and [IMPLEMENTATION.md](IMPLEMENTATION.md): how the hub, sidecar, and web client are built.
 - [docs/local-dev.md](docs/local-dev.md): running locally with Ollama, memory embeddings, and OAuth providers.
 - [docs/GLOSSARY.md](docs/GLOSSARY.md): product-term to platform-term mapping.
