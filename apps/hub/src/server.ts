@@ -56,7 +56,7 @@ import {
 import { MAX_SIDECAR_FRAME_BYTES } from "@intx/types/sidecar";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import { mountCorbits } from "./corbits-mount";
-import { databaseUrlFrom, migrateHub } from "./migrate";
+import { migrateHub } from "./migrate";
 import {
   createProcessSidecarProvisioner,
   readProcessProvisionerConfig,
@@ -518,10 +518,9 @@ export async function createHubServer({
     }),
   });
 
-  const corbits = await mountCorbits({
+  const corbits = mountCorbits({
     app,
     db,
-    databaseUrl: databaseUrlFrom(dbConfig),
     port,
     grantStore,
     principalKeyStore,

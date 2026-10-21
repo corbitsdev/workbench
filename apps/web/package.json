@@ -19,8 +19,8 @@
   "dependencies": {
     "@corbits/credential-mcp": "^0.1.0",
     "@corbits/error-sink": "workspace:*",
-    "@corbits/mcp": "^0.3.0",
-    "@corbits/react-ui": "0.3.0",
+    "@corbits/mcp": "^0.3.1",
+    "@corbits/react-ui": "0.3.1",
     "@corbits/worker": "workspace:*",
     "@intx/mime": "0.5.0",
     "@intx/types": "workspace:*",

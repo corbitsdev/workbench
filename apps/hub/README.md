@@ -13,15 +13,15 @@ one origin. Apps stay generic — every product rule belongs in a package (see
   migrations and each mounted Corbits library's idempotent migration under a
   Postgres advisory lock.
 - `src/corbits-mount.ts` mounts the Corbits mount block:
-  - `@corbits/artifacts` (`mountArtifacts` and `mountWorkflowArtifacts`)
+  - `@corbits/artifacts` (`createArtifactRoutes` and `createWorkflowArtifactRoutes`)
   - Live workflow-run SSE stream routes (`src/run-stream.ts`)
   - `@corbits/agent-token` (`mountAgentTokens` and `createAgentTokenVerifier`)
-  - `@corbits/mailbox` (`mountMailbox` with `src/mailbox-persist.ts` and `src/mailbox-send.ts`)
+  - `@corbits/mailbox` (`createMailboxRoutes` with `src/mailbox-persist.ts` and `src/mailbox-send.ts`)
   - `@corbits/cron` (`createCronRoutes` and `createCronTicker`)
-  - `@corbits/memory` (`createMemory` and `mountWorkflowMemory`)
+  - `@corbits/memory` (`createMemory`, `createMemoryRoutes`, and `mountWorkflowMemory`)
   - `@corbits/oauth-core/hub` (`mountOAuthCallback`, `mountOAuthLogin`, and `createOAuthTokenRefresher` for Codex and xAI)
   - `@corbits/mcp/hub` (`mountMcpDiscovery`)
-  - `@corbits/webhooks` (`installWebhooks`)
+  - `@corbits/webhooks` (`createHookRoutes`)
 - Serves no static files. In dev, `vite dev` (`apps/web`) serves the SPA and
   proxies `/api` to the hub; in e2e, `e2e/lib/browser.ts` serves the built
   `apps/web/dist` in front of the hub on one origin.

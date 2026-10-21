@@ -2,15 +2,12 @@
 // suite in this directory (`composition.test.ts` boots the whole hub over
 // HTTP; this suite exercises `persistMail` wiring directly, without a boot).
 import { afterAll, expect, test } from "bun:test";
-import { eq } from "drizzle-orm";
 import { createDB } from "@intx/db";
 import { principal, tenant as tenantTable, workflowDefinition, workflowRun } from "@intx/db/schema";
 import {
   createInMemoryMailboxEventBus,
-  createMailboxDb,
   createMailboxPersist,
-  principalMail,
-  type MailboxDb,
+  openNativeMailboxStore,
 } from "@corbits/mailbox";
 import { createHubMailboxAuthorizeSender } from "../../apps/hub/src/mailbox-persist";
 import { e2eDatabaseUrl } from "../lib/database-url";
@@ -51,11 +48,6 @@ function uid(label: string): string {
 async function setup() {
   const { db, close: closeDb } = createDB(dbConfigFromUrl(databaseUrl));
   closers.push(closeDb);
-  const { db: mailboxDb, close: closeMailbox } = createMailboxDb(databaseUrl) as {
-    db: MailboxDb;
-    close: () => Promise<void>;
-  };
-  closers.push(closeMailbox);
 
   const domain = `${uid("mailbox-persist-wrap")}.test`;
   const tenantId = uid("tnt_mbxpw");
@@ -115,7 +107,6 @@ async function setup() {
 
   return {
     db,
-    mailboxDb,
     domain,
     tenantId,
     senderAddress,
@@ -127,16 +118,8 @@ async function setup() {
 
 describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
   test("an outbound frame to two humans and one agent produces exactly two principal_mail rows and an SSE event per mailbox", async () => {
-    const {
-      db,
-      mailboxDb,
-      domain,
-      tenantId,
-      senderAddress,
-      agentRecipientAddress,
-      human1Id,
-      human2Id,
-    } = await setup();
+    const { db, domain, tenantId, senderAddress, agentRecipientAddress, human1Id, human2Id } =
+      await setup();
 
     const mailboxBus = createInMemoryMailboxEventBus();
     const seenPrincipalIds = new Set<string>();
@@ -147,7 +130,7 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
       seenPrincipalIds.add(human2Id);
     });
 
-    const persistMail = createMailboxPersist(mailboxDb, {
+    const persistMail = createMailboxPersist(db, {
       upstream: async () => [],
       authorizeSender: createHubMailboxAuthorizeSender(db),
       bus: mailboxBus,
@@ -173,21 +156,27 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
 
     // Exactly two durable mailbox rows -- one per human -- never one for
     // the agent recipient (a run address is never a mailbox).
-    const rows = await mailboxDb
-      .select()
-      .from(principalMail)
-      .where(eq(principalMail.tenantId, tenantId));
-    expect(rows).toHaveLength(2);
-    expect(rows.map((r) => r.principalId).sort()).toEqual([human1Id, human2Id].sort());
+    const h1Store = await openNativeMailboxStore(db, {
+      tenantId,
+      principalId: human1Id,
+      folder: "INBOX",
+    });
+    const h2Store = await openNativeMailboxStore(db, {
+      tenantId,
+      principalId: human2Id,
+      folder: "INBOX",
+    });
+    expect(h1Store.messages).toHaveLength(1);
+    expect(h2Store.messages).toHaveLength(1);
 
     // Every SSE subscriber fired.
     expect(seenPrincipalIds).toEqual(new Set([human1Id, human2Id]));
   });
 
   test("redelivery of the same frame is deduped: a retried persist for the same message and recipient writes no second mailbox row", async () => {
-    const { db, mailboxDb, domain, tenantId, senderAddress, human1Id } = await setup();
+    const { db, domain, tenantId, senderAddress, human1Id } = await setup();
 
-    const persistMail = createMailboxPersist(mailboxDb, {
+    const persistMail = createMailboxPersist(db, {
       upstream: async () => [],
       authorizeSender: createHubMailboxAuthorizeSender(db),
     });
@@ -214,11 +203,12 @@ describeIfDb("hub persistMail wrapped with createMailboxPersist", () => {
       raw,
     });
 
-    const rows = await mailboxDb
-      .select()
-      .from(principalMail)
-      .where(eq(principalMail.tenantId, tenantId));
-    expect(rows).toHaveLength(1);
+    const h1Store = await openNativeMailboxStore(db, {
+      tenantId,
+      principalId: human1Id,
+      folder: "INBOX",
+    });
+    expect(h1Store.messages).toHaveLength(1);
   });
 
   test("authorizeSender resolves a live sender run to its tenant and mail domain", async () => {

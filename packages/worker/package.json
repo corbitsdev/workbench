@@ -34,10 +34,10 @@
     "build": "bun run scripts/build-bundle.ts"
   },
   "dependencies": {
-    "@corbits/artifacts": "github:corbitsdev/corbits-artifacts#4a2a3c22187991a6ce598faf794908fedd252e98",
+    "@corbits/artifacts": "0.3.0",
     "@corbits/deferred-tools": "workspace:*",
-    "@corbits/mcp": "^0.3.0",
-    "@corbits/memory": "github:corbitsdev/corbits-memory#8be608becc749fa0795a899826277823dca6db3e",
+    "@corbits/mcp": "^0.3.1",
+    "@corbits/memory": "0.2.1",
     "@intx/tools-mail": "0.5.0",
     "@intx/tools-posix": "0.5.0"
   },

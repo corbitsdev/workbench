@@ -5,7 +5,7 @@ import { workflowRun } from "@intx/db/schema";
 
 // The one concrete `WorkflowRunAuthenticator` every workflow-run-authenticated
 // Corbits surface takes structurally (`@corbits/artifacts`'
-// `mountWorkflowArtifacts`): a sidecar bearer token + run address resolve to
+// `createWorkflowArtifactRoutes`): a sidecar bearer token + run address resolve to
 // the tenant/principal/run it names. The token must belong to a live
 // allocation, and the run must be that allocation's anchor run or one of its
 // children, in the allocation's tenant.
