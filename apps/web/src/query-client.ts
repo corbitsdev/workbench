@@ -81,10 +81,6 @@ export const tenantKeys = {
   visibleAgents: (tenantId: string) => ["tenant", tenantId, "agents", "visible"] as const,
   assets: (tenantId: string) => ["tenant", tenantId, "assets"] as const,
   artifacts: (tenantId: string) => ["tenant", tenantId, "artifacts"] as const,
-  // Nested under `artifacts` (not a sibling key) so one
-  // `invalidateQueries({ queryKey: tenantKeys.artifacts(tenantId) })` after
-  // an upload covers both the list and the kind-nav counts.
-  artifactCounts: (tenantId: string) => ["tenant", tenantId, "artifacts", "counts"] as const,
   credentials: (tenantId: string) => ["tenant", tenantId, "credentials"] as const,
   principals: (tenantId: string) => ["tenant", tenantId, "principals"] as const,
   roles: (tenantId: string) => ["tenant", tenantId, "roles"] as const,
@@ -129,10 +125,6 @@ export function pathToQueryKey(path: string): readonly unknown[] {
   }
   const assets = /^\/api\/tenants\/([^/]+)\/assets$/.exec(path);
   if (assets?.[1] !== undefined) return tenantKeys.assets(assets[1]);
-  const artifactCounts = /^\/api\/tenants\/([^/]+)\/artifacts\/counts$/.exec(path);
-  if (artifactCounts?.[1] !== undefined) {
-    return tenantKeys.artifactCounts(artifactCounts[1]);
-  }
   const artifacts = /^\/api\/tenants\/([^/]+)\/artifacts(?:\?(.*))?$/.exec(path);
   if (artifacts?.[1] !== undefined) {
     return [...tenantKeys.artifacts(artifacts[1]), artifacts[2] ?? ""] as const;

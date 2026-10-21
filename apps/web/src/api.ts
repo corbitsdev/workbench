@@ -57,17 +57,6 @@ export const ArtifactUploadResponseSchema = type({
   artifacts: ArtifactRowSchema.array(),
 });
 
-// GET /api/tenants/:id/artifacts/counts — honest per-kind-segment counts
-// over the tenant's full artifact list, computed by the hub so the Library
-// nav never shows a number the page itself couldn't otherwise prove.
-export const ArtifactCountsSchema = type({
-  all: "number",
-  document: "number",
-  sheet: "number",
-  pdf: "number",
-  routine: "number",
-});
-
 export type Profile = typeof UserProfile.infer;
 export type Principal = typeof PrincipalSummary.infer;
 export type TenantDetail = typeof TenantResponse.infer;
@@ -77,7 +66,6 @@ export type AssetRow = typeof AssetWithOriginResponse.infer;
 export type ArtifactListItem = typeof ArtifactListItemSchema.infer;
 export type ArtifactListPage = typeof ArtifactListPageSchema.infer;
 export type ArtifactDetail = typeof ArtifactRowSchema.infer;
-export type ArtifactCounts = typeof ArtifactCountsSchema.infer;
 // Stated structurally because the generic schema's inferred type rejects
 // plain literals.
 type Paginated<T> = { data: T[]; nextCursor: string | null };
