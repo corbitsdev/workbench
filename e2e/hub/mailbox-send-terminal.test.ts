@@ -3,13 +3,12 @@
 import { afterAll, expect, test } from "bun:test";
 import { Hono } from "hono";
 import { createDB } from "@intx/db";
+import type { TenantEnv } from "@intx/hub-api";
 import { principal, tenant } from "@intx/db/schema";
 import {
   createInMemoryMailboxEventBus,
-  createMailboxDb,
-  mountMailbox,
+  createMailboxRoutes,
   runMailboxMigrations,
-  type MailboxDb,
 } from "@corbits/mailbox";
 import { captureMailboxRequest, createMailboxDeliver } from "../../apps/hub/src/mailbox-send";
 import { e2eDatabaseUrl } from "../lib/database-url";
@@ -39,13 +38,9 @@ function dbConfigFromUrl(url: string) {
 
 describeIfDb("mailbox send through the real mount", () => {
   async function sendToRun(triggerStatus: number, code: string) {
-    const { db, close } = createMailboxDb(databaseUrl) as {
-      db: MailboxDb;
-      close: () => Promise<void>;
-    };
-    closers.push(close);
-    await runMailboxMigrations(db);
-    const { db: hubDb, close: closeHub } = createDB(dbConfigFromUrl(databaseUrl));
+    const dbConfig = dbConfigFromUrl(databaseUrl);
+    await runMailboxMigrations(dbConfig, { schema: "public" });
+    const { db: hubDb, close: closeHub } = createDB(dbConfig);
     closers.push(closeHub);
     const suffix = crypto.randomUUID().slice(0, 8);
     const tenantId = `tnt_term_${suffix}`;
@@ -60,23 +55,31 @@ describeIfDb("mailbox send through the real mount", () => {
     await hubDb
       .insert(principal)
       .values({ id: principalId, tenantId, kind: "user", refId: principalId, status: "active" });
-    const app = new Hono();
-    app.use("/tenants/:tenantId/mailbox/me/inbox/send", captureMailboxRequest());
-    const mailboxApp = new Hono();
-    mailboxApp.use("/me/inbox/send", captureMailboxRequest());
-    mountMailbox(mailboxApp, {
-      db,
-      bus: createInMemoryMailboxEventBus(),
-      resolvePrincipal: () => ({ tenantId, principalId }),
-      senderAddressFor: () => "person@term.test",
-      deliver: createMailboxDeliver({
-        app: {
-          request: () =>
-            Response.json({ error: { code, message: "x" } }, { status: triggerStatus }),
-        },
-        persistMail: () => Promise.resolve(),
-      }),
+    const app = new Hono<TenantEnv>();
+    app.use("/tenants/:tenantId/*", async (c, next) => {
+      c.set("tenant", { id: tenantId } as TenantEnv["Variables"]["tenant"]);
+      c.set("principal", { id: principalId } as TenantEnv["Variables"]["principal"]);
+      await next();
     });
+    app.use("/tenants/:tenantId/mailbox/me/inbox/send", captureMailboxRequest());
+    const mailboxApp = new Hono<TenantEnv>();
+    mailboxApp.use("/me/inbox/send", captureMailboxRequest());
+    mailboxApp.route(
+      "/",
+      createMailboxRoutes({
+        db: hubDb,
+        bus: createInMemoryMailboxEventBus(),
+        requireGrant: () => async (_c, next) => next(),
+        senderAddressFor: () => "person@term.test",
+        deliver: createMailboxDeliver({
+          app: {
+            request: () =>
+              Response.json({ error: { code, message: "x" } }, { status: triggerStatus }),
+          },
+          persistMail: () => Promise.resolve(),
+        }),
+      }),
+    );
     app.route("/tenants/:tenantId/mailbox", mailboxApp);
     return app.request(`/tenants/${tenantId}/mailbox/me/inbox/send`, {
       method: "POST",

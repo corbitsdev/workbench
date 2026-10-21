@@ -33,7 +33,7 @@ const FIXTURES: Fixture[] = [
     response: {
       toolCalls: [
         {
-          name: "artifact_create",
+          name: "artifact_write",
           arguments: JSON.stringify({
             title: ARTIFACT_TITLE,
             kind: "document",

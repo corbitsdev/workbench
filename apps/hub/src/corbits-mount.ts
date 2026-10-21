@@ -1,9 +1,8 @@
 import { createAgentTokenVerifier, mountAgentTokens } from "@corbits/agent-token";
 import {
+  createArtifactRoutes,
+  createWorkflowArtifactRoutes,
   InlineContentStore,
-  mountArtifacts,
-  mountWorkflowArtifacts,
-  type WorkflowArtifactEnv,
 } from "@corbits/artifacts";
 import {
   CODEX_PROVIDER,
@@ -15,13 +14,13 @@ import { createCronRoutes, createCronTicker, createRunTriggerCronDeliver } from 
 import { reportError } from "@corbits/error-sink";
 import {
   createInMemoryMailboxEventBus,
-  createMailboxDb,
   createMailboxPersist,
-  mountMailbox,
+  createMailboxRoutes,
 } from "@corbits/mailbox";
 import { mountMcpDiscovery } from "@corbits/mcp/hub";
 import {
   createMemory,
+  createMemoryRoutes,
   loadMemoryConfig,
   mountWorkflowMemory,
   type WorkflowMemoryEnv,
@@ -34,10 +33,10 @@ import {
   type OAuthLoginProviders,
 } from "@corbits/oauth-core/hub";
 import {
+  createHookRoutes,
   createRunTriggerDeliverer,
   createTenantSystemSender,
-  installWebhooks,
-  type HookMailRouter,
+  type HookRouter,
 } from "@corbits/webhooks";
 import {
   XAI_PROVIDER,
@@ -79,7 +78,6 @@ const TENANT_PREFIX = "/api/tenants/:tenantId";
 export type MountCorbitsDeps = {
   readonly app: Hono<AppEnv>;
   readonly db: ReturnType<typeof createDB>["db"];
-  readonly databaseUrl: string;
   readonly port: number;
   readonly grantStore: ReturnType<typeof createGrantStore>;
   readonly principalKeyStore: PrincipalKeyStore;
@@ -92,26 +90,24 @@ export type MountedCorbits = {
   stop(): void;
 };
 
-export async function mountCorbits({
+export function mountCorbits({
   app,
   db,
-  databaseUrl,
   port,
   grantStore,
   principalKeyStore,
   credentialCipher,
   sidecarRouter,
   lookups,
-}: MountCorbitsDeps): Promise<MountedCorbits> {
+}: MountCorbitsDeps): MountedCorbits {
   const log = getLogger(["hub"]);
   const requireGrant = createRequireGrant({
     grantStore,
     conditionRegistry: grantConditionRegistry,
   });
 
-  const { db: mailboxDb } = createMailboxDb(databaseUrl);
   const mailboxBus = createInMemoryMailboxEventBus();
-  const persistMail = createMailboxPersist(mailboxDb, {
+  const persistMail = createMailboxPersist(db, {
     upstream: async () => [],
     authorizeSender: createHubMailboxAuthorizeSender(db),
     bus: mailboxBus,
@@ -120,15 +116,14 @@ export async function mountCorbits({
   // mutating it in place ensures agent outbound mail also lands in principal inboxes.
   lookups.persistMail = persistMail;
 
-  {
-    const artifactsApi = new Hono<TenantEnv>();
-    mountArtifacts(artifactsApi, {
+  app.route(
+    TENANT_PREFIX,
+    createArtifactRoutes({
       db,
       contentStore: InlineContentStore,
       requireGrant,
-    });
-    app.route(TENANT_PREFIX, artifactsApi);
-  }
+    }),
+  );
 
   app.route(
     TENANT_PREFIX,
@@ -144,7 +139,6 @@ export async function mountCorbits({
     mountAgentTokens(agentTokensApp, {
       db,
       requireGrant: requireGrant("credential:*", "create"),
-      resolveTenantId: (ctx) => (ctx as { get(key: "tenant"): { id: string } }).get("tenant").id,
       // Scoped to the `workflow` source asset so the workbench can mint the
       // token before the deploy that creates the run.
       resolveDefinition: async (tenantId, definitionId) => {
@@ -161,6 +155,9 @@ export async function mountCorbits({
     app.route(TENANT_PREFIX, agentTokensApp);
   }
 
+  // The run routes sit at the hub root outside `/api/tenants/:tenantId`, so
+  // `verify` seeds `tenant` on the context from the run named by
+  // `x-workflow-run-address` before `createAgentTokenVerifier` reads it.
   const verifyAgentToken = createAgentTokenVerifier({ db });
   const resolveAgentRun = async (runAddress: string) => {
     if (runAddress === "") return null;
@@ -174,82 +171,83 @@ export async function mountCorbits({
       runId: run.id,
     };
   };
+  const agentTokenAuth = {
+    verify: async (ctx: unknown) => {
+      const c = ctx as {
+        req: { header(name: string): string | undefined };
+        set(key: "tenant", value: { id: string }): void;
+      };
+      const runScope = await resolveAgentRun(c.req.header("x-workflow-run-address") ?? "");
+      if (runScope === null) return undefined;
+      c.set("tenant", { id: runScope.tenantId });
+      return verifyAgentToken(c as Parameters<typeof verifyAgentToken>[0]);
+    },
+    resolveRun: resolveAgentRun,
+  };
 
   {
-    const workflowArtifactsApi = new Hono<WorkflowArtifactEnv>();
     const workflowRunAuthenticator = createWorkflowRunAuthenticator({ db });
-    mountWorkflowArtifacts(workflowArtifactsApi, {
-      db,
-      contentStore: InlineContentStore,
-      resolveRunScope: (token, runAddress) => workflowRunAuthenticator.resolve(token, runAddress),
-      agentToken: {
-        verify: (ctx) => verifyAgentToken(ctx),
-        resolveRun: resolveAgentRun,
-      },
-    });
-    app.route("/api/workflow-artifacts", workflowArtifactsApi);
+    app.route(
+      "/api/workflow-artifacts",
+      createWorkflowArtifactRoutes({
+        db,
+        contentStore: InlineContentStore,
+        resolveRunScope: (token, runAddress) => workflowRunAuthenticator.resolve(token, runAddress),
+        agentToken: agentTokenAuth,
+      }),
+    );
   }
 
   {
     const mailboxApp = new Hono<TenantEnv>();
     mailboxApp.use("/me/inbox/send", captureMailboxRequest());
-    mountMailbox(mailboxApp, {
-      db: mailboxDb,
-      bus: mailboxBus,
-      resolvePrincipal: (ctx) => {
-        const c = ctx as { get(key: "tenant" | "principal"): { id: string } };
-        return {
-          tenantId: c.get("tenant").id,
-          principalId: c.get("principal").id,
-        };
-      },
-      senderAddressFor: async (principal) => {
-        const [tenantRow] = await db
-          .select({ domain: tenantTable.domain })
-          .from(tenantTable)
-          .where(eq(tenantTable.id, principal.tenantId))
-          .limit(1);
-        if (tenantRow === undefined) {
-          throw new Error(`no tenant "${principal.tenantId}" to address a mailbox sender from`);
-        }
-        const [principalRow] = await db
-          .select({ refId: principalTable.refId })
-          .from(principalTable)
-          .where(eq(principalTable.id, principal.principalId))
-          .limit(1);
-        if (principalRow === undefined) {
-          throw new Error(`no principal "${principal.principalId}" to address a mailbox sender as`);
-        }
-        // Small models lowercase addresses before replying, so stamp lowercase canonically.
-        return `${principalRow.refId}@${tenantRow.domain}`.toLowerCase();
-      },
-      deliver: createMailboxDeliver({ app, persistMail }),
-    });
+    mailboxApp.route(
+      "/",
+      createMailboxRoutes({
+        db,
+        bus: mailboxBus,
+        requireGrant,
+        senderAddressFor: async (principal) => {
+          const [tenantRow] = await db
+            .select({ domain: tenantTable.domain })
+            .from(tenantTable)
+            .where(eq(tenantTable.id, principal.tenantId))
+            .limit(1);
+          if (tenantRow === undefined) {
+            throw new Error(`no tenant "${principal.tenantId}" to address a mailbox sender from`);
+          }
+          const [principalRow] = await db
+            .select({ refId: principalTable.refId })
+            .from(principalTable)
+            .where(eq(principalTable.id, principal.principalId))
+            .limit(1);
+          if (principalRow === undefined) {
+            throw new Error(
+              `no principal "${principal.principalId}" to address a mailbox sender as`,
+            );
+          }
+          // Small models lowercase addresses before replying, so stamp lowercase canonically.
+          return `${principalRow.refId}@${tenantRow.domain}`.toLowerCase();
+        },
+        deliver: createMailboxDeliver({ app, persistMail }),
+      }),
+    );
     app.route(`${TENANT_PREFIX}/mailbox`, mailboxApp);
   }
 
-  const systemTriggerMailRouter: HookMailRouter = {
-    routeMail: (address, rawMessage, authenticatedSender, messageId) => {
+  const systemTriggerMailRouter: HookRouter = {
+    routeMail: async (address, rawMessage, authenticatedSender, messageId, runGrants) => {
       if (!sidecarRouter.getRoutableAddresses().includes(address)) {
         return false;
       }
-      void sidecarRouter
-        .routeMail(address, rawMessage, authenticatedSender, messageId)
-        .catch((error: unknown) => {
-          reportError(error, {
-            operation: "hub.systemTriggerMailRouter.routeMail",
-            extra: { address, authenticatedSender },
-          });
-        });
-      return true;
-    },
-    sendRunGrants: (address, runId, stepGrants, senderIdentities) =>
-      sidecarRouter.sendRunGrants(
+      return sidecarRouter.routeMail(
         address,
-        runId,
-        stepGrants as Parameters<typeof sidecarRouter.sendRunGrants>[2],
-        senderIdentities as Parameters<typeof sidecarRouter.sendRunGrants>[3],
-      ),
+        rawMessage,
+        authenticatedSender,
+        messageId,
+        runGrants,
+      );
+    },
   };
 
   app.route(
@@ -319,22 +317,23 @@ export async function mountCorbits({
   cronTicker.start();
 
   {
-    const memoryApp = new Hono<TenantEnv>();
     const memory = createMemory({
-      app: memoryApp,
       config: loadMemoryConfig(),
       grantStore,
       conditionRegistry: grantConditionRegistry,
     });
-    app.route("/", memoryApp);
+    app.route(
+      `${TENANT_PREFIX}/memory`,
+      createMemoryRoutes({
+        memory,
+        requireGrant,
+      }),
+    );
 
     const workflowMemoryApi = new Hono<WorkflowMemoryEnv>();
     mountWorkflowMemory(workflowMemoryApi, {
       memory,
-      agentToken: {
-        verify: (ctx) => verifyAgentToken(ctx),
-        resolveRun: resolveAgentRun,
-      },
+      agentToken: agentTokenAuth,
     });
     app.route("/api/workflow-memory", workflowMemoryApi);
   }
@@ -431,13 +430,15 @@ export async function mountCorbits({
     app.route(TENANT_PREFIX, mcpApi);
   }
 
-  await installWebhooks({
-    app,
-    db,
-    credentialCipher,
-    principalKeyStore,
-    router: systemTriggerMailRouter,
-  });
+  app.route(
+    "/api/hooks",
+    createHookRoutes({
+      db,
+      credentialCipher,
+      principalKeyStore,
+      router: systemTriggerMailRouter,
+    }),
+  );
 
   return {
     stop() {
