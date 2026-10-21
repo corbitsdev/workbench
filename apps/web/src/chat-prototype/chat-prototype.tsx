@@ -1084,19 +1084,288 @@ function imageFileName(part: ImagePart, index: number, image: GeneratedImage): s
   return `${slug === "" ? "image" : slug}-${index + 1}.${extension}`;
 }
 
-/** Where an image will land while it's made: the exact space it takes. */
-function PendingTile({ width, height }: { readonly width: number; readonly height: number }) {
+/** 4×4 Bayer thresholds, 0–1: the brand's ordered dither. A pure function
+ * of position, so the grain stays locked to the tile while the field
+ * under it moves. */
+const BAYER = [
+  [0, 8, 2, 10],
+  [12, 4, 14, 6],
+  [3, 11, 1, 9],
+  [15, 7, 13, 5],
+].map((row) => row.map((value) => (value + 0.5) / 16));
+
+/** Edge of one dither cell, in CSS pixels. */
+const GRAIN = 4;
+
+/** A theme colour read off the element, so the grain follows light and
+ * dark without a rule per theme. */
+function themeColor(element: Element, name: string): string {
+  return getComputedStyle(element).getPropertyValue(name).trim() || "currentColor";
+}
+
+/** A canvas sized in device pixels to its box, so the grain stays crisp
+ * on a retina screen instead of being resampled into mush. */
+function fitCanvas(canvas: HTMLCanvasElement): { width: number; height: number; ratio: number } {
+  const ratio = window.devicePixelRatio || 1;
+  const box = canvas.getBoundingClientRect();
+  const width = Math.max(1, Math.round(box.width * ratio));
+  const height = Math.max(1, Math.round(box.height * ratio));
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+  return { width, height, ratio };
+}
+
+/** Alpha steps a grain cell fades through. Each step is one path a frame,
+ * so cells ease in and out instead of blinking. */
+const GRAIN_STEPS = 6;
+
+/** How long the reveal's edge takes to cross a tile. */
+const REVEAL_MS = 700;
+/** How wide the edge is, as a share of the tile's diagonal: cells inside
+ * it clear in Bayer order, so the edge itself is dithered. */
+const REVEAL_EDGE = 0.16;
+
+function easeInOutCubic(p: number): number {
+  return p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2;
+}
+
+/** The image being made, as a live dither: a slow interference field in
+ * ink, and a band of the action colour sweeping corner to corner, offset
+ * per tile so a grid never moves in step. Cells fade through a soft edge
+ * around their threshold rather than switching. Time is the page clock,
+ * not the tile's, so a tile that remounts when its image lands carries on
+ * mid-motion. Nothing here claims progress; it says only that something is
+ * forming.
+ *
+ * With `reveal`, the field is laid over the finished image and the band
+ * makes one last pass as the reveal's edge: behind it the picture, ahead
+ * of it the grain, thickening as the edge nears; cells clear in dither
+ * order so the boundary is grain too. The field paints its own ground and
+ * cuts revealed cells out of it, so the real image is what shows through,
+ * with no hand-over at the end. Reduced motion draws one still frame. */
+function FormingField({
+  seed,
+  reveal,
+}: {
+  readonly seed: number;
+  readonly reveal?: { readonly delay: number; readonly onDone: () => void };
+}) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  const reduced = useReducedMotion();
+  const revealing = reveal !== undefined;
+  const revealDelay = reveal?.delay ?? 0;
+  const onDone = useRef(reveal?.onDone);
+  useEffect(() => {
+    onDone.current = reveal?.onDone;
+  });
+  // Layout effect: the first frame is drawn before the tile is painted, so
+  // a fresh canvas never flashes empty.
+  useLayoutEffect(() => {
+    const canvas = ref.current;
+    const context = canvas?.getContext("2d");
+    if (canvas === null || canvas === undefined || context === null || context === undefined) {
+      return;
+    }
+    const phase = (seed * 0.37) % 1;
+    let ground = themeColor(canvas, "--surface-sunk");
+    let ink = themeColor(canvas, "--ink");
+    let action = themeColor(canvas, "--action");
+    let colorsAt = performance.now();
+    let frame = 0;
+    let visible = true;
+    const revealStart = revealing ? performance.now() + revealDelay : null;
+    // Returns false once every cell is revealed.
+    const draw = (now: number): boolean => {
+      const { width, height, ratio } = fitCanvas(canvas);
+      const cell = GRAIN * ratio;
+      const size = cell - ratio;
+      const cols = Math.ceil(width / cell);
+      const rows = Math.ceil(height / cell);
+      const t = now / 1000;
+      const ambient = ((t / 5.5 + phase) % 1) * 1.6 - 0.3;
+      // The edge travels from just off one corner to just past the other.
+      const progress =
+        revealStart === null ? 0 : Math.min(1, Math.max(0, (now - revealStart) / REVEAL_MS));
+      const front =
+        revealStart === null || now < revealStart
+          ? null
+          : easeInOutCubic(progress) * (1 + 2 * REVEAL_EDGE) - REVEAL_EDGE;
+      // The ambient band gives way as the edge comes in.
+      const ambientWeight =
+        revealStart === null ? 1 : 1 - Math.min(1, Math.max(0, (now - revealStart) / 300));
+      // Per-column and per-row terms (the diagonal wave split with
+      // sin(a + b)), so a cell costs a few multiplies, not three trig calls.
+      const colWave = new Float32Array(cols);
+      const colSin = new Float32Array(cols);
+      const colCos = new Float32Array(cols);
+      for (let x = 0; x < cols; x += 1) {
+        const u = x / cols;
+        colWave[x] = Math.sin(u * 7.1 + t * 0.55 + seed);
+        colSin[x] = Math.sin(u * 11 - t * 0.9 + seed * 2);
+        colCos[x] = Math.cos(u * 11 - t * 0.9 + seed * 2);
+      }
+      const rowWave = new Float32Array(rows);
+      const rowSin = new Float32Array(rows);
+      const rowCos = new Float32Array(rows);
+      for (let y = 0; y < rows; y += 1) {
+        const v = y / rows;
+        rowWave[y] = Math.cos(v * 5.3 - t * 0.4);
+        rowSin[y] = Math.sin(v * 11);
+        rowCos[y] = Math.cos(v * 11);
+      }
+      // Ink steps first, then the band's steps; `cleared` is what the
+      // reveal has passed.
+      const buckets = Array.from({ length: GRAIN_STEPS * 2 }, (): number[] => []);
+      const cleared: number[] = [];
+      let remaining = 0;
+      for (let y = 0; y < rows; y += 1) {
+        const thresholds = BAYER[y % 4];
+        for (let x = 0; x < cols; x += 1) {
+          const threshold = thresholds?.[x % 4] ?? 0.5;
+          const diagonal = (x / cols + y / rows) / 2;
+          let band = 0;
+          let charge = 0;
+          if (front !== null) {
+            const passed = (front - diagonal) / REVEAL_EDGE;
+            if (passed > threshold) {
+              cleared.push(x * cell, y * cell);
+              continue;
+            }
+            // Just ahead of the edge: the band rides it and the grain
+            // thickens toward it.
+            const ahead = diagonal - front;
+            band = Math.exp(-(ahead * ahead) / 0.004);
+            charge = 0.35 * Math.exp(-(ahead * ahead) / 0.03);
+          }
+          remaining += 1;
+          const drift = diagonal - ambient;
+          band = Math.max(band, ambientWeight * Math.exp(-(drift * drift) / 0.01));
+          const field =
+            0.3 +
+            charge +
+            0.22 * (colWave[x] ?? 0) * (rowWave[y] ?? 0) +
+            0.12 * ((colSin[x] ?? 0) * (rowCos[y] ?? 0) + (colCos[x] ?? 0) * (rowSin[y] ?? 0));
+          const level = (field + band * 0.5 - threshold) / 0.14 + 0.5;
+          if (level <= 0) continue;
+          const step = Math.min(GRAIN_STEPS - 1, Math.floor(level * GRAIN_STEPS));
+          buckets[(band > 0.3 ? GRAIN_STEPS : 0) + step]?.push(x * cell, y * cell);
+        }
+      }
+      const fillCells = (cells: readonly number[], cellSize: number) => {
+        context.beginPath();
+        for (let at = 0; at < cells.length; at += 2) {
+          context.rect(cells[at] ?? 0, cells[at + 1] ?? 0, cellSize, cellSize);
+        }
+        context.fill();
+      };
+      context.globalCompositeOperation = "source-over";
+      context.globalAlpha = 1;
+      context.fillStyle = ground;
+      context.fillRect(0, 0, width, height);
+      buckets.forEach((cells, index) => {
+        if (cells.length === 0) return;
+        const hot = index >= GRAIN_STEPS;
+        context.globalAlpha = (((index % GRAIN_STEPS) + 1) / GRAIN_STEPS) * (hot ? 0.85 : 0.3);
+        context.fillStyle = hot ? action : ink;
+        fillCells(cells, size);
+      });
+      // Revealed cells are cut out whole, so the image shows through them.
+      context.globalAlpha = 1;
+      context.globalCompositeOperation = "destination-out";
+      fillCells(cleared, cell);
+      context.globalCompositeOperation = "source-over";
+      return remaining > 0 || front === null || progress < 1;
+    };
+    if (reduced) {
+      // Still: one frame while waiting; a reveal is handed straight over.
+      if (revealing) {
+        onDone.current?.();
+        return;
+      }
+      draw(seed * 700);
+      return;
+    }
+    const loop = (now: number) => {
+      // Colours are re-read now and then, so a theme switch reaches a
+      // running field.
+      if (now - colorsAt > 1000) {
+        colorsAt = now;
+        ground = themeColor(canvas, "--surface-sunk");
+        ink = themeColor(canvas, "--ink");
+        action = themeColor(canvas, "--action");
+      }
+      if (!draw(now)) {
+        onDone.current?.();
+        return;
+      }
+      if (visible) frame = requestAnimationFrame(loop);
+    };
+    draw(performance.now());
+    // Off screen, the field stops drawing; a reveal off screen finishes at
+    // once rather than waiting to be seen.
+    const watch = new IntersectionObserver(([entry]) => {
+      const next = entry?.isIntersecting ?? true;
+      if (!next && revealing) {
+        visible = false;
+        cancelAnimationFrame(frame);
+        onDone.current?.();
+        return;
+      }
+      if (next && !visible) frame = requestAnimationFrame(loop);
+      visible = next;
+    });
+    watch.observe(canvas);
+    frame = requestAnimationFrame(loop);
+    return () => {
+      visible = false;
+      cancelAnimationFrame(frame);
+      watch.disconnect();
+    };
+  }, [seed, reduced, revealing, revealDelay]);
+  return <canvas ref={ref} className="cp-gen-field" aria-hidden="true" />;
+}
+
+/** Where an image will land while it's made: the exact space it takes,
+ * filled with the forming grain, and the size it will be. */
+function PendingTile({
+  width,
+  height,
+  seed,
+}: {
+  readonly width: number;
+  readonly height: number;
+  readonly seed: number;
+}) {
   return (
     <div
       className="cp-gen-tile cp-gen-pending"
       style={{ aspectRatio: `${width} / ${height}` }}
       aria-hidden="true"
     >
-      <span className="cp-gen-glow" />
+      <FormingField seed={seed} />
       <span className="cp-gen-size">
         {width} × {height}
       </span>
     </div>
+  );
+}
+
+/** How long the images took, as m:ss: counting while they're made, then
+ * holding the total. Honest where a percentage would be invented, since
+ * the image model reports no progress. */
+function Elapsed({ running }: { readonly running: boolean }) {
+  const [start] = useState(() => Date.now());
+  const [now, setNow] = useState(start);
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [running]);
+  const seconds = Math.floor((now - start) / 1000);
+  return (
+    <span className="cp-gen-elapsed">
+      {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
+    </span>
   );
 }
 
@@ -1107,11 +1376,23 @@ function GeneratedTile({
   image,
   name,
   onOpen,
+  develop,
+  seed,
+  delay,
 }: {
   readonly image: GeneratedImage;
   readonly name: string;
   readonly onOpen: () => void;
+  /** Made while the reader watched: the forming grain stays over the
+   * picture and reveals it, instead of the picture blurring in. */
+  readonly develop: boolean;
+  /** The forming grain this tile had, carried on into the reveal. */
+  readonly seed: number;
+  /** A grid reveals in a cascade, not all at once. */
+  readonly delay: number;
 }) {
+  const reduced = useReducedMotion();
+  const [developing, setDeveloping] = useState(develop && !reduced);
   const [loaded, setLoaded] = useState(false);
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -1135,7 +1416,18 @@ function GeneratedTile({
       className="cp-gen-tile"
       style={{ aspectRatio: `${width} / ${height}` }}
       data-loaded={loaded ? "true" : undefined}
+      data-develop={develop && !reduced ? "true" : undefined}
     >
+      {/* The grain keeps forming until the picture has loaded beneath it,
+          then reveals it. */}
+      {developing ? (
+        <span className="cp-gen-develop" aria-hidden="true">
+          <FormingField
+            seed={seed}
+            {...(loaded ? { reveal: { delay, onDone: () => setDeveloping(false) } } : {})}
+          />
+        </span>
+      ) : null}
       <button
         type="button"
         className="cp-gen-open"
@@ -1186,10 +1478,12 @@ function GeneratedTile({
 }
 
 /** Images an agent made. While generating, placeholders hold the exact
- * space the images will take (so nothing jumps when they land), under a
- * shimmering "Generating"; done, one image shows large, two side by side,
- * more in a grid; failed, a quiet line with Retry. The prompt sits beneath
- * as the caption. */
+ * space the images will take (so nothing jumps when they land), filled
+ * with forming grain under "Generating" and how long it has taken; images
+ * made while watched resolve out of blocks as they land, ones that were
+ * already there simply load. Done, one image shows large, two side by
+ * side, more in a grid; failed, a quiet line with Retry. The prompt sits
+ * beneath as the caption. */
 function ImageOutput({
   part,
   onOpen,
@@ -1199,6 +1493,10 @@ function ImageOutput({
   readonly onOpen: (files: readonly FilePart[], index: number) => void;
   readonly onRetry: (partId: string) => void;
 }) {
+  // Seen generating at least once in this view: its images develop.
+  const [watched, setWatched] = useState(part.state === "generating");
+  if (part.state === "generating" && !watched) setWatched(true);
+  const seed = [...part.id].reduce((sum, char) => sum + char.charCodeAt(0), 0);
   if (part.state === "error") {
     return (
       <div className="cp-gen-error" role="status">
@@ -1212,6 +1510,7 @@ function ImageOutput({
   }
   const generating = part.state === "generating";
   const slots = generating ? (part.expected?.count ?? 1) : part.images.length;
+  const label = slots === 1 ? "image" : `${slots} images`;
   const files = part.images.map((image, index): FilePart => ({
     type: "file",
     name: imageFileName(part, index, image),
@@ -1239,8 +1538,13 @@ function ImageOutput({
           : undefined
       }
     >
-      {generating ? (
-        <Shimmer>Generating {slots === 1 ? "image" : `${slots} images`}…</Shimmer>
+      {/* Watched images keep the line once they land, now with the total, so
+          the grid never jumps up when "Generating" goes. */}
+      {generating || watched ? (
+        <p className="cp-gen-status" role="status">
+          {generating ? <Shimmer>Generating {label}</Shimmer> : <span>Made {label}</span>}
+          <Elapsed running={generating} />
+        </p>
       ) : null}
       <div className="cp-gen-grid">
         {Array.from({ length: slots }, (_, index) => {
@@ -1250,6 +1554,7 @@ function ImageOutput({
               key={`pending-${index}`}
               width={part.expected?.width ?? 1024}
               height={part.expected?.height ?? 1024}
+              seed={seed + index}
             />
           ) : (
             <GeneratedTile
@@ -1257,6 +1562,9 @@ function ImageOutput({
               image={image}
               name={imageFileName(part, index, image)}
               onOpen={() => onOpen(files, index)}
+              develop={watched}
+              seed={seed + index}
+              delay={index * 90}
             />
           );
         })}

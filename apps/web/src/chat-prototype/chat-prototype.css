@@ -1017,28 +1017,41 @@
   filter: none;
   transform: none;
 }
-/* While generating: a slow drift of warm light, and the size it will be. */
-.cp-gen-glow {
+/* While generating: the brand's dither grain forming in the tile (drawn on
+   a canvas), and the size it will be. Images made while watched stay under
+   the same grain, which reveals them; the canvas paints its own ground. */
+.cp-gen-field {
   position: absolute;
-  inset: -40%;
-  background:
-    radial-gradient(
-      circle at 30% 40%,
-      color-mix(in srgb, var(--action) 28%, transparent),
-      transparent 50%
-    ),
-    radial-gradient(
-      circle at 70% 65%,
-      color-mix(in srgb, var(--info) 24%, transparent),
-      transparent 50%
-    );
-  filter: blur(24px);
-  animation: cp-gen-drift 5s ease-in-out infinite alternate;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
 }
-@keyframes cp-gen-drift {
-  to {
-    transform: translate(12%, -8%) rotate(18deg);
-  }
+.cp-gen-develop {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  pointer-events: none;
+}
+.cp-gen-tile[data-develop] .cp-gen-open img {
+  opacity: 1;
+  filter: none;
+  transform: none;
+  transition: none;
+}
+.cp-gen-status {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+}
+.cp-gen-elapsed {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
 }
 .cp-gen-size {
   position: absolute;
@@ -3595,9 +3608,6 @@ button.cp-stack-open {
 
 /* Reduced motion keeps only fades (DESIGN.md). */
 @media (prefers-reduced-motion: reduce) {
-  .cp-gen-glow {
-    animation: none;
-  }
   .cp-gen-open img {
     filter: none;
     transform: none;
