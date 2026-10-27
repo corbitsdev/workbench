@@ -3,14 +3,14 @@ rules:
   - check: max-files-changed
     text: Flag pull requests over 25 files changed.
     max: 25
-    onFail: ask
+    onFail: label
     reason: Large pull requests are hard to review.
     evidence:
       - maintainer-stated
   - check: max-lines-changed
     text: Flag pull requests over 1,500 lines changed.
     max: 1500
-    onFail: ask
+    onFail: label
     reason: Large pull requests are hard to review.
     evidence:
       - maintainer-stated
