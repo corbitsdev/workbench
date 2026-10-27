@@ -24,10 +24,9 @@ rules:
     reason: A behavior change without a docs update leaves the docs wrong.
     evidence:
       - maintainer-stated
-    enabled: false
   - check: linked-issue
-    text: Require a linked Linear issue, such as CL-123.
-    tracker: linear
+    text: Require a linked issue from GitHub or Linear.
+    tracker: either
     reason: Every change is tracked in a Linear issue.
     evidence:
       - maintainer-stated
@@ -96,6 +95,7 @@ rules:
       - "claude.ai/code/session"
       - "Generated with Claude"
       - "Generated with [Claude"
+    onFail: ask
     reason: Tool-generated co-author lines, session trailers and footers don't belong in the history.
     evidence:
       - maintainer-stated
@@ -106,6 +106,148 @@ rules:
       - convention
     onFail: label
     reason: Keeps added code free of invented fallbacks, nested ternaries, IIFEs and promise chains.
+    evidence:
+      - maintainer-stated
+  - id: invented-fallbacks
+    check: code-patterns
+    text: Added code handles a missing value instead of inventing an empty one.
+    patterns:
+      - id: more-invented-fallbacks
+        language: typescript
+        message: Invented fallback (an empty string, || [] or || 0); handle the missing value instead.
+        ignores:
+          [
+            "**/*.{test,spec}.*",
+            "**/{test,tests,Tests,__tests__}/**",
+            "**/*.*{Test,Tests}/**",
+          ]
+        rule:
+          any:
+            - pattern: $X || []
+            - all:
+                - any:
+                    - pattern: $X ?? ""
+                    - pattern: $X ?? ''
+                    - pattern: $X ?? ``
+                    - pattern: $X || ""
+                    - pattern: $X || ''
+                    - pattern: $X || ``
+                - not:
+                    any:
+                      - inside: { kind: template_substitution }
+                      - inside:
+                          {
+                            kind: binary_expression,
+                            has: { field: operator, regex: '^\+$' },
+                          }
+                      - inside:
+                          {
+                            kind: parenthesized_expression,
+                            inside:
+                              {
+                                kind: binary_expression,
+                                has: { field: operator, regex: '^\+$' },
+                              },
+                          }
+                      - has: { field: left, kind: subscript_expression }
+                      - has:
+                          {
+                            field: left,
+                            kind: call_expression,
+                            has:
+                              {
+                                field: function,
+                                regex: '\.(at|get|getAttribute)$',
+                              },
+                          }
+            - all:
+                - pattern: $X || 0
+                - not:
+                    any:
+                      - inside:
+                          {
+                            kind: binary_expression,
+                            has: { field: operator, regex: "^[-+*/%]$" },
+                          }
+                      - inside:
+                          {
+                            kind: parenthesized_expression,
+                            inside:
+                              {
+                                kind: binary_expression,
+                                has: { field: operator, regex: "^[-+*/%]$" },
+                              },
+                          }
+                      - inside: { kind: augmented_assignment_expression }
+      - id: more-invented-fallbacks
+        language: javascript
+        message: Invented fallback (an empty string, || [] or || 0); handle the missing value instead.
+        ignores:
+          [
+            "**/*.{test,spec}.*",
+            "**/{test,tests,Tests,__tests__}/**",
+            "**/*.*{Test,Tests}/**",
+          ]
+        rule:
+          any:
+            - pattern: $X || []
+            - all:
+                - any:
+                    - pattern: $X ?? ""
+                    - pattern: $X ?? ''
+                    - pattern: $X ?? ``
+                    - pattern: $X || ""
+                    - pattern: $X || ''
+                    - pattern: $X || ``
+                - not:
+                    any:
+                      - inside: { kind: template_substitution }
+                      - inside:
+                          {
+                            kind: binary_expression,
+                            has: { field: operator, regex: '^\+$' },
+                          }
+                      - inside:
+                          {
+                            kind: parenthesized_expression,
+                            inside:
+                              {
+                                kind: binary_expression,
+                                has: { field: operator, regex: '^\+$' },
+                              },
+                          }
+                      - has: { field: left, kind: subscript_expression }
+                      - has:
+                          {
+                            field: left,
+                            kind: call_expression,
+                            has:
+                              {
+                                field: function,
+                                regex: '\.(at|get|getAttribute)$',
+                              },
+                          }
+            - all:
+                - pattern: $X || 0
+                - not:
+                    any:
+                      - inside:
+                          {
+                            kind: binary_expression,
+                            has: { field: operator, regex: "^[-+*/%]$" },
+                          }
+                      - inside:
+                          {
+                            kind: parenthesized_expression,
+                            inside:
+                              {
+                                kind: binary_expression,
+                                has: { field: operator, regex: "^[-+*/%]$" },
+                              },
+                          }
+                      - inside: { kind: augmented_assignment_expression }
+    onFail: label
+    reason: A fallback belongs only where a real default exists.
     evidence:
       - maintainer-stated
   - id: no-any
@@ -133,6 +275,7 @@ actions:
         author:
           - users:
               - thegreataxios
+              - brianjfox
     - do: request-review
       target:
         to: users
