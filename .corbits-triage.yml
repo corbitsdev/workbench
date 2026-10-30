@@ -285,9 +285,6 @@ actions:
         author:
           - external
   fail:
-    - do: close
-      when:
-        linkedIssue: false
     - do: request-changes
   unsure:
     - do: assign
