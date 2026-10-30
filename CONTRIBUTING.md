@@ -34,3 +34,4 @@ Thanks for your interest in Corbits Workbench.
 6. Each package that owns product tables ships one idempotent SQL migration,
    applied by the hub at boot.
 7. Security issues go through [SECURITY.md](SECURITY.md), never a public issue.
+8. A pull request without a linked issue is closed.
